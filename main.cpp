@@ -13,6 +13,11 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 
+// ベクター4
+struct Vector4 {
+	float x, y, z, w;
+};
+
 // ウィンドウプロシージャ
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	// メッセージに応じてゲーム固有の処理を行う
@@ -343,7 +348,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// dxCompilerの初期化
 	IDxcUtils* dxcUtils = nullptr;
-	IDxcCompiler* dxcCompiler = nullptr;
+	IDxcCompiler3* dxcCompiler = nullptr;
 	hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
 	assert(SUCCEEDED(hr)); // dxcUtilsの生成に失敗したらエラー
 	hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler));
@@ -354,8 +359,154 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = dxcUtils->CreateDefaultIncludeHandler(&includeHandler);
 	assert(SUCCEEDED(hr)); // includeHandlerの生成に失敗したらエラー
 
+	// RootSignatureを作る
+	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
+	descriptionRootSignature.Flags = 
+	D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+	// シリアライズしてバイナリにする
+	ID3DBlob* signatureBlob = nullptr;
+	ID3DBlob* errorBlob = nullptr;
+	hr = D3D12SerializeRootSignature(&descriptionRootSignature,
+		D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
+	if (FAILED(hr)) {
+		Log(reinterpret_cast<char*>(errorBlob->GetBufferPointer()));
+		assert(false); // RootSignatureのシリアライズに失敗したらエラー
+	}
 
+	// バイナリを元に作成
+	ID3D12RootSignature* rootSignature = nullptr;
+	hr = device->CreateRootSignature(
+		0, // シリアライズしたバイナリのサイズ
+		signatureBlob->GetBufferPointer(), // シリアライズしたバイナリ
+		signatureBlob->GetBufferSize(), // シリアライズしたバイナリのポインタ
+		IID_PPV_ARGS(&rootSignature)); // RootSignatureのポインタ
+	assert(SUCCEEDED(hr)); // RootSignatureの生成に失敗したらエラー
 
+	// InputLayout
+	D3D12_INPUT_ELEMENT_DESC inputElementDescs[1] = {};
+	inputElementDescs[0].SemanticName = "POSITION"; // セマンティクス名
+	inputElementDescs[0].SemanticIndex = 0; // セマンティクスのインデックス
+	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32_FLOAT; // フォーマット
+	inputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
+	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
+	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
+
+	// BlendStateの設定
+	D3D12_BLEND_DESC blendDesc{};
+	// すべての色要素を書き込む
+	blendDesc.RenderTarget[0].RenderTargetWriteMask =
+		D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	// RasterizerStateの設定
+	D3D12_RASTERIZER_DESC rasterizerDesc{};
+	// 裏面を表示しない
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	// 三角形の中を塗りつぶす
+	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
+
+	// Shaderのコンパイル
+	IDxcBlob* vertexShaderBlob = CompileShader(
+		L"Object3D.VS.hlsl", // コンパイルするファイルのパス
+		L"vs_6_0", // プロファイル
+		dxcUtils, // dxcUtils
+		dxcCompiler, // dxcCompiler
+		includeHandler); // includeHandler
+	assert(vertexShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
+
+	IDxcBlob* pixelShaderBlob = CompileShader(
+		L"Object3D.PS.hlsl", // コンパイルするファイルのパス
+		L"ps_6_0", // プロファイル
+		dxcUtils, // dxcUtils
+		dxcCompiler, // dxcCompiler
+		includeHandler); // includeHandler
+	assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
+
+	// PSOを生成する
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
+	graphicsPipelineStateDesc.pRootSignature = rootSignature; // RootSignature
+	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc; // InputLayout
+	graphicsPipelineStateDesc.VS = { vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize() }; // 頂点シェーダー
+	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() }; // ピクセルシェーダー
+	graphicsPipelineStateDesc.BlendState = blendDesc; // BlendState
+	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc; // RasterizerState
+	// 書き込むRTVの情報
+	graphicsPipelineStateDesc.NumRenderTargets = 1; // 書き込むRTVの数
+	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM; // 書き込むRTVのフォーマット
+	// 利用するトポロジ(形状)のタイプ
+	graphicsPipelineStateDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	// どのように画面に色を打ち込むかの設定
+	graphicsPipelineStateDesc.SampleDesc.Count = 1; // マルチサンプルしない
+	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK; // サンプルマスク
+	// 実際に生成
+	ID3D12PipelineState* graphicPipelineState = nullptr;
+	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
+		IID_PPV_ARGS(&graphicPipelineState));
+	assert(SUCCEEDED(hr)); // PSOの生成に失敗したらエラー
+
+	// 頂点リソース用のヒープの設定
+	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
+	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // アップロード用
+	// 頂点リソースの設定
+	D3D12_RESOURCE_DESC vertexResourceDesc{};
+	// バッファリソース。テクスチャの場合はまた別の設定をする
+	vertexResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	vertexResourceDesc.Width = sizeof(Vector4) * 3; // 頂点の数
+	// バッファの場合はこれらは1にする決まり
+	vertexResourceDesc.Height = 1;
+	vertexResourceDesc.DepthOrArraySize = 1;
+	vertexResourceDesc.MipLevels = 1;
+	vertexResourceDesc.SampleDesc.Count = 1;
+	// バッファの場合はこれにする決まり
+	vertexResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	// 実際に頂点リソースを作る
+	ID3D12Resource* vertexResource = nullptr;
+	hr = device->CreateCommittedResource(
+		&uploadHeapProperties, // ヒープの設定
+		D3D12_HEAP_FLAG_NONE, // ヒープのフラグ
+		&vertexResourceDesc, // リソースの設定
+		D3D12_RESOURCE_STATE_GENERIC_READ, // リソースの状態
+		nullptr, // 初期化用のデータ
+		IID_PPV_ARGS(&vertexResource)); // リソースのポインタ
+	assert(SUCCEEDED(hr)); // 頂点リソースの生成に失敗したらエラー
+
+	// 頂点バッファビューを作成する
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
+	// リソースの先頭アドレスから使う
+	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();
+	// 使用するリソースのサイズは頂点3つ分のサイズ
+	vertexBufferView.SizeInBytes = sizeof(Vector4) * 3;
+	// 1頂点当たりのサイズ
+	vertexBufferView.StrideInBytes = sizeof(Vector4);
+
+	// 頂点リソースにデータを書き込む
+	Vector4* vertexData = nullptr;
+	// 書き込むアドレスの取得
+	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
+	// 左下
+	vertexData[0] = { -0.5f, -0.5f, 0.0f, 1.0f };
+	// 上
+	vertexData[1] = { 0.0f, 0.5f, 0.0f, 1.0f };
+	// 右下
+	vertexData[2] = { 0.5f, -0.5f, 0.0f, 1.0f };
+
+	// ビューポート
+	D3D12_VIEWPORT viewport{};
+	// クライアント領域のサイズと一緒にして画面全体に表示
+	viewport.Width = kClientWidth;
+	viewport.Height = kClientHeight;
+	viewport.TopLeftX = 0;
+	viewport.TopLeftY = 0;
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+
+	// シザー矩形
+	D3D12_RECT scissorRect{};
+	// 基本的にビューポートと同じ矩形が構成されるようにする
+	scissorRect.left = 0;
+	scissorRect.right = kClientWidth;
+	scissorRect.top = 0;
+	scissorRect.bottom = kClientHeight;
 
 	MSG msg{};
 	// ウィンドウのxボタンが押されるまでループ
