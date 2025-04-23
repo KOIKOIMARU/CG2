@@ -542,6 +542,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 指定した色で画面全体をクリア
 			float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f };
 			commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
+			commandList->RSSetViewports(1, &viewport); // ビューポートの設定
+			commandList->RSSetScissorRects(1, &scissorRect); // シザー矩形の設定
+			// RootSignatureを設定
+			commandList->SetGraphicsRootSignature(rootSignature);
+			commandList->SetPipelineState(graphicPipelineState); // PSOを設定
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferView); // 頂点バッファを設定
+			// 形状を設定
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			// 描画
+			commandList->DrawInstanced(3, 1, 0, 0); // 頂点数、インスタンス数、頂点バッファのオフセット、インスタンスバッファのオフセット
+
 			// RenderTargetからPresentにする
 			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
 			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
@@ -593,6 +604,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	device->Release(); // デバイスを解放
 	useAdapter->Release(); // アダプタを解放
 	dxgiFactory->Release(); // DXGIファクトリーを解放
+	vertexResource->Release(); // 頂点リソースを解放
+	graphicPipelineState->Release(); // PSOを解放
+	signatureBlob->Release(); // RootSignatureのシリアライズしたバイナリを解放
+	rootSignature->Release(); // RootSignatureを解放
+	pixelShaderBlob->Release(); // ピクセルシェーダーのバイナリを解放
+	vertexShaderBlob->Release(); // 頂点シェーダーのバイナリを解放
+	includeHandler->Release(); // includeHandlerを解放
+	dxcCompiler->Release(); // dxcCompilerを解放
+	dxcUtils->Release(); // dxcUtilsを解放
+
 	#ifdef _DEBUG
 	debugController->Release(); // デバッグコントローラを解放
 	#endif
