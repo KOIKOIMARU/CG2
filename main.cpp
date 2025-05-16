@@ -3,23 +3,52 @@
 #include <string>
 #include <format>
 #include <d3d12.h>
+#include <d3dcompiler.h>
+#include <d3d12sdklayers.h>
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 #include <dxcapi.h>
 #include <cassert>
+#include <wrl/client.h>
+#include "externals/imgui/imgui.h"
+#include "externals/imgui/imgui_impl_dx12.h"
+#include "externals/imgui/imgui_impl_win32.h"
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 
+// ベクター3
+struct Vector3 {
+	float x, y, z;
+};
+
 // ベクター4
 struct Vector4 {
 	float x, y, z, w;
 };
 
+// 4x4行列の定義
+struct Matrix4x4 {
+	float m[4][4];
+};
+
+struct Transform {
+	Vector3 scale;
+	Vector3 rotate;
+	Vector3 translate;
+};
+
 // ウィンドウプロシージャ
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+
+	// ImGuiのウィンドウプロシージャを呼び出す
+	if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam)) {
+		return true;
+	}
+
 	// メッセージに応じてゲーム固有の処理を行う
 	switch (msg) {
 		// ウィンドウが破壊された
@@ -33,6 +62,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	return DefWindowProc(hwnd, msg, wparam, lparam);
 
 }
+
+// 関数の作成
 
 void Log(const std::string& message) {
 	OutputDebugStringA(message.c_str());
@@ -110,14 +141,22 @@ IDxcBlob* CompileShader(
 	// コンパイルエラーではなくdxcが起動できないなど致命的な状況
 	assert(SUCCEEDED(hr)); // コンパイルに失敗したらエラー
 
-	// 警告・エラーが出てたらログに出して止める
+	// 警告・エラーがあればログに出して処理を停止
 	IDxcBlobUtf8* shaderError = nullptr;
 	shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr);
+
 	if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
+		// エラー内容をログに出力
 		Log(shaderError->GetStringPointer());
-		// 警告・エラーダメ絶対
-		assert(false);
+
+		// エラーがある場合、処理を中断する方法（例: 例外を投げる）
+		// assert(false);  // デバッグ用停止
+		// もしくは、例外を使っても良い:
+		throw std::runtime_error("Shader compile error occurred."); // 例外を投げる
+		// またはアプリケーション終了を行う:
+		// exit(-1);  // 強制終了する場合
 	}
+
 
 	// コンパイル結果から実行用のバイナリ部分を取得
 	IDxcBlob* shaderBlob = nullptr;
@@ -131,6 +170,218 @@ IDxcBlob* CompileShader(
 	// 実行用のバイナリを返却
 	return shaderBlob;
 }
+
+
+ID3D12Resource* CreateBufferResource(
+	ID3D12Device* device,
+	uint64_t sizeInBytes)
+{
+	// ヒーププロパティ
+	D3D12_HEAP_PROPERTIES heapProps{};
+	heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+	heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+	// バッファリソースの設定
+	D3D12_RESOURCE_DESC desc{};
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	desc.Alignment = 0;
+	desc.Width = sizeInBytes;
+	desc.Height = 1;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.Format = DXGI_FORMAT_UNKNOWN;
+	desc.SampleDesc.Count = 1;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	ID3D12Resource* resource = nullptr;
+	HRESULT hr = device->CreateCommittedResource(
+		&heapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&desc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&resource));
+	assert(SUCCEEDED(hr));
+	return resource;
+}
+
+ID3D12DescriptorHeap* CreateDescriptorHeap(
+	ID3D12Device* device,
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType,
+	UINT numDescriptors,
+	bool shaderVisible)
+{
+	// ディスクリプタヒープを生成する
+	ID3D12DescriptorHeap* descriptorHeap = nullptr;
+	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
+	descriptorHeapDesc.Type = heapType; // レンダーターゲットビュー用
+	descriptorHeapDesc.NumDescriptors = numDescriptors; // ダブルバッファ用に２つ
+	descriptorHeapDesc.Flags = shaderVisible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE; // シェーダーからアクセス可能
+	HRESULT hr = device->CreateDescriptorHeap(&descriptorHeapDesc,IID_PPV_ARGS(&descriptorHeap));
+	assert(SUCCEEDED(hr)); // ディスクリプタヒープの生成に失敗したらエラー
+
+	return descriptorHeap;
+}
+
+// 単位行列
+Matrix4x4 MakeIdentityMatrix() {
+	Matrix4x4 mat = {};
+	for (int i = 0; i < 4; ++i) {
+		mat.m[i][i] = 1.0f;
+	}
+	return mat;
+}
+
+
+// x軸回転行列
+Matrix4x4 MakeRoteXMatrix(float radian) {
+	Matrix4x4 result = {
+		1,0,0,0,
+		0,cosf(radian),sinf(radian),0,
+		0,-sinf(radian),cosf(radian),0,
+		0,0,0,1,
+	};
+	return result;
+}
+
+// Y軸回転行列
+Matrix4x4 MakeRotateYMatrix(float radian) {
+	Matrix4x4 result = {
+		cosf(radian),0,-sinf(radian),0,
+		0,1,0,0,
+		sinf(radian),0,cosf(radian),0,
+		0,0,0,1,
+	};
+	return result;
+}
+
+// Z軸回転行列
+Matrix4x4 MakeRotateZMatrix(float radian) {
+	Matrix4x4 result = {
+		cosf(radian),sinf(radian),0,0,
+		-sinf(radian),cosf(radian),0,0,
+		0,0,1,0,
+		0,0,0,1,
+	};
+	return result;
+}
+
+// 平行移動行列
+Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
+	Matrix4x4 result = {
+	  1, 0, 0, 0,
+	  0, 1, 0, 0,
+	  0, 0, 1, 0,
+	 translate.x, translate.y, translate.z, 1
+	};
+	return result;
+}
+
+// 行列の積
+Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
+	Matrix4x4 result = {};
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			for (int k = 0; k < 4; ++k) {
+				result.m[i][j] += m1.m[i][k] * m2.m[k][j];
+			}
+		}
+	}
+	return result;
+}
+
+// アフィン変換行列
+Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
+	Matrix4x4 scaleMatrix = {
+		scale.x, 0, 0, 0,
+		0, scale.y, 0, 0,
+		0, 0, scale.z, 0,
+		0, 0, 0, 1
+	};
+	Matrix4x4 rotateXMatrix = MakeRoteXMatrix(rotate.x);
+	Matrix4x4 rotateYMatrix = MakeRotateYMatrix(rotate.y);
+	Matrix4x4 rotateZMatrix = MakeRotateZMatrix(rotate.z);
+	Matrix4x4 rotateMatrix = Multiply(Multiply(rotateXMatrix, rotateYMatrix), rotateZMatrix);
+	Matrix4x4 translateMatrix = MakeTranslateMatrix(translate);
+	return Multiply(Multiply(scaleMatrix, rotateMatrix), translateMatrix);
+}
+
+
+// 3x3の行列式を計算
+float Determinant3x3(float matrix[3][3]) {
+    return matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
+           matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
+           matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+}
+
+// 4x4行列の余因子を計算
+float Minor(const Matrix4x4& m, int row, int col) {
+    float sub[3][3];
+    int sub_i = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (i == row) continue;
+        int sub_j = 0;
+        for (int j = 0; j < 4; ++j) {
+            if (j == col) continue;
+            sub[sub_i][sub_j] = m.m[i][j];
+            sub_j++;
+        }
+        sub_i++;
+    }
+
+    // 3x3行列の行列式を計算
+    return Determinant3x3(sub);
+}
+
+// 4x4行列の逆行列を計算
+Matrix4x4 Inverse(const Matrix4x4& m) {
+    Matrix4x4 result = {};
+
+    // 4x4行列の行列式を計算
+    float det = 0.0f;
+    for (int col = 0; col < 4; ++col) {
+        int sign = (col % 2 == 0) ? 1 : -1;
+        det += sign * m.m[0][col] * Minor(m, 0, col);
+    }
+
+    // 行列式が0の場合は逆行列が存在しない
+    if (det == 0.0f) {
+        return result;
+    }
+
+    float invDet = 1.0f / det;
+
+    // 各要素の計算
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            int sign = ((i + j) % 2 == 0) ? 1 : -1;
+            result.m[j][i] = sign * Minor(m, i, j) * invDet;
+        }
+    }
+
+    return result;
+}
+
+
+// 透視投影行列
+Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
+	Matrix4x4 result = {};
+
+	float f = 1.0f / tanf(fovY / 2.0f);
+
+	result.m[0][0] = f / aspectRatio;
+	result.m[1][1] = f;
+	result.m[2][2] = farClip / (farClip - nearClip);
+	result.m[2][3] = 1.0f;
+	result.m[3][2] = -nearClip * farClip / (farClip - nearClip);
+	result.m[3][3] = 0.0f;
+
+	return result;
+}
+
+
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -305,13 +556,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	assert(SUCCEEDED(hr)); // スワップチェーンの生成に失敗したらエラー
 
 	// ディスクリプタヒープを生成する
-	ID3D12DescriptorHeap* rtvDescriptorHeap = nullptr;
-	D3D12_DESCRIPTOR_HEAP_DESC rtvDescriptorHeapDesc{};
-	rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; // レンダーターゲットビュー用
-	rtvDescriptorHeapDesc.NumDescriptors = 2; // ダブルバッファ用に２つ
-	hr = device->CreateDescriptorHeap(&rtvDescriptorHeapDesc,
-		IID_PPV_ARGS(&rtvDescriptorHeap));
-	assert(SUCCEEDED(hr)); // ディスクリプタヒープの生成に失敗したらエラー
+	ID3D12DescriptorHeap* rtvDescriptorHeap = CreateDescriptorHeap(
+		device, // デバイス
+		D3D12_DESCRIPTOR_HEAP_TYPE_RTV, // レンダーターゲットビュー用
+		2, // ダブルバッファ用に２つ
+		false); // シェーダーからはアクセスしない
+
+	// SRV用のディスクリプタヒープを生成する
+	ID3D12DescriptorHeap* srvDescriptorHeap = CreateDescriptorHeap(
+		device, // デバイス
+		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, // SRV用
+		128, // 128個用意する
+		true); // シェーダーからアクセスする
 
 	// スワップチェーンからリソースを引っ張てくる
 	ID3D12Resource* swapChainResources[2] = { nullptr };
@@ -327,7 +583,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ディスクリプタの先頭を取得する
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvStartHandle = rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
 	// ディスクリプタを2つ用意
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2];
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[2]{};
 	// 1つめを作る
 	rtvHandles[0] = rtvStartHandle;
 	device->CreateRenderTargetView(swapChainResources[0], &rtvDesc, rtvHandles[0]);
@@ -363,6 +619,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
 	descriptionRootSignature.Flags = 
 	D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+	// RootParameter作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
+	D3D12_ROOT_PARAMETER rootParameters[2] = {};
+	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // CBVを使う
+	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // pixelShaderを使う
+	rootParameters[0].Descriptor.ShaderRegister = 0; // レジスタ番号0とバインド
+	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV; // CBVを使う
+	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParameters[1].Descriptor.ShaderRegister = 0; // レジスタ番号0を使う
+	descriptionRootSignature.pParameters = rootParameters; // ルートパラメータ配列へのポインタ
+	descriptionRootSignature.NumParameters = _countof(rootParameters); // 配列の長さ
+
 	// シリアライズしてバイナリにする
 	ID3DBlob* signatureBlob = nullptr;
 	ID3DBlob* errorBlob = nullptr;
@@ -381,6 +649,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		signatureBlob->GetBufferSize(), // シリアライズしたバイナリのポインタ
 		IID_PPV_ARGS(&rootSignature)); // RootSignatureのポインタ
 	assert(SUCCEEDED(hr)); // RootSignatureの生成に失敗したらエラー
+
+
 
 	// InputLayout
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[1] = {};
@@ -444,6 +714,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&graphicPipelineState));
 	assert(SUCCEEDED(hr)); // PSOの生成に失敗したらエラー
 
+	
+
 	// 頂点リソース用のヒープの設定
 	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
 	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // アップロード用
@@ -459,16 +731,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertexResourceDesc.SampleDesc.Count = 1;
 	// バッファの場合はこれにする決まり
 	vertexResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
 	// 実際に頂点リソースを作る
-	ID3D12Resource* vertexResource = nullptr;
-	hr = device->CreateCommittedResource(
-		&uploadHeapProperties, // ヒープの設定
-		D3D12_HEAP_FLAG_NONE, // ヒープのフラグ
-		&vertexResourceDesc, // リソースの設定
-		D3D12_RESOURCE_STATE_GENERIC_READ, // リソースの状態
-		nullptr, // 初期化用のデータ
-		IID_PPV_ARGS(&vertexResource)); // リソースのポインタ
-	assert(SUCCEEDED(hr)); // 頂点リソースの生成に失敗したらエラー
+	ID3D12Resource* vertexResource = CreateBufferResource(device, sizeof(Vector4) * 3);
+
+	// マテリアル用のリソースを作る。今回はcolor1つ分のサイズを用意する
+	ID3D12Resource* materialResource = CreateBufferResource(device, sizeof(Vector4));
+	// マテリアルにデータを書き込む
+	Vector4* materialData = nullptr;
+	// 書き込むためのアドレスを取得
+	materialResource->Map(0, nullptr, reinterpret_cast<void**>(&materialData));
+	// 今回は赤を書き込んでみる
+	*materialData = Vector4(1.0f, 0.0f, 0.0f, 1.0f);
 
 	// 頂点バッファビューを作成する
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
@@ -490,6 +764,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 右下
 	vertexData[2] = { 0.5f, -0.5f, 0.0f, 1.0f };
 
+
+	// WVP用のリソースを作る。matrix4x4 1つ分のサイズを用意する
+	ID3D12Resource* wvpResource = CreateBufferResource(device, sizeof(Matrix4x4));
+	// データを書き込む
+	Matrix4x4* wvpData = nullptr;
+	// 書き込むためのアドレスを取得
+	wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
+	// 単位行列を書き込んでおく
+	*wvpData = MakeIdentityMatrix();
+
 	// ビューポート
 	D3D12_VIEWPORT viewport{};
 	// クライアント領域のサイズと一緒にして画面全体に表示
@@ -508,6 +792,31 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorRect.top = 0;
 	scissorRect.bottom = kClientHeight;
 
+	// transform変数
+	Transform transform = {
+	{1.0f, 1.0f, 1.0f}, // scale
+	{0.0f, 0.0f, 0.0f}, // rotate
+	{0.0f, 0.0f, 0.0f}  // translate
+	};
+
+	// カメラの位置を設定
+	Transform cameraTransform = {
+	{1.0f, 1.0f, 1.0f}, // scale
+	{0.0f, 0.0f, 0.0f}, // rotate
+	{0.0f, 0.0f, -5.0f} // translate
+	};
+
+	// Imguiの初期化
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGui::StyleColorsDark();
+	ImGui_ImplWin32_Init(hwnd);
+	ImGui_ImplDX12_Init(device, swapChainDesc.BufferCount,
+		rtvDesc.Format,
+		srvDescriptorHeap, // SRV用のヒープ
+		srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), // CPU側のヒープ
+		srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart()); // GPU側のヒープ
+
 	MSG msg{};
 	// ウィンドウのxボタンが押されるまでループ
 	while (msg.message != WM_QUIT) {
@@ -518,6 +827,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			DispatchMessage(&msg);
 		}else {
 			// ゲームの処理
+
+			ImGui_ImplDX12_NewFrame();
+			ImGui_ImplWin32_NewFrame();
+			ImGui::NewFrame();
+
+			// ImGuiのウィンドウを作成
+			ImGui::ShowDemoWindow();
+
+			transform.rotate.y += 0.03f;
+			Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
+			Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
+			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
+			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+			Matrix4x4 worldViewProjectionMatrix = Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix));
+			*wvpData = worldViewProjectionMatrix;
+			
+			// ImGuiの描画
+			ImGui::Render();
 
 			// バックバッファのインデックスを取得
 			UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
@@ -550,8 +877,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView); // 頂点バッファを設定
 			// 形状を設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			// マテリアルCBufferの場所を設定
+			commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
+			// wvp用のCBufferの場所を設定
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());
+
+			// 描画用のデスクリプタヒープを設定
+			ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap };
+			commandList->SetDescriptorHeaps(1, descriptorHeaps);
+		
+
 			// 描画
 			commandList->DrawInstanced(3, 1, 0, 0); // 頂点数、インスタンス数、頂点バッファのオフセット、インスタンスバッファのオフセット
+
+			// ImGuiの描画
+			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
 
 			// RenderTargetからPresentにする
 			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -592,9 +932,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 出力ウィンドウへの文字出力
 	OutputDebugStringA("Hello, DirectX!\n");
 
+	// ImGuiの終了処理
+	ImGui_ImplDX12_Shutdown();
+	ImGui_ImplWin32_Shutdown();
+	ImGui::DestroyContext();
+
 	CloseHandle(fenceEvent); // フェンスのSignalを待つためのイベントハンドルを閉じる
 	fence->Release(); // フェンスを解放
 	rtvDescriptorHeap->Release(); // ディスクリプタヒープを解放
+	srvDescriptorHeap->Release(); // SRV用のディスクリプタヒープを解放
 	swapChainResources[0]->Release(); // スワップチェーンのリソースを解放
 	swapChainResources[1]->Release(); // スワップチェーンのリソースを解放
 	swapChain->Release(); // スワップチェーンを解放
@@ -613,13 +959,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	includeHandler->Release(); // includeHandlerを解放
 	dxcCompiler->Release(); // dxcCompilerを解放
 	dxcUtils->Release(); // dxcUtilsを解放
+	materialResource->Release();
+	wvpResource->Release();
 
 	#ifdef _DEBUG
 	debugController->Release(); // デバッグコントローラを解放
 	#endif
 	CloseWindow(hwnd);
 
-	// リソースリークチェック
+	// DXGIのデバッグレイヤーを有効にしている場合は、メモリリークを報告する
 	IDXGIDebug1* debug;
 	if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&debug)))) {
 		debug->ReportLiveObjects(DXGI_DEBUG_ALL,DXGI_DEBUG_RLO_ALL);
@@ -627,7 +975,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
 		debug->Release();
 	}
-
 
 	return 0;
 }
