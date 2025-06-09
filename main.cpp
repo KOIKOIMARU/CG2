@@ -206,6 +206,21 @@ Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip
 	return result;
 }
 
+// 平行投影行列（左手座標系）
+Matrix4x4 MakeOrthographicMatrix(float left, float top, float right, float bottom, float nearClip, float farClip) {
+	Matrix4x4 result = {};
+
+	result.m[0][0] = 2.0f / (right - left);
+	result.m[1][1] = 2.0f / (top - bottom);
+	result.m[2][2] = 1.0f / (farClip - nearClip);
+	result.m[3][0] = (left + right) / (left - right);
+	result.m[3][1] = (top + bottom) / (bottom - top);
+	result.m[3][2] = -nearClip / (farClip - nearClip);
+	result.m[3][3] = 1.0f;
+
+	return result;
+}
+
 
 static void Log(const std::string& message) {
 	OutputDebugStringA(message.c_str());
@@ -1062,6 +1077,51 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// テクスチャのSRVを作成する
 	device->CreateShaderResourceView(textureResource, &srvDesc, textureSrvHandleCPU);
 
+	// Sprite用の頂点リソースを作る
+	ID3D12Resource* vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 6);
+
+	// 頂点バッファビューを作成
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
+	// リソースの先頭のアドレスから使う
+	vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
+	// 使用するリソースのサイズは頂点6つ分のサイズ
+	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 6;
+	// 1頂点あたりのサイズ
+	vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
+
+	// Spriteの頂点データを設定
+	VertexData* vertexDataSprite = nullptr;
+	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSprite));
+	// 1枚目の三角形
+	vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f, 1.0f };// 左下
+	vertexDataSprite[0].texcoord = { 0.0f, 1.0f }; // テクスチャ座標
+	vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f, 1.0f }; // 左上
+	vertexDataSprite[1].texcoord = { 0.0f, 0.0f }; // テクスチャ座標
+	vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f, 1.0f }; // 右下
+	vertexDataSprite[2].texcoord = { 1.0f, 1.0f }; // テクスチャ座標
+
+	// 2枚目の三角形
+	vertexDataSprite[3].position = { 0.0f, 0.0f, 0.0f, 1.0f }; // 左上
+	vertexDataSprite[3].texcoord = { 0.0f, 0.0f }; // テクスチャ座標
+	vertexDataSprite[4].position = { 640.0f, 0.0f, 0.0f, 1.0f }; // 右上
+	vertexDataSprite[4].texcoord = { 1.0f, 0.0f }; // テクスチャ座標
+	vertexDataSprite[5].position = { 640.0f, 360.0f, 0.0f, 1.0f }; // 右下
+	vertexDataSprite[5].texcoord = { 1.0f, 1.0f }; // テクスチャ座標
+
+	// Sprite用のTransformationMatrix用のリソースを作る。Matrix4x4 1つ分のサイズを用意する
+	ID3D12Resource* transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(Matrix4x4));
+	// データを書き込む
+	Matrix4x4* transformationMatrixDataSprite = nullptr;
+	// 書き込むためのアドレスを取得
+	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
+	// 単位行列を書き込んでおく
+	*transformationMatrixDataSprite = MakeIdentity4x4();
+	// CPUで動かす用のTransformを作る
+	Transform transformSprite{ {1.0f, 1.0f, 1.0f},  // scale
+		  {0.0f, 0.0f, 0.0f},  // rotate
+		  {0.0f, 0.0f, 0.0f} // translate
+	};
+
 
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
@@ -1133,6 +1193,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			*materialDataA = materialColorA;
 			*materialDataB = materialColorB;
 
+			// Sprite用のWVPMを作る
+			Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
+			Matrix4x4 viewMatrixSprite = MakeIdentity4x4();
+			Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f);
+			Matrix4x4 worldViewProjectionMatrixSprite = Multiply(worldMatrixSprite, Multiply(viewMatrixSprite, projectionMatrixSprite));
+			*transformationMatrixDataSprite = worldViewProjectionMatrixSprite;
+
 			// ImGuiの描画
 			ImGui::Render();
 
@@ -1203,6 +1270,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandles[selectedTextureIndex]);
 			// 描画
 			commandList->DrawInstanced(3, 1, 3, 0);
+
+			// Spriteの描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite); // VBVを設定
+			// TransformationBufferの設定
+			commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
+			// 描画
+			commandList->DrawInstanced(6, 1, 0, 0);
 
 			// ImGuiの描画
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
