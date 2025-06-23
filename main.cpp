@@ -1,5 +1,7 @@
 #include <Windows.h>
 #include <cstdint>
+#include <vector>
+#include <cmath>
 #include <string>
 #include <format>
 #include <d3d12.h>
@@ -496,6 +498,49 @@ static ID3D12Resource* CreateDepthStencilTextureResource(
 
 }
 
+// 球メッシュ生成
+void GenerateSphereMesh(std::vector<VertexData>& outVertices, std::vector<uint32_t>& outIndices, int latitudeCount, int longitudeCount) {
+	const float radius = 1.0f;
+	for (int lat = 0; lat <= latitudeCount; ++lat) {
+		float theta = lat * DirectX::XM_PI / latitudeCount;
+		float sinTheta = std::sin(theta);
+		float cosTheta = std::cos(theta);
+
+		for (int lon = 0; lon <= longitudeCount; ++lon) {
+			float phi = lon * 2.0f * DirectX::XM_PI / longitudeCount;
+			float sinPhi = std::sin(phi);
+			float cosPhi = std::cos(phi);
+
+			Vector3 pos = {
+				radius * sinTheta * cosPhi,
+				radius * cosTheta,
+				radius * sinTheta * sinPhi
+			};
+			Vector2 uv = {
+				float(lon) / longitudeCount,
+				float(lat) / latitudeCount
+			};
+			outVertices.push_back({ {pos.x, pos.y, pos.z, 1.0f}, uv });
+		}
+	}
+
+	for (int lat = 0; lat < latitudeCount; ++lat) {
+		for (int lon = 0; lon < longitudeCount; ++lon) {
+			int current = lat * (longitudeCount + 1) + lon;
+			int next = current + longitudeCount + 1;
+			// 反時計回りに修正
+			outIndices.push_back(current + 1);
+			outIndices.push_back(next);
+			outIndices.push_back(current);
+
+			outIndices.push_back(next + 1);
+			outIndices.push_back(next);
+			outIndices.push_back(current + 1);
+
+		}
+	}
+}
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
@@ -891,6 +936,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<ID3D12Resource*> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
 
+	std::vector<VertexData> sphereVertices;
+	std::vector<uint32_t> sphereIndices;
+	GenerateSphereMesh(sphereVertices, sphereIndices, 32, 32);  // 分割数32で球生成
+
+	// 頂点バッファ
+	ID3D12Resource* vertexResourceSphere = CreateBufferResource(device, sizeof(VertexData) * sphereVertices.size());
+	void* vertexDataSphere = nullptr;
+	vertexResourceSphere->Map(0, nullptr, &vertexDataSphere);
+	memcpy(vertexDataSphere, sphereVertices.data(), sizeof(VertexData) * sphereVertices.size());
+	vertexResourceSphere->Unmap(0, nullptr);
+
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSphere{};
+	vertexBufferViewSphere.BufferLocation = vertexResourceSphere->GetGPUVirtualAddress();
+	vertexBufferViewSphere.SizeInBytes = UINT(sizeof(VertexData) * sphereVertices.size());
+	vertexBufferViewSphere.StrideInBytes = sizeof(VertexData);
+
+	// インデックスバッファ
+	ID3D12Resource* indexResourceSphere = CreateBufferResource(device, sizeof(uint32_t) * sphereIndices.size());
+	void* indexDataSphere = nullptr;
+	indexResourceSphere->Map(0, nullptr, &indexDataSphere);
+	memcpy(indexDataSphere, sphereIndices.data(), sizeof(uint32_t) * sphereIndices.size());
+	indexResourceSphere->Unmap(0, nullptr);
+
+	D3D12_INDEX_BUFFER_VIEW indexBufferViewSphere{};
+	indexBufferViewSphere.BufferLocation = indexResourceSphere->GetGPUVirtualAddress();
+	indexBufferViewSphere.SizeInBytes = UINT(sizeof(uint32_t) * sphereIndices.size());
+	indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
+
+
 	// テクスチャファイルのパスを設定
 	std::vector<std::string> texturePaths = {
 		"resources/monsterBall.png",
@@ -1142,7 +1216,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// メッセージがあったら処理する
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
-		}else {
+		} else {
 			// ゲームの処理
 			ImGui_ImplDX12_NewFrame();
 			ImGui_ImplWin32_NewFrame();
@@ -1243,33 +1317,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// RootSignatureとPSOの設定
 			commandList->SetGraphicsRootSignature(rootSignature);
-			commandList->SetPipelineState(graphicsPipelineState );
+			commandList->SetPipelineState(graphicsPipelineState);
 
 			// 頂点バッファの設定
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			// 三角形A
-
-			// マテリアルCBufferの場所を設定
+			// 球の描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+			commandList->IASetIndexBuffer(&indexBufferViewSphere);
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			// WVP用のCBufferの場所を設定
 			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			// SRVのDescriptorTableの先頭を設定
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandles[selectedTextureIndex]);
-			// 描画
-			commandList->DrawInstanced(3, 1, 0, 0);
+			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
 
-			// 三角形B
-
-			// マテリアルCBufferの場所を設定
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceB->GetGPUVirtualAddress());
-			// WVP用のCBufferの場所を設定
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
-			// SRVのDescriptorTableの先頭を設定
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandles[selectedTextureIndex]);
-			// 描画
-			commandList->DrawInstanced(3, 1, 3, 0);
 
 			// Spriteの描画
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite); // VBVを設定
