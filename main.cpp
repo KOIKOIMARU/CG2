@@ -19,6 +19,8 @@
 #include <xaudio2.h>
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
+#include "MathTypes.h"
+#include "DebugCamera.h"
 #include "externals/imgui/imgui.h"
 #include "externals/imgui/imgui_impl_dx12.h"
 #include "externals/imgui/imgui_impl_win32.h"
@@ -35,31 +37,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg
 
 using namespace Microsoft::WRL;
 
-// ベクター2
-struct Vector2 {
-	float x, y;
-};
-
-// ベクター3
-struct Vector3 {
-	float x, y, z;
-};
-
-// ベクター4
-struct Vector4 {
-	float x, y, z, w;
-};
-
-// 4x4行列の定義
-struct Matrix4x4 {
-	float m[4][4];
-};
-
-struct Transform {
-	Vector3 scale;
-	Vector3 rotate;
-	Vector3 translate;
-};
 
 struct VertexData {
 	Vector4 position; // 頂点の位置
@@ -136,198 +113,6 @@ struct SoundData {
 	// バッファのサイズ
 	unsigned int bufferSize; // 音声データのサイズ
 };
-
-// 単位行列の作成
-Matrix4x4 MakeIdentity4x4() {
-	Matrix4x4 result;
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			if (i == j) {
-				result.m[i][j] = 1.0f;
-			} else {
-				result.m[i][j] = 0.0f;
-			}
-		}
-	}
-	return result;
-}
-
-// 4x4行列の積
-Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
-	Matrix4x4 result;
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			result.m[i][j] = 0;
-			for (int k = 0; k < 4; k++) {
-				result.m[i][j] += m1.m[i][k] * m2.m[k][j];
-			}
-		}
-	}
-	return result;
-}
-
-// 拡大縮小
-Matrix4x4 MakeScaleMatrix(const Vector3& scale) {
-	Matrix4x4 result{};
-	result.m[0][0] = scale.x;
-	result.m[1][1] = scale.y;
-	result.m[2][2] = scale.z;
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
-	Matrix4x4 result{};
-	result.m[0][0] = 1.0f;
-	result.m[1][1] = 1.0f;
-	result.m[2][2] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[3][0] = translate.x;
-	result.m[3][1] = translate.y;
-	result.m[3][2] = translate.z;
-	return result;
-}
-
-
-// X軸回転行列
-Matrix4x4 MakeRotateXMatrix(float angle) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[1][1] = std::cos(angle);
-	result.m[1][2] = std::sin(angle);
-	result.m[2][1] = -std::sin(angle);
-	result.m[2][2] = std::cos(angle);
-	return result;
-}
-// Y軸回転行列
-Matrix4x4 MakeRotateYMatrix(float angle) {
-	Matrix4x4 result = {};
-	result.m[1][1] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[0][0] = std::cos(angle);
-	result.m[0][2] = -std::sin(angle);
-	result.m[2][0] = std::sin(angle);
-	result.m[2][2] = std::cos(angle);
-	return result;
-}
-// Z軸回転行列
-Matrix4x4 MakeRotateZMatrix(float angle) {
-	Matrix4x4 result = {};
-	result.m[2][2] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[0][0] = std::cos(angle);
-	result.m[0][1] = std::sin(angle);
-	result.m[1][0] = -std::sin(angle);
-	result.m[1][1] = std::cos(angle);
-	return result;
-}
-
-// アフィン変換行列
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
-	Matrix4x4 result = {};
-	// X,Y,Z軸の回転をまとめる
-	Matrix4x4 rotateXYZ =
-		Multiply(MakeRotateXMatrix(rotate.x), Multiply(MakeRotateYMatrix(rotate.y), MakeRotateZMatrix(rotate.z)));
-
-	result.m[0][0] = scale.x * rotateXYZ.m[0][0];
-	result.m[0][1] = scale.x * rotateXYZ.m[0][1];
-	result.m[0][2] = scale.x * rotateXYZ.m[0][2];
-	result.m[1][0] = scale.y * rotateXYZ.m[1][0];
-	result.m[1][1] = scale.y * rotateXYZ.m[1][1];
-	result.m[1][2] = scale.y * rotateXYZ.m[1][2];
-	result.m[2][0] = scale.z * rotateXYZ.m[2][0];
-	result.m[2][1] = scale.z * rotateXYZ.m[2][1];
-	result.m[2][2] = scale.z * rotateXYZ.m[2][2];
-	result.m[3][0] = translate.x;
-	result.m[3][1] = translate.y;
-	result.m[3][2] = translate.z;
-	result.m[3][3] = 1.0f;
-
-	return result;
-}
-
-// 3x3の行列式を計算
-static float Determinant3x3(float matrix[3][3]) {
-	return matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
-		matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
-		matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
-}
-
-// 4x4行列の余因子を計算
-static float Minor(const Matrix4x4& m, int row, int col) {
-	float sub[3][3];
-	int sub_i = 0;
-	for (int i = 0; i < 4; ++i) {
-		if (i == row) continue;
-		int sub_j = 0;
-		for (int j = 0; j < 4; ++j) {
-			if (j == col) continue;
-			sub[sub_i][sub_j] = m.m[i][j];
-			sub_j++;
-		}
-		sub_i++;
-	}
-
-	// 3x3行列の行列式を計算
-	return Determinant3x3(sub);
-}
-
-// 4x4行列の逆行列を計算
-static Matrix4x4 Inverse(const Matrix4x4& m) {
-	Matrix4x4 result = {};
-
-	// 4x4行列の行列式を計算
-	float det = 0.0f;
-	for (int col = 0; col < 4; ++col) {
-		int sign = (col % 2 == 0) ? 1 : -1;
-		det += sign * m.m[0][col] * Minor(m, 0, col);
-	}
-
-	// 行列式が0の場合は逆行列が存在しない
-	if (det == 0.0f) {
-		return result;
-	}
-
-	float invDet = 1.0f / det;
-
-	// 各要素の計算
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			int sign = ((i + j) % 2 == 0) ? 1 : -1;
-			result.m[j][i] = sign * Minor(m, i, j) * invDet;
-		}
-	}
-
-	return result;
-}
-
-// 透視投影行列
-Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 1.0f / (aspectRatio * std::tan(fovY / 2.0f));
-	result.m[1][1] = 1.0f / std::tan(fovY / 2.0f);
-	result.m[2][2] = farClip / (farClip - nearClip);
-	result.m[2][3] = 1.0f;
-	result.m[3][2] = -(farClip * nearClip) / (farClip - nearClip);
-	return result;
-}
-
-// 平行投影行列（左手座標系）
-Matrix4x4 MakeOrthographicMatrix(float left, float top, float right, float bottom, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-
-	result.m[0][0] = 2.0f / (right - left);
-	result.m[1][1] = 2.0f / (top - bottom);
-	result.m[2][2] = 1.0f / (farClip - nearClip);
-	result.m[3][0] = (left + right) / (left - right);
-	result.m[3][1] = (top + bottom) / (bottom - top);
-	result.m[3][2] = -nearClip / (farClip - nearClip);
-	result.m[3][3] = 1.0f;
-
-	return result;
-}
-
 
 static void Log(const std::string& message) {
 	OutputDebugStringA(message.c_str());
@@ -660,11 +445,6 @@ D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(ComPtr<ID3D12DescriptorHeap>&
 	return handleGPU;
 }
 
-Vector3 Normalize(const Vector3& v) {
-	float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-	if (length == 0.0f) return { 0.0f, 0.0f, 0.0f };
-	return { v.x / length, v.y / length, v.z / length };
-}
 
 void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	v.position = pos;
@@ -765,7 +545,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 
 // 音声データの読み込み
 SoundData SoundLoadWave(const char* filename) {
-	HRESULT result;
+	//HRESULT result;
 	// ファイル入力ストリームのインスタンス
 	std::ifstream file;
 	// .wavファイルをバイナリモードで開く
@@ -1579,6 +1359,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	static BYTE key[256] = {};
 	static BYTE keyPre[256] = {};
 
+	// デバッグカメラの初期化
+	DebugCamera debugCamera;
+	bool useDebugCamera = false;
+
+	debugCamera.Initialize();
+
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -1627,6 +1413,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
 			ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
 			ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
+			// ImGui内のWindow内に追加（確認用）
+			ImGui::Checkbox("Use Debug Camera", &useDebugCamera);
 
 			ImGui::End();
 
@@ -1634,26 +1422,41 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
 			keyboard->GetDeviceState(sizeof(key), key);
 
+			// ゲームループ内のキーボード取得後に追加
+			if (key[DIK_TAB] && !keyPre[DIK_TAB]) {
+				useDebugCamera = !useDebugCamera;
+			}
+
+
 			// トリガー処理：スペースキーを押した瞬間だけ再生
 			if (key[DIK_SPACE] && !keyPre[DIK_SPACE]) {
 				SoundPlayWave(xAudio2.Get(), soundData1);
 			}
 
-			// WVP行列の計算
-			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
-			Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
-			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+			// カメラ行列の生成部分を以下に置き換え
+			Matrix4x4 viewMatrix;
+			Matrix4x4 projectionMatrix;
+
+			if (useDebugCamera) {
+				debugCamera.Update(key); // ← key 入力からカメラ制御
+				viewMatrix = debugCamera.GetViewMatrix();
+				projectionMatrix = debugCamera.GetProjectionMatrix();
+			} else {
+				Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
+				Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
+				viewMatrix = Inverse(cameraMatrix);
+				projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+			}
 
 			// 三角形A
 			Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
-			Matrix4x4 worldViewProjectionMatrixA = Multiply(worldMatrixA, Multiply(viewMatrix, projectionMatrix));
+			Matrix4x4 worldViewProjectionMatrixA = multiplayMatrix(worldMatrixA, multiplayMatrix(viewMatrix, projectionMatrix));
 			wvpDataA->WVP = worldViewProjectionMatrixA;
 			wvpDataA->World = worldMatrixA;
 
 			// 三角形B
 			Matrix4x4 worldMatrixB = MakeAffineMatrix(transformB.scale, transformB.rotate, transformB.translate);
-			Matrix4x4 worldViewProjectionMatrixB = Multiply(worldMatrixB, Multiply(viewMatrix, projectionMatrix));
+			Matrix4x4 worldViewProjectionMatrixB = multiplayMatrix(worldMatrixB, multiplayMatrix(viewMatrix, projectionMatrix));
 			wvpDataB->WVP = worldViewProjectionMatrixB;
 			wvpDataB->World = worldMatrixB;
 
@@ -1661,11 +1464,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
 			Matrix4x4 viewMatrixSprite = MakeIdentity4x4();
 			Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f);
-			Matrix4x4 worldViewProjectionMatrixSprite = Multiply(worldMatrixSprite, Multiply(viewMatrixSprite, projectionMatrixSprite));
+			Matrix4x4 worldViewProjectionMatrixSprite = multiplayMatrix(worldMatrixSprite, multiplayMatrix(viewMatrixSprite, projectionMatrixSprite));
 
 			Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransformSprite.scale);
-			uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
-			uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
+			uvTransformMatrix = multiplayMatrix(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
+			uvTransformMatrix = multiplayMatrix(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
 
 			materialDataSprite->uvTransform = uvTransformMatrix;
 
