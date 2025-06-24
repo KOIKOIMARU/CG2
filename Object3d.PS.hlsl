@@ -4,7 +4,8 @@ cbuffer MaterialCB : register(b0)
 {
     float4 gMaterialColor;
     int gEnableLighting;
-    float3 padding; // 16byte alignment
+    float3 padding; // アライメント用
+    float4x4 uvTransform;
 };
 
 Texture2D<float4> gTexture : register(t0);
@@ -24,19 +25,32 @@ PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
 
-    if (gEnableLighting != 0)
+    // Lightingが無効（スプライト）の場合だけUV変換する
+    float2 uv;
+    if (gEnableLighting == 0)
     {
-        float NdotL = dot(normalize(input.normal), -gDirectionalLight.direction);
-        float halfLambert = pow(NdotL * 0.5f + 0.5f, 2.0f);
-        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * halfLambert;
-        output.color = float4(litColor, 1.0f) * gTexture.Sample(gSampler, input.texcoord);
-
+        float4 transformedUV = mul(float4(input.texcoord, 0.0f, 1.0f), uvTransform);
+        uv = transformedUV.xy;
     }
     else
     {
-        output.color = gMaterialColor * gTexture.Sample(gSampler, input.texcoord);
+        uv = input.texcoord;
     }
 
+    float4 tex = gTexture.Sample(gSampler, uv);
+
+    if (gEnableLighting != 0)
+    {
+        float3 normal = normalize(input.normal);
+        float3 lightDir = normalize(-gDirectionalLight.direction.xyz);
+        float NdotL = saturate(dot(normal, lightDir));
+        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * NdotL;
+        output.color = float4(litColor, 1.0f) * tex;
+    }
+    else
+    {
+        output.color = gMaterialColor * tex;
+    }
 
     return output;
 }

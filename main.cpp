@@ -56,10 +56,12 @@ struct VertexData {
 };
 
 struct Material {
-	Vector4 color;
-	int enableLighting; // 0: 無効, 1: 有効
-	int padding[3];
+    Vector4 color;
+    int32_t enableLighting;
+    float padding[3]; // ← 16バイトアライメントのため
+    Matrix4x4 uvTransform;
 };
+
 
 struct TransformationMatrix {
     Matrix4x4 WVP;
@@ -99,6 +101,28 @@ Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
 			}
 		}
 	}
+	return result;
+}
+
+// 拡大縮小
+Matrix4x4 MakeScaleMatrix(const Vector3& scale) {
+	Matrix4x4 result{};
+	result.m[0][0] = scale.x;
+	result.m[1][1] = scale.y;
+	result.m[2][2] = scale.z;
+	result.m[3][3] = 1.0f;
+	return result;
+}
+
+Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
+	Matrix4x4 result{};
+	result.m[0][0] = 1.0f;
+	result.m[1][1] = 1.0f;
+	result.m[2][2] = 1.0f;
+	result.m[3][3] = 1.0f;
+	result.m[3][0] = translate.x;
+	result.m[3][1] = translate.y;
+	result.m[3][2] = translate.z;
 	return result;
 }
 
@@ -1122,7 +1146,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12Resource* materialResourceSprite = CreateBufferResource(device, sizeof(Material));
 	Material* materialDataSprite = nullptr;
 	materialResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&materialDataSprite));
-	*materialDataSprite = { {1.0f, 1.0f, 1.0f, 1.0}, false}; // Lighting無効
+
+	// UVTransformを単位行列で初期化する
+	*materialDataSprite = {
+		{1.0f, 1.0f, 1.0f, 1.0f}, // color
+		false,                   // enableLighting
+		{0.0f, 0.0f, 0.0f},      // padding
+		MakeIdentity4x4()        // uvTransform 
+	};
+
 
 	// Index用
 	ID3D12Resource* indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
@@ -1265,13 +1297,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	transformationMatrixDataSprite->WVP = MakeIdentity4x4();
 	transformationMatrixDataSprite->World = MakeIdentity4x4();
 	// CPUで動かす用のTransformを作る
-	Transform transformSprite{ {1.0f, 1.0f, 1.0f},  // scale
+	Transform transformSprite{ 
+		{1.0f, 1.0f, 1.0f},  // scale
 		  {0.0f, 0.0f, 0.0f},  // rotate
 		  {0.0f, 0.0f, 0.0f} // translate
 	};
 
 	bool useMonsterBall = true;
 	
+	Transform uvTransformSprite{
+	{1.0f, 1.0f, 1.0f},  // scale
+	{0.0f, 0.0f, 0.0f},  // rotate
+	{0.0f, 0.0f, 0.0f},  // translate
+	};
+
 
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
@@ -1314,10 +1353,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				Vector3 normDir = Normalize(lightDirEdit);
 				directionalLightData->direction = { normDir.x, normDir.y, normDir.z, 0.0f };
 			}
-
 			// 光の強さ
 			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
 			ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
+			// UVTranslate
+			ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
+			ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
+			ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
 
 			ImGui::End();
 
@@ -1344,6 +1386,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 viewMatrixSprite = MakeIdentity4x4();
 			Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f);
 			Matrix4x4 worldViewProjectionMatrixSprite = Multiply(worldMatrixSprite, Multiply(viewMatrixSprite, projectionMatrixSprite));
+
+			Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransformSprite.scale);
+			uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
+			uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
+
+			materialDataSprite->uvTransform = uvTransformMatrix;
 
 			// TransformationMatrixに正しく代入
 			transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
