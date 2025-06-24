@@ -26,12 +26,11 @@ PixelShaderOutput main(VertexShaderOutput input)
 
     if (gEnableLighting != 0)
     {
-        float3 normal = normalize(input.normal);
-        float3 lightDir = normalize(-gDirectionalLight.direction.xyz);
-        float NdotL = saturate(dot(normal, lightDir));
-        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * NdotL;
-        float4 tex = gTexture.Sample(gSampler, input.texcoord);
-        output.color = float4(litColor, 1.0f) * tex;
+        float NdotL = dot(normalize(input.normal), -gDirectionalLight.direction);
+        float halfLambert = pow(NdotL * 0.5f + 0.5f, 2.0f);
+        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * halfLambert;
+        output.color = float4(litColor, 1.0f) * gTexture.Sample(gSampler, input.texcoord);
+
     }
     else
     {
