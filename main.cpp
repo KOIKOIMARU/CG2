@@ -16,6 +16,7 @@
 #include <wrl.h>
 #include "ResourceObject.h"
 #include <wrl/client.h>
+#include <xaudio2.h>
 #include "externals/imgui/imgui.h"
 #include "externals/imgui/imgui_impl_dx12.h"
 #include "externals/imgui/imgui_impl_win32.h"
@@ -26,6 +27,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
+#pragma comment(lib, "xaudio2.lib")
 
 using namespace Microsoft::WRL;
 
@@ -101,6 +103,34 @@ struct D3DResourceLeakChecker {
 			debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
 		}
 	}
+};
+
+// チャンクヘッダ
+struct ChunkHeader {
+	char id[4];     // チャンク毎のID
+	int32_t size;   // チャンクサイズ
+};
+
+// RIFFヘッダチャンク
+struct RiffHeader {
+	ChunkHeader chunk; // "RIFF"
+	char type[4];      // "WAVE"
+};
+
+// FMTチャンク
+struct FormatChunk {
+	ChunkHeader chunk; // "fmt "
+	WAVEFORMATEX fmt;  // 波形フォーマット
+};
+
+// 音声データ
+struct SoundData {
+	// 波形フォーマット
+	WAVEFORMATEX wfex; // 波形フォーマット
+	// バッファの先頭アドレス
+	BYTE* pBuffer; // 音声データのポインタ
+	// バッファのサイズ
+	unsigned int bufferSize; // 音声データのサイズ
 };
 
 // 単位行列の作成
@@ -729,6 +759,105 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 	return modelData;
 }
 
+// 音声データの読み込み
+SoundData SoundLoadWave(const char* filename) {
+	HRESULT result;
+	// ファイル入力ストリームのインスタンス
+	std::ifstream file;
+	// .wavファイルをバイナリモードで開く
+	file.open(filename, std::ios_base::binary);
+	// ファイルオープン失敗を検出する
+	assert(file.is_open());
+
+	// RIFFヘッダーの読み込み
+	RiffHeader riff;
+	file.read((char*)&riff, sizeof(riff));
+
+	// ファイルがRIFFかチェック
+	if (strncmp(riff.chunk.id, "RIFF", 4) != 0) {
+		assert(0);
+	}
+	// タイプがWAVEかチェック
+	if (strncmp(riff.type, "WAVE", 4) != 0) {
+		assert(0);
+	}
+
+	// Formatチャンクの読み込み
+	FormatChunk format = {};
+	// チャンクヘッダーの確認
+	file.read((char*)&format, sizeof(ChunkHeader));
+	if (strncmp(format.chunk.id, "fmt ", 4) != 0) {
+		assert(0);
+	}
+
+	// チャンク本体の読み込み
+	assert(format.chunk.size <= sizeof(format.fmt));
+	file.read((char*)&format.fmt, format.chunk.size);
+
+	// Dataチャンクの読み込み
+	ChunkHeader data;
+	file.read((char*)&data, sizeof(data));
+
+	// JUNKチャンクを検出した場合
+	if (strncmp(data.id, "JUNK", 4) == 0) {
+		// 読み取り位置をJUNKチャンクの終わりまで進める
+		file.seekg(data.size, std::ios_base::cur);
+		// 再読み込み
+		file.read((char*)&data, sizeof(data));
+	}
+
+	if (strncmp(data.id, "data", 4) != 0) {
+		assert(0);
+	}
+
+	// Dataチャンクのデータ部（波形データ）の読み込み
+	char* pBuffer = new char[data.size];
+	file.read(pBuffer, data.size);
+
+	// Waveファイルを閉じる
+	file.close();
+
+	// returnする為の音声データ
+	SoundData soundData = {};
+
+	soundData.wfex = format.fmt;
+	soundData.pBuffer = reinterpret_cast<BYTE*>(pBuffer);
+	soundData.bufferSize = data.size;
+
+	return soundData;
+}
+
+// 音声データ解放
+void SoundUnload(SoundData* soundData)
+{
+	// バッファのメモリを解放
+	delete[] soundData->pBuffer;
+
+	soundData->pBuffer = 0;
+	soundData->bufferSize = 0;
+	soundData->wfex = {};
+}
+
+// 音声再生
+void SoundPlayWave(IXAudio2* xAudio2, const SoundData& soundData) {
+	HRESULT result;
+
+	// 波形フォーマットを元に SourceVoice の生成
+	IXAudio2SourceVoice* pSourceVoice = nullptr;
+	result = xAudio2->CreateSourceVoice(&pSourceVoice, &soundData.wfex);
+	assert(SUCCEEDED(result));
+
+	// 再生する波形データの設定
+	XAUDIO2_BUFFER buf{};
+	buf.pAudioData = soundData.pBuffer;
+	buf.AudioBytes = soundData.bufferSize;
+	buf.Flags = XAUDIO2_END_OF_STREAM;
+
+	// 波形データの再生
+	result = pSourceVoice->SubmitSourceBuffer(&buf);
+	result = pSourceVoice->Start();
+}
+
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -1128,6 +1257,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 比較関数はLessEqual。つまり、近ければ描画される
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
+	ComPtr<IXAudio2> xAudio2 = nullptr;
+	HRESULT result = XAudio2Create(&xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+	assert(SUCCEEDED(result));
+
+	IXAudio2MasteringVoice* masterVoice = nullptr;
+	result = xAudio2->CreateMasteringVoice(&masterVoice);
+	assert(SUCCEEDED(result));
+
 	// DepthStencilの設定
 	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -1408,6 +1545,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	{0.0f, 0.0f, 0.0f},  // translate
 	};
 
+	// 音声データ読み込み
+	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
 
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
@@ -1459,6 +1598,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
 
 			ImGui::End();
+
+			// スペースキーで音声再生
+			if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
+				// XAudio2で音声を再生
+				SoundPlayWave(xAudio2.Get(), soundData1);
+			}
 
 			// WVP行列の計算
 			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
@@ -1608,11 +1753,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 	}
 
+	
 
 	// 出力ウィンドウへの文字出力
 	OutputDebugStringA("Hello, DirectX!\n");
 
 	// 解放処理
+	xAudio2.Reset(); // XAudio2の解放
+	SoundUnload(&soundData1); // 音声データの解放
 	CloseHandle(fenceEvent);
 
 	CloseWindow(hwnd);
