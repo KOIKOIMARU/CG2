@@ -86,25 +86,6 @@ struct ChunkHeader {
 	int32_t size;   // チャンクサイズ
 };
 
-// 破片
-struct Shard {
-	Vector3 translate;
-	Vector3 rotate;
-	Vector3 scale;
-	Vector3 velocity;
-	Vector3 angularVelocity;
-	bool isActive;
-	Matrix4x4 worldMatrix;
-};
-std::vector<Shard> shards;
-
-struct ModelData {
-	std::vector<VertexData> vertices;
-	std::vector<uint32_t> indices;
-	Material material;
-};
-
-
 static void Log(const std::string& message) {
 	OutputDebugStringA(message.c_str());
 }
@@ -436,65 +417,6 @@ D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(ComPtr<ID3D12DescriptorHeap>&
 	return handleGPU;
 }
 
-ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
-	ModelData modelData;
-	std::vector<Vector4> positions;
-	std::vector<Vector2> texcoords;
-	std::vector<Vector3> normals;
-
-	std::ifstream file(directoryPath + "/" + filename);
-	assert(file.is_open());
-
-	std::string line;
-	while (std::getline(file, line)) {
-		std::istringstream iss(line);
-		std::string prefix;
-		iss >> prefix;
-
-		if (prefix == "v") {
-			Vector4 pos;
-			iss >> pos.x >> pos.y >> pos.z;
-			pos.w = 1.0f;
-			positions.push_back(pos);
-		} else if (prefix == "vt") {
-			Vector2 uv;
-			iss >> uv.x >> uv.y;
-			texcoords.push_back({ uv.x, 1.0f - uv.y }); // V反転
-		} else if (prefix == "vn") {
-			Vector3 normal;
-			iss >> normal.x >> normal.y >> normal.z;
-			normals.push_back(normal);
-		} else if (prefix == "f") {
-			for (int i = 0; i < 3; ++i) {
-				std::string v;
-				iss >> v;
-
-				// v/t/n を手動で分割
-				size_t firstSlash = v.find('/');
-				size_t secondSlash = v.find('/', firstSlash + 1);
-
-				uint32_t vi = std::stoi(v.substr(0, firstSlash));
-				uint32_t ti = std::stoi(v.substr(firstSlash + 1, secondSlash - firstSlash - 1));
-				uint32_t ni = std::stoi(v.substr(secondSlash + 1));
-
-				VertexData vert;
-				vert.position = positions[vi - 1];
-				vert.texcoord = texcoords[ti - 1];
-				vert.normal = normals[ni - 1];
-
-				// 左手座標系に変換
-				vert.position.x *= -1.0f;
-				vert.normal.x *= -1.0f;
-
-				modelData.vertices.push_back(vert);
-				modelData.indices.push_back(static_cast<uint32_t>(modelData.indices.size()));
-			}
-		}
-	}
-
-	return modelData;
-}
-
 
 void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	v.position = pos;
@@ -502,25 +424,6 @@ void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	Vector3 p = { pos.x, pos.y, pos.z };
 	v.normal = Normalize(p);
 }
-
-void GeneratePlaneMesh(std::vector<VertexData>& outVertices, std::vector<uint32_t>& outIndices) {
-	outVertices = {
-		{{-1.0f,  1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {0, 0, -1}},
-		{{ 1.0f,  1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}, {0, 0, -1}},
-		{{-1.0f, -1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {0, 0, -1}},
-		{{ 1.0f, -1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}, {0, 0, -1}},
-	};
-
-	outIndices = {
-		0, 1, 2,
-		2, 1, 3
-	};
-}
-
-float Random(float min, float max) {
-	return min + static_cast<float>(rand()) / RAND_MAX * (max - min);
-}
-
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -867,14 +770,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// BlendStateの設定
 	D3D12_BLEND_DESC blendDesc{};
-	blendDesc.RenderTarget[0].BlendEnable = TRUE;  // ← 追加
-	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA; // ← 追加
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA; // ← 追加
-	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD; // ← 追加
-	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE; // ← 追加
-	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO; // ← 追加
-	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD; // ← 追加
-	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	// すべての色要素を書き込む
+	blendDesc.RenderTarget[0].RenderTargetWriteMask =
+		D3D12_COLOR_WRITE_ENABLE_ALL;
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -922,7 +820,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// Depthの機能を有効化する
 	depthStencilDesc.DepthEnable = true;
 	// 書き込みします
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 	// 比較関数はLessEqual。つまり、近ければ描画される
 	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 
@@ -940,78 +838,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
 
-	// ガラス板作成
-	std::vector<VertexData> glassVertices;
-	std::vector<uint32_t> glassIndices;
-	GeneratePlaneMesh(glassVertices, glassIndices);
-
-	auto vertexBufferSize = sizeof(VertexData) * glassVertices.size();
-	auto indexBufferSize = sizeof(uint32_t) * glassIndices.size();
-
-	// 頂点バッファ
-	ComPtr<ID3D12Resource> glassVertexResource = CreateBufferResource(device, vertexBufferSize);
-	VertexData* vertexMap = nullptr;
-	glassVertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexMap));
-	std::memcpy(vertexMap, glassVertices.data(), vertexBufferSize);
-	glassVertexResource->Unmap(0, nullptr);
-
-	// インデックスバッファ
-	ComPtr<ID3D12Resource> glassIndexResource = CreateBufferResource(device, indexBufferSize);
-	uint32_t* indexMap = nullptr;
-	glassIndexResource->Map(0, nullptr, reinterpret_cast<void**>(&indexMap));
-	std::memcpy(indexMap, glassIndices.data(), indexBufferSize);
-	glassIndexResource->Unmap(0, nullptr);
-
-	// ビュー設定
-	D3D12_VERTEX_BUFFER_VIEW glassVBV{};
-	glassVBV.BufferLocation = glassVertexResource->GetGPUVirtualAddress();
-	glassVBV.StrideInBytes = sizeof(VertexData);
-	glassVBV.SizeInBytes = static_cast<UINT>(vertexBufferSize);
-
-	D3D12_INDEX_BUFFER_VIEW glassIBV{};
-	glassIBV.BufferLocation = glassIndexResource->GetGPUVirtualAddress();
-	glassIBV.Format = DXGI_FORMAT_R32_UINT;
-	glassIBV.SizeInBytes = static_cast<UINT>(indexBufferSize);
-
-	// === OBJから破片を読み込み ===
-	ModelData shardModel = LoadObjFile("resources", "glass_broken.obj");
-
-	// 頂点バッファ（破片）
-	ComPtr<ID3D12Resource> shardVertexResource = CreateBufferResource(device, sizeof(VertexData) * shardModel.vertices.size());
-	VertexData* shardVertexMap = nullptr;
-	shardVertexResource->Map(0, nullptr, reinterpret_cast<void**>(&shardVertexMap));
-	std::memcpy(shardVertexMap, shardModel.vertices.data(), sizeof(VertexData)* shardModel.vertices.size());
-	shardVertexResource->Unmap(0, nullptr);
-
-	// インデックスバッファ（破片）
-	ComPtr<ID3D12Resource> shardIndexResource = CreateBufferResource(device, sizeof(uint32_t) * shardModel.indices.size());
-	uint32_t* shardIndexMap = nullptr;
-	shardIndexResource->Map(0, nullptr, reinterpret_cast<void**>(&shardIndexMap));
-	std::memcpy(shardIndexMap, shardModel.indices.data(), sizeof(uint32_t)* shardModel.indices.size());
-	shardIndexResource->Unmap(0, nullptr);
-
-	// バッファビュー
-	D3D12_VERTEX_BUFFER_VIEW shardVBV{};
-	shardVBV.BufferLocation = shardVertexResource->GetGPUVirtualAddress();
-	shardVBV.StrideInBytes = sizeof(VertexData);
-	shardVBV.SizeInBytes = static_cast<UINT>(sizeof(VertexData) * shardModel.vertices.size());
-
-	D3D12_INDEX_BUFFER_VIEW shardIBV{};
-	shardIBV.BufferLocation = shardIndexResource->GetGPUVirtualAddress();
-	shardIBV.SizeInBytes = static_cast<UINT>(sizeof(uint32_t) * shardModel.indices.size());
-	shardIBV.Format = DXGI_FORMAT_R32_UINT;
-
-
-
 	// 頂点リソース用のヒープの設定
 	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
 	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // アップロード用
-	
+
 	// A マテリアル（32バイト必要）
 	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, sizeof(Material));
 	Material* materialDataA = nullptr;
 	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
-	*materialDataA = { {0.6f, 0.8f, 1.0f, 0.05f},1 }; // Lighting有効
+	*materialDataA = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
 
 	// A WVP（128バイト必要）
 	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, sizeof(TransformationMatrix));
@@ -1019,18 +854,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	wvpResourceA->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataA));
 	wvpDataA->WVP = MakeIdentity4x4();
 	wvpDataA->World = MakeIdentity4x4();
-
-	// Shard用のマテリアルバッファ（1つだけ使い回す場合）
-	ComPtr<ID3D12Resource> materialResourceShard = CreateBufferResource(device, sizeof(Material));
-	Material* materialDataShard = nullptr;
-	materialResourceShard->Map(0, nullptr, reinterpret_cast<void**>(&materialDataShard));
-
-	// 値を設定（例：薄い水色の透明ガラス）
-	// Material: 透明っぽく（青+アルファ少し）
-	*materialDataShard = {
-		{0.6f, 0.8f, 1.0f, 0.05f}, // 半透明ブルー系
-		1  // ライティング有効
-	};
 
 
 	// 平行光源用バッファ作成とマップ
@@ -1097,7 +920,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 
-	Matrix4x4 glassWorldMatrix = MakeAffineMatrix({ 1, 1, 1 }, { 0, 0, 0 }, { 0, 0, 0 });
+
 
 	// キーの状態
 	static BYTE key[256] = {};
@@ -1108,9 +931,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	bool useDebugCamera = false;
 
 	debugCamera.Initialize();
-
-	static bool isGlassBroken = false;
-	static bool shardsInitialized = false;
 
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
@@ -1142,7 +962,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat3("TranslateA", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
 			ImGui::DragFloat3("RotateA", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
 			ImGui::DragFloat3("ScaleA", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
-
 			// 光の方向ベクトルの編集
 			static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
 			if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
@@ -1156,84 +975,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// ImGui内のWindow内に追加（確認用）
 			ImGui::Checkbox("Use Debug Camera", &useDebugCamera);
 
-
-			if (ImGui::Button("Break Glass") && !isGlassBroken) {
-				isGlassBroken = true;
-				shardsInitialized = false;
-			}
-
-			if (isGlassBroken && !shardsInitialized) {
-				// 破片を一度だけ生成
-				shards.clear();
-				const int numShards = 16;
-				for (int i = 0; i < numShards; ++i) {
-					Shard shard;
-					Vector3 offset = {
-						Random(-0.3f, 0.3f),
-						Random(-0.3f, 0.3f),
-						Random(-0.3f, 0.3f)
-					};
-
-					shard.scale = { 1, 1, 1 };
-					shard.rotate = { 0, 0, 0 };
-					shard.translate = offset;
-
-					shard.velocity = {
-						Random(-0.1f, 0.1f),
-						Random(0.1f, 0.3f),
-						Random(-0.1f, 0.1f)
-					};
-
-					shard.angularVelocity = {
-						Random(-0.05f, 0.05f),
-						Random(-0.05f, 0.05f),
-						Random(-0.05f, 0.05f)
-					};
-
-					shard.worldMatrix = MakeAffineMatrix(shard.scale, shard.rotate, shard.translate);
-					shard.isActive = true;
-					shards.push_back(shard);
-				}
-
-				shardsInitialized = true;
-			}
-
-
-
-
 			ImGui::End();
 
 			// カメラ行列の生成部分を以下に置き換え
-			Vector3 eye = { 0.0f, 0.0f, -5.0f };
-			Vector3 target = { 0.0f, 0.0f, 0.0f };
-			Vector3 up = { 0.0f, 1.0f, 0.0f };
-
-			Matrix4x4 viewMatrix = MakeViewMatrix(eye, target, up);
-			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f * 3.14159f, 1280.0f / 720.0f, 0.1f, 100.0f);
-
+			Matrix4x4 viewMatrix;
+			Matrix4x4 projectionMatrix;
 
 			// 三角形A
 			Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
 			Matrix4x4 worldViewProjectionMatrixA = multiplayMatrix(worldMatrixA, multiplayMatrix(viewMatrix, projectionMatrix));
 			wvpDataA->WVP = worldViewProjectionMatrixA;
 			wvpDataA->World = worldMatrixA;
-
-			// 破片の位置更新（重力っぽい動き）
-			for (Shard& shard : shards) {
-				if (!shard.isActive) continue;
-
-				// 重力適用
-				shard.velocity.y -= 0.01f;
-
-				// 移動・回転の更新
-				shard.translate = shard.translate + shard.velocity;
-				shard.rotate = shard.rotate + shard.angularVelocity;
-
-				// ワールド行列更新
-				shard.worldMatrix = MakeAffineMatrix(shard.scale, shard.rotate, shard.translate);
-			}
-
-
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -1267,7 +1019,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->RSSetScissorRects(1, &scissorRect);
 
 			// デスクリプタヒープの設定
-			ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get()};
+			ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
 			commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
 			// 深度バッファのクリア
@@ -1275,59 +1027,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], false, &dsvHandle);
 			commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
+
 			// RootSignatureとPSOの設定
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
 			commandList->SetPipelineState(graphicsPipelineState.Get());
 
-			// 描画設定
+			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			commandList->IASetVertexBuffers(0, 1, &glassVBV);
-			commandList->IASetIndexBuffer(&glassIBV);
 
-			// CBV/SRV設定
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			//ommandList->IASetIndexBuffer(&indexBufferView);
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress()); // b0 → PS
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());      // b1 → VS
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress()); // b3 → PS
+
+			//commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
 
-			// 通常のガラス板（割れてない時）
-			if (!isGlassBroken) {
-				Matrix4x4 glassWorldMatrix = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
-
-
-				// 板として描画（ガラス破片OBJを板として使う）
-				wvpDataA->WVP = multiplayMatrix(glassWorldMatrix, multiplayMatrix(viewMatrix, projectionMatrix));
-				wvpDataA->World = glassWorldMatrix;
-
-				commandList->IASetVertexBuffers(0, 1, &shardVBV);
-				commandList->IASetIndexBuffer(&shardIBV);
-				commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-
-				commandList->DrawIndexedInstanced(static_cast<UINT>(shardModel.indices.size()), 1, 0, 0, 0);
-			}
-
-			if (isGlassBroken) {
-				for (const Shard& shard : shards) {
-					if (!shard.isActive) continue;
-
-					Matrix4x4 wvp = multiplayMatrix(shard.worldMatrix, multiplayMatrix(viewMatrix, projectionMatrix));
-					wvpDataA->WVP = wvp;
-					wvpDataA->World = shard.worldMatrix;
-
-					commandList->IASetVertexBuffers(0, 1, &shardVBV);
-					commandList->IASetIndexBuffer(&shardIBV);
-					commandList->SetGraphicsRootConstantBufferView(0, materialResourceShard->GetGPUVirtualAddress());
-					commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-					commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-					commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-
-					commandList->DrawIndexedInstanced(static_cast<UINT>(shardModel.indices.size()), 1, 0, 0, 0);
-				}
-			}
-
+			// 描画
+			//commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
 			// ImGuiの描画
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
@@ -1343,7 +1062,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 			// GPUにコマンドリストを実行させる
-			ID3D12CommandList* commandLists[] = { commandList.Get()};
+			ID3D12CommandList* commandLists[] = { commandList.Get() };
 			commandQueue->ExecuteCommandLists(1, commandLists);
 			// GPUとOSに画面の交換をさせる
 			swapChain->Present(1, 0);
@@ -1368,7 +1087,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 	}
 
-	
+
 
 	// 出力ウィンドウへの文字出力
 	OutputDebugStringA("Hello, DirectX!\n");
