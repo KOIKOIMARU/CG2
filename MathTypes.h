@@ -15,6 +15,22 @@ struct Vector2 {
 struct Vector3 {
     float x, y, z;
 
+
+	// 減算演算子の定義
+	Vector3 operator-(const Vector3& other) const {
+		return { x - other.x, y - other.y, z - other.z };
+	}
+
+	// 他にも加算・スカラー積などもあると便利
+	Vector3 operator+(const Vector3& other) const {
+		return { x + other.x, y + other.y, z + other.z };
+	}
+
+	Vector3 operator*(float scalar) const {
+		return { x * scalar, y * scalar, z * scalar };
+	}
+
+
     Vector3() : x(0), y(0), z(0) {}
     Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
 };
@@ -292,5 +308,34 @@ inline Matrix4x4 MakeLookAtMatrix(const Vector3& eye, const Vector3& target, con
 	result.m[3][2] = -Dot(zAxis, eye);
 
 	result.m[3][3] = 1.0f;
+	return result;
+}
+
+inline Matrix4x4 MakeViewMatrix(const Vector3& eye, const Vector3& target, const Vector3& up) {
+	Vector3 zAxis = Normalize(target - eye);         // 前
+	Vector3 xAxis = Normalize(Cross(up, zAxis));     // 右
+	Vector3 yAxis = Cross(zAxis, xAxis);             // 上
+
+	Matrix4x4 result{};
+	result.m[0][0] = xAxis.x;
+	result.m[0][1] = xAxis.y;
+	result.m[0][2] = xAxis.z;
+	result.m[0][3] = -Dot(xAxis, eye);
+
+	result.m[1][0] = yAxis.x;
+	result.m[1][1] = yAxis.y;
+	result.m[1][2] = yAxis.z;
+	result.m[1][3] = -Dot(yAxis, eye);
+
+	result.m[2][0] = zAxis.x;
+	result.m[2][1] = zAxis.y;
+	result.m[2][2] = zAxis.z;
+	result.m[2][3] = -Dot(zAxis, eye);
+
+	result.m[3][0] = 0.0f;
+	result.m[3][1] = 0.0f;
+	result.m[3][2] = 0.0f;
+	result.m[3][3] = 1.0f;
+
 	return result;
 }
