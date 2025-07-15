@@ -8,6 +8,14 @@ public:
     void Initialize();
     void Update(const uint8_t* keys);
 
+    // クラス内の private に追加
+    Vector3 position_ = { 0.0f, 0.0f, -distance_ }; // 初期値（適当）
+
+    // GetPosition() の中身を以下のように修正
+    Vector3 GetPosition() const {
+        return position_;
+    }
+
     const Matrix4x4& GetViewMatrix() const { return viewMatrix_; }
     const Matrix4x4& GetProjectionMatrix() const { return projectionMatrix_; }
 

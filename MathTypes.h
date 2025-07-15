@@ -89,6 +89,15 @@ struct Vertex {
 	Vector3 normal;
 };
 
+inline Vector4 Transform4(const Vector4& v, const Matrix4x4& m) {
+	return {
+		v.x * m.m[0][0] + v.y * m.m[1][0] + v.z * m.m[2][0] + v.w * m.m[3][0],
+		v.x * m.m[0][1] + v.y * m.m[1][1] + v.z * m.m[2][1] + v.w * m.m[3][1],
+		v.x * m.m[0][2] + v.y * m.m[1][2] + v.z * m.m[2][2] + v.w * m.m[3][2],
+		v.x * m.m[0][3] + v.y * m.m[1][3] + v.z * m.m[2][3] + v.w * m.m[3][3],
+	};
+}
+
 
 // 単位行列の作成
 inline Matrix4x4 MakeIdentity4x4() {
@@ -312,6 +321,19 @@ inline Vector3 Cross(const Vector3& a, const Vector3& b) {
 		a.x * b.y - a.y * b.x
 	};
 }
+
+inline float Lerp(float a, float b, float t) {
+	return a + (b - a) * t;
+}
+
+inline float Length(const Vector3& v) {
+	return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+inline float Distance(const Vector3& a, const Vector3& b) {
+	return Length({ a.x - b.x, a.y - b.y, a.z - b.z });
+}
+
 
 inline Matrix4x4 MakeLookLhMatrix(const Vector3& eye, const Vector3& target, const Vector3& up) {
 	Vector3 zaxis = Normalize(target - eye);               // 前方向（視線方向）

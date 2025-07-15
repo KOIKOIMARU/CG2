@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <cmath>
+#include <DirectXMath.h>
 #include <string>
 #include <queue>
 #include <format>
@@ -38,6 +39,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg
 #pragma comment(lib, "dxguid.lib")
 
 using namespace Microsoft::WRL;
+using namespace DirectX;
 
 
 struct VertexData {
@@ -88,10 +90,25 @@ struct FragmentModel {
 std::vector<FragmentModel> fragments;
 
 struct GlassFragment {
-	ModelData model;       // 頂点・インデックス情報
-	Transform transform;   // 位置・回転・スケール
-	Vector3 velocity;      // 飛び出す方向と速度
-	bool isFlying = false; // 飛散中フラグ
+	ModelData model;
+	Transform transform;
+	Vector3 velocity;
+
+	bool isActive = true;  // true: 描画・処理対象, false: 完全に無視
+
+
+	bool isFlying = false;
+	bool isDetached = false; // 追加: 引き抜き中かどうか
+
+	Vector3 initialPosition; // 元の球体上の位置
+	Vector3 normal;          // 球面上の法線（引き抜く方向）
+	float detachProgress = 0.0f; // 0.0〜1.0 の引き抜き進行度
+
+	float detachDelay = 0.0f;   // 引き抜きまでの遅延時間
+	float detachTimer = 0.0f;   // 経過時間
+	float maxDetachDistance = 1.0f; // どれだけ引き抜くか（個別に差をつける）
+	Vector3 originalPosition;
+
 	ComPtr<ID3D12Resource> wvpResource;
 };
 
@@ -113,6 +130,12 @@ struct ChunkHeader {
 	char id[4];     // チャンク毎のID
 	int32_t size;   // チャンクサイズ
 };
+
+// グローバル変数
+
+	// デバッグカメラの初期化
+DebugCamera debugCamera;
+bool useDebugCamera = false;
 
 static void Log(const std::string& message) {
 	OutputDebugStringA(message.c_str());
@@ -502,6 +525,7 @@ void UpdateAndDrawFragments(
 	materialResource->Map(0, nullptr, reinterpret_cast<void**>(&materialData));
 
 	for (const auto& frag : fragments) {
+		if (!frag.isActive) continue;
 		// 個別のWVPバッファへ書き込み
 		TransformationMatrix* wvpData = nullptr;
 		frag.wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
@@ -584,7 +608,18 @@ std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
 
 		frag.transform.translate = { x * radius, y * radius, z * radius + 5 };
 		frag.velocity = { 0, 0, 0 };
+
+		frag.initialPosition = { x * radius, y * radius, z * radius + 5 };
+		frag.transform.translate = frag.initialPosition;
+		frag.normal = normal;
+		frag.detachProgress = 0.0f;
+		frag.isDetached = false;
+
 		frag.isFlying = false;
+
+		// 初回の読み込み時に1回だけ保存
+		frag.originalPosition = frag.transform.translate;
+
 
 		fragments.push_back(frag);
 	}
@@ -593,6 +628,33 @@ std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
 }
 
 
+Vector3 MouseToWorldRayDirection(HWND hwnd, int screenWidth, int screenHeight, const Matrix4x4& viewMatrix, const Matrix4x4& projectionMatrix) {
+	// ① マウス座標（スクリーン）
+	POINT mousePos;
+	GetCursorPos(&mousePos);
+	ScreenToClient(hwnd, &mousePos); // クライアント座標に変換
+
+	// ② 正規化デバイス座標（NDC）に変換
+	float x = (2.0f * mousePos.x) / screenWidth - 1.0f;
+	float y = 1.0f - (2.0f * mousePos.y) / screenHeight;
+	Vector3 ndcRay = { x, y, 1.0f }; // z=1: 遠く方向
+
+	// ③ ビュー × プロジェクション逆行列で逆変換
+	Matrix4x4 invVP = Inverse(multiplayMatrix(viewMatrix, projectionMatrix));
+	Vector4 rayClip = { ndcRay.x, ndcRay.y, 1.0f, 1.0f };
+	Vector4 rayWorld4 = Transform4(rayClip, invVP);
+	rayWorld4.w = 1.0f; // 任意（正規化の意味では）
+
+	// ④ カメラ位置（Z=-5 or DebugCamera）
+	Vector3 cameraPos = { 0.0f, 0.0f, -5.0f }; // 固定カメラデフォルト
+	if (useDebugCamera) {
+		cameraPos = debugCamera.GetPosition();
+	}
+
+	// ⑤ レイの方向（ワールド空間）
+	Vector3 rayWorld = { rayWorld4.x, rayWorld4.y, rayWorld4.z };
+	return Normalize(rayWorld - cameraPos);
+}
 
 
 
@@ -1012,7 +1074,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<GlassFragment> fragments = GenerateSphereFragmentsFromSingleModel(device, "glass_fragment.obj", 200);
 	InitializeGlassFragmentBuffers(device, fragments);
 
-	// 氷の地面
 	ModelData iceBackgroundModel = LoadObjFile("Resources", "ice_background.obj");
 	Transform iceTransform;
 	iceTransform.scale = { 1.0f, 1.0f, 1.0f };
@@ -1115,6 +1176,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	std::mt19937 rng(std::random_device{}());
 
+	// どこかのスコープで保持（例：グローバル or main ループ内 static）
+	enum class MagicMode { Scatter, Laser };
+	static MagicMode currentMode = MagicMode::Scatter;
+
 
 
 	// キーの状態
@@ -1150,9 +1215,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	keyboard->Acquire();
 	keyboard->GetDeviceState(sizeof(key), key);
 
-	// デバッグカメラの初期化
-	DebugCamera debugCamera;
-	bool useDebugCamera = false;
 
 	debugCamera.Initialize();
 
@@ -1203,27 +1265,78 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// ImGui内のWindow内に追加（確認用）
 			ImGui::Checkbox("Use Debug Camera", &useDebugCamera);
 
-			if (ImGui::Button("Trigger Break")) {
+			ImGui::Begin("Magic Settings");
+
+			// モード選択（ラジオボタン）
+			if (ImGui::RadioButton("Scatter", currentMode == MagicMode::Scatter)) {
+				currentMode = MagicMode::Scatter;
+			}
+			if (ImGui::RadioButton("Laser", currentMode == MagicMode::Laser)) {
+				currentMode = MagicMode::Laser;
+			}
+
+			// 発射トリガー
+			if (ImGui::Button("Trigger Magic")) {
 				std::shuffle(fragments.begin(), fragments.end(), std::mt19937{ std::random_device{}() });
 				fireQueue = std::queue<GlassFragment*>();
-				for (auto& frag : fragments) {
+
+				Matrix4x4 viewMatrix, projectionMatrix;
+				Vector3 cameraPos;
+				if (useDebugCamera) {
+					viewMatrix = debugCamera.GetViewMatrix();
+					projectionMatrix = debugCamera.GetProjectionMatrix();
+					cameraPos = debugCamera.GetPosition();
+				} else {
+					viewMatrix = MakeLookLhMatrix({ 0, 0, -5 }, { 0, 0, 0 }, { 0, 1, 0 });
+					projectionMatrix = MakePerspectiveFovMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
+					cameraPos = { 0.0f, 0.0f, -5.0f };
+				}
+
+				Vector3 rayDir = MouseToWorldRayDirection(hwnd, 1280, 720, viewMatrix, projectionMatrix);
+
+				std::mt19937 rng(std::random_device{}());
+				std::uniform_real_distribution<float> detachDistRange(0.6f, 1.2f);
+
+				for (int i = 0; i < fragments.size(); ++i) {
+					auto& frag = fragments[i];
 					frag.isFlying = false;
+					frag.isDetached = false;
+					frag.detachProgress = 0.0f;
+					frag.detachTimer = 0.0f;
+					frag.isActive = true;
 					frag.velocity = { 0, 0, 0 };
+					frag.transform.scale = { 0.3f, 0.3f, 0.3f };
+
+					if (currentMode == MagicMode::Scatter) {
+						// 通常：元の位置から引き抜き → 発射
+						frag.initialPosition = frag.originalPosition; // ←必要なら originalPosition を保持
+						frag.transform.translate = frag.initialPosition;
+						frag.detachDelay = i * 0.05f;
+						frag.maxDetachDistance = detachDistRange(rng);
+					} else if (currentMode == MagicMode::Laser) {
+						// 一点集中：カメラ位置から即発射
+						frag.isDetached = true;
+						frag.detachProgress = 1.0f;
+						frag.initialPosition = cameraPos;
+						frag.transform.translate = cameraPos;
+						frag.velocity = rayDir * 60.0f; // 加速気味
+					}
+
 					fireQueue.push(&frag);
 				}
+
 				isFiring = true;
 				fireTimer = 0.0f;
 			}
 
+			ImGui::End();
+
+
+
 			static Vector3 globalOffset = { 0.0f, 0.0f, 0.0f };
 			ImGui::DragFloat3("Global Offset", &globalOffset.x, 0.01f);
 
-			if (ImGui::Button("Apply Offset")) {
-				for (auto& frag : fragments) {
-					frag.transform.translate += globalOffset;
-				}
-				globalOffset = { 0.0f, 0.0f, 0.0f }; // 加算後リセット（任意）
-			}
+
 			ImGui::End();
 
 
@@ -1251,14 +1364,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					0.45f, 1280.0f / 720.0f, 0.1f, 100.0f
 				);
 			}
+
+			Vector3 rayDir = MouseToWorldRayDirection(
+				hwnd, 1280, 720,
+				viewMatrix, projectionMatrix
+			);
+
+
 			if (isFiring) {
 				fireTimer += deltaTime;
+
 				while (!fireQueue.empty() && fireTimer >= fireInterval) {
 					GlassFragment* frag = fireQueue.front();
-					fireQueue.pop();
 
+					if (!frag->isDetached) {
+						break; // まだ引き抜き途中なら次に進まない
+					}
+
+					fireQueue.pop(); // キューから削除
 					frag->isFlying = true;
-					frag->velocity = { 0, 0, 8.0f }; // Z方向（手前）にビームのように飛ぶ
+
+					// カメラ位置から rayDir 方向に発射
+					Vector3 origin = useDebugCamera ? debugCamera.GetPosition() : Vector3{ 0, 0, -5 };
+					frag->velocity = rayDir * 60.0f;
+
 					fireTimer -= fireInterval;
 				}
 
@@ -1267,10 +1396,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
-			// 各破片の位置を更新
 			for (auto& frag : fragments) {
+				if (!frag.isActive) continue;
+
 				if (frag.isFlying) {
 					frag.transform.translate += frag.velocity * deltaTime;
+
+					if (Length(frag.transform.translate - frag.initialPosition) > 30.0f) {
+						frag.isFlying = false;
+						frag.isActive = false;
+					}
+				} else if (isFiring) {
+					frag.detachTimer += deltaTime;
+
+					// 引き抜き中
+					if (frag.detachTimer >= frag.detachDelay && !frag.isDetached) {
+						frag.detachProgress += deltaTime * 1.0f;
+
+						if (frag.detachProgress >= 1.0f) {
+							frag.detachProgress = 1.0f;
+							frag.isDetached = true;
+						}
+
+						// 位置補間
+						Vector3 offset = frag.normal * (-frag.maxDetachDistance * frag.detachProgress);
+						frag.transform.translate = frag.initialPosition + offset;
+
+						// スケール補間
+						float scale = Lerp(0.2f, 0.3f, frag.detachProgress);
+						frag.transform.scale = { scale, scale, scale };
+
+						// 回転演出（飛ぶ方向に向かって回る）
+						float rotSpeed = XM_PI * 2.0f; // 1周ぶん
+						frag.transform.rotate.z = frag.detachProgress * rotSpeed;  // Z軸だけ回転
+					}
 				}
 			}
 
@@ -1324,8 +1483,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-
 
 			// 描画処理
 			UpdateAndDrawFragments(
