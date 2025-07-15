@@ -24,28 +24,38 @@ float Fresnel(float3 viewDir, float3 normal, float power)
 float4 main(VertexShaderOutput input) : SV_TARGET
 {
     float2 uv = mul(float4(input.texcoord, 0, 1), uvTransform).xy;
+    uv += input.normal.xy * 0.04;
+
     float4 tex = gTexture.Sample(gSampler, uv);
-
     float3 normal = normalize(input.worldNormal);
-    float3 viewDir = normalize(-input.worldPos); // カメラが原点にある前提
+    float3 viewDir = normalize(-input.worldPos);
 
-    float fresnel = Fresnel(viewDir, normal, 5.0); // 簡易的な光沢
+    float fresnel = pow(1.0 - saturate(dot(viewDir, normal)), 5.0);
+    float rim = pow(1.0 - saturate(dot(viewDir, normal)), 2.0);
 
-    float alpha = gMaterialColor.a;
-    float3 baseColor = tex.rgb * gMaterialColor.rgb;
+    float alpha = 0.12; // 透明感UP
+    float3 crystalColor = float3(0.4, 0.8, 1.4); // より青く・強く
+
+    float3 baseColor = tex.rgb * crystalColor;
     float3 finalColor = baseColor;
 
     if (gEnableLighting != 0)
     {
         float3 lightDir = normalize(-gDirectionalLight.direction.xyz);
         float NdotL = saturate(dot(normal, lightDir));
-        float3 lit = baseColor * gDirectionalLight.color.rgb * NdotL;
-        finalColor = lerp(lit, lit + fresnel, 0.3); // フレネル反射を少し追加
+        float3 diffuse = baseColor * gDirectionalLight.color.rgb * NdotL;
+
+        float3 halfDir = normalize(lightDir + viewDir);
+        float spec = pow(saturate(dot(normal, halfDir)), 64.0);
+
+        // より強いFresnelとリムでEmissive風に
+        float3 emissive = (fresnel + rim) * float3(0.6, 1.0, 1.8);
+        finalColor = diffuse + spec * 0.4 + emissive;
     }
     else
     {
-        finalColor = baseColor + fresnel * 0.2;
+        finalColor = baseColor + (fresnel + rim) * float3(0.6, 1.0, 1.8);
     }
 
-    return float4(finalColor, alpha);
+    return float4(saturate(finalColor), alpha);
 }

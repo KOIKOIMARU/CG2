@@ -15,6 +15,21 @@ struct Vector2 {
 struct Vector3 {
     float x, y, z;
 
+	// Vector3 に += を定義
+	Vector3& operator+=(const Vector3& rhs) {
+		x += rhs.x;
+		y += rhs.y;
+		z += rhs.z;
+		return *this;
+	}
+
+	// Vector3 に += を定義
+	Vector3& operator-=(const Vector3& rhs) {
+		x -= rhs.x;
+		y -= rhs.y;
+		z -= rhs.z;
+		return *this;
+	}
 
 	// 減算演算子の定義
 	Vector3 operator-(const Vector3& other) const {
@@ -62,6 +77,18 @@ struct Transform {
 	Vector3 rotate;
 	Vector3 translate;
 };
+
+struct ViewProjection {
+	Matrix4x4 view;
+	Matrix4x4 projection;
+};
+
+struct Vertex {
+	Vector4 position;
+	Vector2 texcoord;
+	Vector3 normal;
+};
+
 
 // 単位行列の作成
 inline Matrix4x4 MakeIdentity4x4() {
@@ -286,6 +313,36 @@ inline Vector3 Cross(const Vector3& a, const Vector3& b) {
 	};
 }
 
+inline Matrix4x4 MakeLookLhMatrix(const Vector3& eye, const Vector3& target, const Vector3& up) {
+	Vector3 zaxis = Normalize(target - eye);               // 前方向（視線方向）
+	Vector3 xaxis = Normalize(Cross(up, zaxis));           // 右方向
+	Vector3 yaxis = Cross(zaxis, xaxis);                   // 上方向
+
+	Matrix4x4 result = {};
+	result.m[0][0] = xaxis.x;
+	result.m[0][1] = xaxis.y;
+	result.m[0][2] = xaxis.z;
+	result.m[0][3] = -Dot(xaxis, eye);
+
+	result.m[1][0] = yaxis.x;
+	result.m[1][1] = yaxis.y;
+	result.m[1][2] = yaxis.z;
+	result.m[1][3] = -Dot(yaxis, eye);
+
+	result.m[2][0] = zaxis.x;
+	result.m[2][1] = zaxis.y;
+	result.m[2][2] = zaxis.z;
+	result.m[2][3] = -Dot(zaxis, eye);
+
+	result.m[3][0] = 0.0f;
+	result.m[3][1] = 0.0f;
+	result.m[3][2] = 0.0f;
+	result.m[3][3] = 1.0f;
+
+	return result;
+}
+
+
 inline Matrix4x4 MakeLookAtMatrix(const Vector3& eye, const Vector3& target, const Vector3& up) {
 	Vector3 zAxis = Normalize(Subtract(target, eye));  // forward
 	Vector3 xAxis = Normalize(Cross(up, zAxis));       // right
@@ -338,4 +395,11 @@ inline Matrix4x4 MakeViewMatrix(const Vector3& eye, const Vector3& target, const
 	result.m[3][3] = 1.0f;
 
 	return result;
+}
+
+inline Vector3 LookAtEuler(const Vector3& from, const Vector3& to) {
+	Vector3 forward = Normalize(to - from);
+	float yaw = std::atan2(forward.x, forward.z);
+	float pitch = std::asin(-forward.y); // y軸が下向きならマイナス
+	return { pitch, yaw, 0.0f }; // Z軸回転（ロール）は不要
 }

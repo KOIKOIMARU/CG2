@@ -1,9 +1,12 @@
+#define NOMINMAX
 #include <Windows.h>
 #include <cstdint>
 #include <vector>
 #include <cmath>
 #include <string>
+#include <queue>
 #include <format>
+#include <random> 
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <d3d12sdklayers.h>
@@ -63,10 +66,35 @@ struct DirectionalLight {
 	float padding[3];
 };
 
+struct ModelData {
+	std::vector<VertexData> vertices;
+	std::vector<uint32_t> indices;
+	Material material;
+
+	ComPtr<ID3D12Resource> vertexResource;
+	ComPtr<ID3D12Resource> indexResource;
+
+};
+
 
 struct MaterialData {
 	std::string textureFilePath;
 };
+
+struct FragmentModel {
+	std::vector<VertexData> vertices;
+	std::vector<uint32_t> indices;
+};
+std::vector<FragmentModel> fragments;
+
+struct GlassFragment {
+	ModelData model;       // 頂点・インデックス情報
+	Transform transform;   // 位置・回転・スケール
+	Vector3 velocity;      // 飛び出す方向と速度
+	bool isFlying = false; // 飛散中フラグ
+	ComPtr<ID3D12Resource> wvpResource;
+};
+
 
 struct D3DResourceLeakChecker {
 	~D3DResourceLeakChecker() {
@@ -351,58 +379,6 @@ static ComPtr<ID3D12Resource> CreateDepthStencilTextureResource(
 
 }
 
-// 球メッシュ生成
-void GenerateSphereMesh(std::vector<VertexData>& outVertices, std::vector<uint32_t>& outIndices, int latitudeCount, int longitudeCount) {
-	const float radius = 1.0f;
-	for (int lat = 0; lat <= latitudeCount; ++lat) {
-		float theta = lat * DirectX::XM_PI / latitudeCount;
-		float sinTheta = std::sin(theta);
-		float cosTheta = std::cos(theta);
-
-		for (int lon = 0; lon <= longitudeCount; ++lon) {
-			float phi = lon * 2.0f * DirectX::XM_PI / longitudeCount;
-			float sinPhi = std::sin(phi);
-			float cosPhi = std::cos(phi);
-
-			Vector3 pos = {
-				radius * sinTheta * cosPhi,
-				radius * cosTheta,
-				radius * sinTheta * sinPhi
-			};
-			Vector2 uv = {
-				float(lon) / longitudeCount,
-				float(lat) / latitudeCount
-			};
-			// 法線は位置を正規化して使う（球の中心から放射状）
-			Vector3 normal = pos;
-			float length = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
-			if (length != 0.0f) {
-				normal.x /= length;
-				normal.y /= length;
-				normal.z /= length;
-			}
-			outVertices.push_back({ {pos.x, pos.y, pos.z, 1.0f}, uv, normal });
-
-		}
-	}
-
-	for (int lat = 0; lat < latitudeCount; ++lat) {
-		for (int lon = 0; lon < longitudeCount; ++lon) {
-			int current = lat * (longitudeCount + 1) + lon;
-			int next = current + longitudeCount + 1;
-			// 反時計回りに修正
-			outIndices.push_back(current + 1);
-			outIndices.push_back(next);
-			outIndices.push_back(current);
-
-			outIndices.push_back(next + 1);
-			outIndices.push_back(next);
-			outIndices.push_back(current + 1);
-
-		}
-	}
-}
-
 D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(ComPtr<ID3D12DescriptorHeap>& descriptorHeap, UINT descriptorSize, UINT index) {
 	// ディスクリプタヒープのCPUハンドルを取得
 	D3D12_CPU_DESCRIPTOR_HANDLE handleCPU = descriptorHeap->GetCPUDescriptorHandleForHeapStart();
@@ -417,6 +393,13 @@ D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(ComPtr<ID3D12DescriptorHeap>&
 	return handleGPU;
 }
 
+void UploadBufferData(ID3D12Resource* buffer, const void* data, size_t size) {
+	void* mapped = nullptr;
+	buffer->Map(0, nullptr, &mapped);
+	memcpy(mapped, data, size);
+	buffer->Unmap(0, nullptr);
+}
+
 
 void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	v.position = pos;
@@ -424,6 +407,193 @@ void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	Vector3 p = { pos.x, pos.y, pos.z };
 	v.normal = Normalize(p);
 }
+
+ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
+	ModelData modelData;
+	std::vector<Vector4> positions;
+	std::vector<Vector2> texcoords;
+	std::vector<Vector3> normals;
+
+	std::ifstream file(directoryPath + "/" + filename);
+	assert(file.is_open());
+
+	std::string line;
+	while (std::getline(file, line)) {
+		std::istringstream iss(line);
+		std::string prefix;
+		iss >> prefix;
+
+		if (prefix == "v") {
+			Vector4 pos;
+			iss >> pos.x >> pos.y >> pos.z;
+			pos.w = 1.0f;
+			pos.x *= -1.0f;
+			positions.push_back(pos);
+		} else if (prefix == "vt") {
+			Vector2 uv;
+			iss >> uv.x >> uv.y;
+			texcoords.push_back({ uv.x, 1.0f - uv.y });
+		} else if (prefix == "vn") {
+			Vector3 normal;
+			iss >> normal.x >> normal.y >> normal.z;
+			normal.x *= -1.0f;
+			normals.push_back(normal);
+		} else if (prefix == "f") {
+			for (int i = 0; i < 3; ++i) {
+				std::string vtn;
+				iss >> vtn;
+				size_t s1 = vtn.find('/');
+				size_t s2 = vtn.find('/', s1 + 1);
+
+				int vi = std::stoi(vtn.substr(0, s1)) - 1;
+				int ti = -1, ni = -1;
+				if (s2 != std::string::npos) {
+					if (s2 > s1 + 1) {
+						ti = std::stoi(vtn.substr(s1 + 1, s2 - s1 - 1)) - 1;
+					}
+					if (s2 + 1 < vtn.length()) {
+						ni = std::stoi(vtn.substr(s2 + 1)) - 1;
+					}
+				}
+
+				if (vi >= 0 && vi < (int)positions.size()) {
+					VertexData v;
+					v.position = positions[vi];
+					v.texcoord = (ti >= 0 && ti < (int)texcoords.size()) ? texcoords[ti] : Vector2{ 0, 0 };
+					v.normal = (ni >= 0 && ni < (int)normals.size()) ? normals[ni] : Vector3{ 0, 1, 0 };
+
+					modelData.indices.push_back((uint32_t)modelData.vertices.size());
+					modelData.vertices.push_back(v);
+				}
+			}
+		}
+	}
+
+	return modelData;
+}
+
+
+
+
+void InitializeGlassFragmentBuffers(ComPtr<ID3D12Device>& device, std::vector<GlassFragment>& fragments) {
+	for (auto& frag : fragments) {
+		frag.model.vertexResource = CreateBufferResource(device, frag.model.vertices.size() * sizeof(VertexData));
+		void* vertexData = nullptr;
+		frag.model.vertexResource->Map(0, nullptr, &vertexData);
+		memcpy(vertexData, frag.model.vertices.data(), frag.model.vertices.size() * sizeof(VertexData));
+
+		frag.model.indexResource = CreateBufferResource(device, frag.model.indices.size() * sizeof(uint32_t));
+		void* indexData = nullptr;
+		frag.model.indexResource->Map(0, nullptr, &indexData);
+		memcpy(indexData, frag.model.indices.data(), frag.model.indices.size() * sizeof(uint32_t));
+	}
+}
+
+void UpdateAndDrawFragments(
+	ID3D12GraphicsCommandList* commandList,
+	const std::vector<GlassFragment>& fragments,
+	ComPtr<ID3D12Resource>& materialResource,
+	ComPtr<ID3D12Resource>& lightResource,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+	const Matrix4x4& viewMatrix,
+	const Matrix4x4& projectionMatrix
+) {
+	Material* materialData = nullptr;
+	materialResource->Map(0, nullptr, reinterpret_cast<void**>(&materialData));
+
+	for (const auto& frag : fragments) {
+		// 個別のWVPバッファへ書き込み
+		TransformationMatrix* wvpData = nullptr;
+		frag.wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
+
+		Matrix4x4 world = MakeAffineMatrix(frag.transform.scale, frag.transform.rotate, frag.transform.translate);
+		Matrix4x4 wvp = multiplayMatrix(world, multiplayMatrix(viewMatrix, projectionMatrix));
+		wvpData->World = world;
+		wvpData->WVP = wvp;
+
+		frag.wvpResource->Unmap(0, nullptr);
+
+		// ルート定数バッファ設定
+		commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
+		commandList->SetGraphicsRootConstantBufferView(1, frag.wvpResource->GetGPUVirtualAddress());
+		commandList->SetGraphicsRootConstantBufferView(3, lightResource->GetGPUVirtualAddress());
+		commandList->SetGraphicsRootDescriptorTable(2, textureHandle);
+
+		// VB/IB設定
+		D3D12_VERTEX_BUFFER_VIEW vbView{};
+		vbView.BufferLocation = frag.model.vertexResource->GetGPUVirtualAddress();
+		vbView.SizeInBytes = static_cast<UINT>(frag.model.vertices.size() * sizeof(VertexData));
+		vbView.StrideInBytes = sizeof(VertexData);
+		commandList->IASetVertexBuffers(0, 1, &vbView);
+
+		D3D12_INDEX_BUFFER_VIEW ibView{};
+		ibView.BufferLocation = frag.model.indexResource->GetGPUVirtualAddress();
+		ibView.SizeInBytes = static_cast<UINT>(frag.model.indices.size() * sizeof(uint32_t));
+		ibView.Format = DXGI_FORMAT_R32_UINT;
+		commandList->IASetIndexBuffer(&ibView);
+
+		// 描画
+		commandList->DrawIndexedInstanced(static_cast<UINT>(frag.model.indices.size()), 1, 0, 0, 0);
+	}
+}
+
+std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
+	ComPtr<ID3D12Device>& device,
+	const std::string& filepath,
+	int count,
+	float radius = 0.2f
+) {
+	ModelData baseModel = LoadObjFile("resources", filepath);
+
+	std::vector<GlassFragment> fragments;
+	fragments.reserve(count);
+
+	const float offset = 2.0f / count;
+	const float increment = 3.1415926f * (3.0f - std::sqrt(5.0f)); // ゴールデンアングル
+
+	for (int i = 0; i < count; ++i) {
+		float y = ((i * offset) - 1.0f) + (offset / 2.0f);
+		float r = std::sqrt(1.0f - y * y);
+
+		float phi = i * increment;
+
+		float x = std::cos(phi) * r;
+		float z = std::sin(phi) * r;
+
+		GlassFragment frag;
+		frag.model = baseModel;
+
+		frag.model.vertexResource = CreateBufferResource(device, sizeof(VertexData) * baseModel.vertices.size());
+		frag.model.indexResource = CreateBufferResource(device, sizeof(uint32_t) * baseModel.indices.size());
+
+		UploadBufferData(frag.model.vertexResource.Get(), baseModel.vertices.data(), sizeof(VertexData) * baseModel.vertices.size());
+		UploadBufferData(frag.model.indexResource.Get(), baseModel.indices.data(), sizeof(uint32_t) * baseModel.indices.size());
+
+		Vector3 normal = Normalize(Vector3{ x, y, z });
+
+		// オイラー角でZ軸をnormal方向へ向ける
+		float pitch = std::asin(-normal.y);
+		float yaw = std::atan2(normal.x, normal.z);
+		float roll = 0.0f;
+
+		frag.wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
+
+		frag.transform.scale = { 0.3f, 0.3f, 0.3f };
+	
+		frag.transform.rotate = { pitch, yaw, roll };
+
+		frag.transform.translate = { x * radius, y * radius, z * radius + 5 };
+		frag.velocity = { 0, 0, 0 };
+		frag.isFlying = false;
+
+		fragments.push_back(frag);
+	}
+
+	return fragments;
+}
+
+
+
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -838,6 +1008,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
 
+
+	std::vector<GlassFragment> fragments = GenerateSphereFragmentsFromSingleModel(device, "glass_fragment.obj", 200);
+	InitializeGlassFragmentBuffers(device, fragments);
+
+	// 氷の地面
+	ModelData iceBackgroundModel = LoadObjFile("Resources", "ice_background.obj");
+	Transform iceTransform;
+	iceTransform.scale = { 1.0f, 1.0f, 1.0f };
+	iceTransform.rotate = { 0.0f, 0.0f, 0.0f };
+	iceTransform.translate = { 0.0f, 0.0f, 0.0f }; // 球体の下に置くなら -5.0f にしてもOK
+	Material iceMaterial{};
+	iceMaterial.enableLighting = true;
+	iceMaterial.color = { 0.6f, 0.9f, 1.1f, 0.15f }; // 淡い青＋透明
+
+
+
 	// 頂点リソース用のヒープの設定
 	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
 	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // アップロード用
@@ -846,7 +1032,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, sizeof(Material));
 	Material* materialDataA = nullptr;
 	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
-	*materialDataA = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
+	*materialDataA = { {0.5f, 0.9f, 1.5f, 0.15f},1 }; // Lighting有効
 
 	// A WVP（128バイト必要）
 	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, sizeof(TransformationMatrix));
@@ -862,8 +1048,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
 
 	// データ設定
-	directionalLightData->color = { 1.0f, 1.0f, 1.0f };
-	Vector3 dir = Normalize({ 1.0f, -1.0f, 1.0f }); // 斜めにする
+	directionalLightData->color = { 0.6f, 0.9f, 1.0f };
+	Vector3 dir = Normalize({ 1.0f, -1.0f, 1.0f }); // 斜めにす
 	directionalLightData->direction = { dir.x, dir.y, dir.z, 0.0f };
 
 	directionalLightData->intensity = 1.0f;
@@ -920,11 +1106,49 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 
+	float deltaTime = 1.0f / 60.0f;        // フレーム時間（簡易固定値）
+
+	bool isFiring = false;
+	float fireTimer = 0.0f;
+	float fireInterval = 0.05f; // 発射間隔（秒）
+	std::queue<GlassFragment*> fireQueue;
+
+	std::mt19937 rng(std::random_device{}());
+
 
 
 	// キーの状態
 	static BYTE key[256] = {};
 	static BYTE keyPre[256] = {};
+
+	LPDIRECTINPUT8 directInput = nullptr;
+	LPDIRECTINPUTDEVICE8 keyboard = nullptr;
+
+	hr = DirectInput8Create(
+		GetModuleHandle(nullptr),   // インスタンスハンドル
+		DIRECTINPUT_VERSION,        // DirectInputのバージョン
+		IID_IDirectInput8,          // インターフェースID
+		(void**)&directInput,       // 取得されるオブジェクト
+		nullptr                     // 外部コンテナ（使わないならnullptr）
+	);
+	assert(SUCCEEDED(hr)); // 失敗してたらクラッシュさせて検出
+
+
+	// キーボードデバイスの作成
+	hr = directInput->CreateDevice(GUID_SysKeyboard, &keyboard, nullptr);
+	assert(SUCCEEDED(hr));
+
+	// データフォーマットの設定
+	hr = keyboard->SetDataFormat(&c_dfDIKeyboard);
+	assert(SUCCEEDED(hr));
+
+	// 協調レベルの設定
+	hr = keyboard->SetCooperativeLevel(hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+	assert(SUCCEEDED(hr));
+
+	// 入力開始
+	keyboard->Acquire();
+	keyboard->GetDeviceState(sizeof(key), key);
 
 	// デバッグカメラの初期化
 	DebugCamera debugCamera;
@@ -957,11 +1181,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 
+			// 毎フレームのキーボード入力取得
+			BYTE currentKey[256];
+			memcpy(keyPre, key, sizeof(key));
+			memcpy(key, currentKey, sizeof(key));
+			keyboard->GetDeviceState(sizeof(currentKey), currentKey);
+
 			// デバッグテキストの表示
 			ImGui::Begin("Window");
-			ImGui::DragFloat3("TranslateA", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
-			ImGui::DragFloat3("RotateA", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
-			ImGui::DragFloat3("ScaleA", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
+		
 			// 光の方向ベクトルの編集
 			static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
 			if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
@@ -975,17 +1203,79 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// ImGui内のWindow内に追加（確認用）
 			ImGui::Checkbox("Use Debug Camera", &useDebugCamera);
 
+			if (ImGui::Button("Trigger Break")) {
+				std::shuffle(fragments.begin(), fragments.end(), std::mt19937{ std::random_device{}() });
+				fireQueue = std::queue<GlassFragment*>();
+				for (auto& frag : fragments) {
+					frag.isFlying = false;
+					frag.velocity = { 0, 0, 0 };
+					fireQueue.push(&frag);
+				}
+				isFiring = true;
+				fireTimer = 0.0f;
+			}
+
+			static Vector3 globalOffset = { 0.0f, 0.0f, 0.0f };
+			ImGui::DragFloat3("Global Offset", &globalOffset.x, 0.01f);
+
+			if (ImGui::Button("Apply Offset")) {
+				for (auto& frag : fragments) {
+					frag.transform.translate += globalOffset;
+				}
+				globalOffset = { 0.0f, 0.0f, 0.0f }; // 加算後リセット（任意）
+			}
 			ImGui::End();
 
-			// カメラ行列の生成部分を以下に置き換え
+
+
+			// DebugCamera更新
+			if (useDebugCamera) {
+				debugCamera.Update(currentKey);
+			}
+
+			// View / Projection 行列
 			Matrix4x4 viewMatrix;
 			Matrix4x4 projectionMatrix;
 
-			// 三角形A
-			Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
-			Matrix4x4 worldViewProjectionMatrixA = multiplayMatrix(worldMatrixA, multiplayMatrix(viewMatrix, projectionMatrix));
-			wvpDataA->WVP = worldViewProjectionMatrixA;
-			wvpDataA->World = worldMatrixA;
+			if (useDebugCamera) {
+				viewMatrix = debugCamera.GetViewMatrix();
+				projectionMatrix = debugCamera.GetProjectionMatrix();
+			} else {
+				// 固定カメラ
+				viewMatrix = MakeLookLhMatrix(
+					{ 0.0f, 0.0f, -5.0f },
+					{ 0.0f, 0.0f,  0.0f },
+					{ 0.0f, 1.0f,  0.0f }
+				);
+				projectionMatrix = MakePerspectiveFovMatrix(
+					0.45f, 1280.0f / 720.0f, 0.1f, 100.0f
+				);
+			}
+			if (isFiring) {
+				fireTimer += deltaTime;
+				while (!fireQueue.empty() && fireTimer >= fireInterval) {
+					GlassFragment* frag = fireQueue.front();
+					fireQueue.pop();
+
+					frag->isFlying = true;
+					frag->velocity = { 0, 0, 8.0f }; // Z方向（手前）にビームのように飛ぶ
+					fireTimer -= fireInterval;
+				}
+
+				if (fireQueue.empty()) {
+					isFiring = false;
+				}
+			}
+
+			// 各破片の位置を更新
+			for (auto& frag : fragments) {
+				if (frag.isFlying) {
+					frag.transform.translate += frag.velocity * deltaTime;
+				}
+			}
+
+
+
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -1011,7 +1301,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], false, nullptr);
 
 			// 指定した色で画面全体をクリア
-			float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f };
+			float clearColor[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 			commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
 
 			// ビューポートとシザーの設定
@@ -1035,18 +1325,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			//ommandList->IASetIndexBuffer(&indexBufferView);
-			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress()); // b0 → PS
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());      // b1 → VS
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress()); // b3 → PS
 
-			//commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
 
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+			// 描画処理
+			UpdateAndDrawFragments(
+				commandList.Get(),
+				fragments,
+				materialResourceA,
+				directionalLightResource,
+				textureSrvHandleGPU,
+				viewMatrix,
+				projectionMatrix
+			);
 
-			// 描画
-			//commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+
+
 
 			// ImGuiの描画
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
@@ -1087,6 +1380,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 	}
 
+	if (keyboard) {
+		keyboard->Unacquire();
+		keyboard->Release();
+		keyboard = nullptr;
+	}
+	if (directInput) {
+		directInput->Release();
+		directInput = nullptr;
+	}
 
 
 	// 出力ウィンドウへの文字出力
