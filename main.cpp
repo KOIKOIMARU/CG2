@@ -50,8 +50,9 @@ struct VertexData {
 
 struct Material {
 	Vector4 color;
-	int32_t enableLighting;
-	float padding[3]; // ← 16バイトアライメントのため
+	int enableLighting;
+	float crackAmount;
+	Vector2 padding; // HLSLと16バイト揃えるために必要
 	Matrix4x4 uvTransform;
 };
 
@@ -366,6 +367,8 @@ static void UploadTextureData(
 	}
 }
 
+
+
 static ComPtr<ID3D12Resource> CreateDepthStencilTextureResource(
 	ComPtr<ID3D12Device>& device, int32_t width, int32_t height) {
 	// 生成するResourceの設定
@@ -431,7 +434,11 @@ void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	v.normal = Normalize(p);
 }
 
-ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
+ModelData LoadObjFile(
+	ComPtr<ID3D12Device> device,
+	const std::string& directoryPath,
+	const std::string& filename
+) {
 	ModelData modelData;
 	std::vector<Vector4> positions;
 	std::vector<Vector2> texcoords;
@@ -450,27 +457,36 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 			Vector4 pos;
 			iss >> pos.x >> pos.y >> pos.z;
 			pos.w = 1.0f;
-			pos.x *= -1.0f;
+			pos.x *= -1.0f; // 左手系対応
 			positions.push_back(pos);
 		} else if (prefix == "vt") {
 			Vector2 uv;
 			iss >> uv.x >> uv.y;
-			texcoords.push_back({ uv.x, 1.0f - uv.y });
+			texcoords.push_back({ uv.x, 1.0f - uv.y }); // V反転
 		} else if (prefix == "vn") {
 			Vector3 normal;
 			iss >> normal.x >> normal.y >> normal.z;
-			normal.x *= -1.0f;
+			normal.x *= -1.0f; // 左手系対応
 			normals.push_back(normal);
 		} else if (prefix == "f") {
 			for (int i = 0; i < 3; ++i) {
 				std::string vtn;
 				iss >> vtn;
+
+				int vi = -1, ti = -1, ni = -1;
 				size_t s1 = vtn.find('/');
 				size_t s2 = vtn.find('/', s1 + 1);
 
-				int vi = std::stoi(vtn.substr(0, s1)) - 1;
-				int ti = -1, ni = -1;
-				if (s2 != std::string::npos) {
+				if (s1 == std::string::npos) {
+					// "f 1" のようにインデックスのみ
+					vi = std::stoi(vtn) - 1;
+				} else if (s2 == std::string::npos) {
+					// "f 1/2" のような vi/ti
+					vi = std::stoi(vtn.substr(0, s1)) - 1;
+					ti = std::stoi(vtn.substr(s1 + 1)) - 1;
+				} else {
+					// "f 1/2/3" または "f 1//3"
+					vi = std::stoi(vtn.substr(0, s1)) - 1;
 					if (s2 > s1 + 1) {
 						ti = std::stoi(vtn.substr(s1 + 1, s2 - s1 - 1)) - 1;
 					}
@@ -482,8 +498,8 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 				if (vi >= 0 && vi < (int)positions.size()) {
 					VertexData v;
 					v.position = positions[vi];
-					v.texcoord = (ti >= 0 && ti < (int)texcoords.size()) ? texcoords[ti] : Vector2{ 0, 0 };
-					v.normal = (ni >= 0 && ni < (int)normals.size()) ? normals[ni] : Vector3{ 0, 1, 0 };
+					v.texcoord = (ti >= 0 && ti < (int)texcoords.size()) ? texcoords[ti] : Vector2{ 0.0f, 0.0f };
+					v.normal = (ni >= 0 && ni < (int)normals.size()) ? normals[ni] : Vector3{ 0.0f, 1.0f, 0.0f };
 
 					modelData.indices.push_back((uint32_t)modelData.vertices.size());
 					modelData.vertices.push_back(v);
@@ -562,12 +578,12 @@ void UpdateAndDrawFragments(
 }
 
 std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
-	ComPtr<ID3D12Device>& device,
+	ComPtr<ID3D12Device> device,
 	const std::string& filepath,
 	int count,
 	float radius = 0.2f
 ) {
-	ModelData baseModel = LoadObjFile("resources", filepath);
+	ModelData baseModel = LoadObjFile(device,"resources", filepath);
 
 	std::vector<GlassFragment> fragments;
 	fragments.reserve(count);
@@ -656,6 +672,136 @@ Vector3 MouseToWorldRayDirection(HWND hwnd, int screenWidth, int screenHeight, c
 	return Normalize(rayWorld - cameraPos);
 }
 
+void DrawSingleModel(
+	ComPtr<ID3D12GraphicsCommandList> commandList,
+	const ModelData& model,
+	const Material& material,
+	const Transform& transform,
+	ComPtr<ID3D12Resource>& wvpResource,
+	ComPtr<ID3D12Resource>& materialResource,
+	ComPtr<ID3D12Resource>& lightResource,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+	const Matrix4x4& viewMatrix,
+	const Matrix4x4& projectionMatrix
+) {
+	// マテリアルを更新
+	Material* matData = nullptr;
+	materialResource->Map(0, nullptr, reinterpret_cast<void**>(&matData));
+	*matData = material;
+	materialResource->Unmap(0, nullptr);
+
+	// WVP更新
+	TransformationMatrix* wvpData = nullptr;
+	wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
+	Matrix4x4 world = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
+	wvpData->World = world;
+	wvpData->WVP = multiplayMatrix(world, multiplayMatrix(viewMatrix, projectionMatrix));
+	wvpResource->Unmap(0, nullptr);
+
+	// 各種バッファ設定
+	commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
+	commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());
+	commandList->SetGraphicsRootConstantBufferView(3, lightResource->GetGPUVirtualAddress());
+	commandList->SetGraphicsRootDescriptorTable(2, textureHandle);
+
+	// VB/IB設定
+	D3D12_VERTEX_BUFFER_VIEW vbView{};
+	vbView.BufferLocation = model.vertexResource->GetGPUVirtualAddress();
+	vbView.SizeInBytes = static_cast<UINT>(model.vertices.size() * sizeof(VertexData));
+	vbView.StrideInBytes = sizeof(VertexData);
+	commandList->IASetVertexBuffers(0, 1, &vbView);
+
+	D3D12_INDEX_BUFFER_VIEW ibView{};
+	ibView.BufferLocation = model.indexResource->GetGPUVirtualAddress();
+	ibView.SizeInBytes = static_cast<UINT>(model.indices.size() * sizeof(uint32_t));
+	ibView.Format = DXGI_FORMAT_R32_UINT;
+	commandList->IASetIndexBuffer(&ibView);
+
+	// 描画
+	commandList->DrawIndexedInstanced(static_cast<UINT>(model.indices.size()), 1, 0, 0, 0);
+}
+
+void InitializeBarrier(
+	ComPtr<ID3D12Device> device,
+	ModelData& outModel,
+	Transform& outTransform,
+	Material& outMaterial,
+	ComPtr<ID3D12Resource>& outWvpResource
+) {
+	outModel = LoadObjFile(device, "resources", "shield.obj");
+
+	// 頂点リソースの作成とアップロード
+	outModel.vertexResource = CreateBufferResource(device, outModel.vertices.size() * sizeof(VertexData));
+	UploadBufferData(outModel.vertexResource.Get(), outModel.vertices.data(), outModel.vertices.size() * sizeof(VertexData));
+
+	// インデックスリソースの作成とアップロード
+	outModel.indexResource = CreateBufferResource(device, outModel.indices.size() * sizeof(uint32_t));
+	UploadBufferData(outModel.indexResource.Get(), outModel.indices.data(), outModel.indices.size() * sizeof(uint32_t));
+
+	// バリアを球体の奥に置き、球体の方向を向かせる
+	outTransform.scale = { 0.5f, 0.5f, 0.5f };
+
+	// バリアの「表」がカメラ方向を向くように 180度回転
+	outTransform.rotate = { 0.0f, DirectX::XMConvertToRadians(180.0f), 0.0f };
+
+	// カメラがZ-方向から見るならZ+方向に配置
+	outTransform.translate = { 0.0f, 0.0f, 20.0f };
+
+	outMaterial.enableLighting = true;
+	outMaterial.color = { 0.7f, 0.9f, 1.2f, 0.3f };
+
+	outMaterial.crackAmount = 1.0f;
+
+	outWvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
+}
+
+
+
+
+void DrawBarrier(
+	ComPtr<ID3D12GraphicsCommandList> commandList,
+	const ModelData& model,
+	const Material& material,
+	const Transform& transform,
+	ComPtr<ID3D12Resource>& wvpResource,
+	ComPtr<ID3D12Resource>& materialResource,
+	ComPtr<ID3D12Resource>& lightResource,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU,
+	const Matrix4x4& viewMatrix,
+	const Matrix4x4& projectionMatrix,
+	ComPtr<ID3D12PipelineState> crackShieldPSO
+) {
+	commandList->SetPipelineState(crackShieldPSO.Get());
+
+	// WVP 行列の書き込み
+	Matrix4x4 world = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
+
+	TransformationMatrix* wvpData = nullptr;
+	wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
+	wvpData->WVP = multiplayMatrix(world, multiplayMatrix(viewMatrix, projectionMatrix));
+	wvpData->World = world;
+	wvpResource->Unmap(0, nullptr);
+
+	// ★ Material の GPU 書き込み（これがないと ImGui 反映されない）
+	Material* materialData = nullptr;
+	materialResource->Map(0, nullptr, reinterpret_cast<void**>(&materialData));
+	*materialData = material;
+	materialResource->Unmap(0, nullptr);
+
+	// 描画
+	DrawSingleModel(
+		commandList,
+		model,
+		material,
+		transform,
+		wvpResource,
+		materialResource,
+		lightResource,
+		textureSrvHandleGPU,
+		viewMatrix,
+		projectionMatrix
+	);
+}
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1003,13 +1149,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// BlendStateの設定
 	D3D12_BLEND_DESC blendDesc{};
 	// すべての色要素を書き込む
-	blendDesc.RenderTarget[0].RenderTargetWriteMask =
-		D3D12_COLOR_WRITE_ENABLE_ALL;
+	blendDesc.RenderTarget[0].BlendEnable = TRUE;
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	// 裏面を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 	// 三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
@@ -1029,6 +1182,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		dxcCompiler, // dxcCompiler
 		includeHandler); // includeHandler
 	assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
+
+	// ==== Shader読み込み・コンパイル処理の場所 ====
+	ComPtr<IDxcBlob> crackPixelShader = CompileShader(
+		L"GlassPS.hlsl", // ファイル名は必要に応じて変更
+		L"ps_6_0",
+		dxcUtils,
+		dxcCompiler,
+		includeHandler);
+		assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラ
+
 
 	// PSOを生成する
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
@@ -1065,6 +1228,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
 
+	// 元々使っていたPSO設定を basePsoDesc として保存
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC basePsoDesc{};
+	basePsoDesc.pRootSignature = rootSignature.Get(); // RootSignature
+	basePsoDesc.InputLayout = inputLayoutDesc; // InputLayout
+	basePsoDesc.VS = { vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize() }; // VertexShader
+	basePsoDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() }; // PixelShader（このあと上書きされるので適当でOK）
+	basePsoDesc.BlendState = blendDesc; // BlendState
+	basePsoDesc.RasterizerState = rasterizerDesc; // RasterizerState
+	basePsoDesc.NumRenderTargets = 1;
+	basePsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+	basePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	basePsoDesc.SampleDesc.Count = 1;
+	basePsoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+
+	// ひび割れバリア用 PSO 設定
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC crackShieldPsoDesc = basePsoDesc;
+	crackShieldPsoDesc.PS.pShaderBytecode = crackPixelShader->GetBufferPointer();
+	crackShieldPsoDesc.PS.BytecodeLength = crackPixelShader->GetBufferSize();
+
+	ComPtr<ID3D12PipelineState> crackShieldPSO;
+	hr = device->CreateGraphicsPipelineState(&crackShieldPsoDesc, IID_PPV_ARGS(&crackShieldPSO));
+	assert(SUCCEEDED(hr));
+
 
 	// リソース作成
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
@@ -1074,7 +1260,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<GlassFragment> fragments = GenerateSphereFragmentsFromSingleModel(device, "glass_fragment.obj", 200);
 	InitializeGlassFragmentBuffers(device, fragments);
 
-	ModelData iceBackgroundModel = LoadObjFile("Resources", "ice_background.obj");
+	ModelData iceBackgroundModel = LoadObjFile(device,"Resources", "ice_background.obj");
 	Transform iceTransform;
 	iceTransform.scale = { 1.0f, 1.0f, 1.0f };
 	iceTransform.rotate = { 0.0f, 0.0f, 0.0f };
@@ -1083,6 +1269,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	iceMaterial.enableLighting = true;
 	iceMaterial.color = { 0.6f, 0.9f, 1.1f, 0.15f }; // 淡い青＋透明
 
+	// --- 変数定義
+	ModelData barrierModel;
+	Transform barrierTransform;
+	Material barrierMaterial;
+	ComPtr<ID3D12Resource> barrierWvpResource;
+	ComPtr<ID3D12Resource> barrierMaterialResource;
+
+	// --- 初期化呼び出し
+	InitializeBarrier(
+		device,
+		barrierModel,
+		barrierTransform,
+		barrierMaterial,
+		barrierWvpResource
+	);
+
+	barrierMaterialResource = CreateBufferResource(device, sizeof(Material));
 
 
 	// 頂点リソース用のヒープの設定
@@ -1133,40 +1336,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorRect.top = 0;
 	scissorRect.bottom = kClientHeight;
 
-	// Transform変数を作る
-	static Transform transformA = {
-		  {1.0f, 1.0f, 1.0f},  // scale
-		  {0.0f, 0.0f, 0.0f},  // rotate
-		  {0.0f, 0.0f, 0.0f}   // translate
-	};
-
-	// 現在選択されているテクスチャのインデックス
-	static size_t selectedTextureIndex = 0;
-
-	// Textureを呼んで転送する
-	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
-	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
-	assert(textureResource);
-	UploadTextureData(textureResource, mipImages);
-
-	// metadataを基にSRVを作成する
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-	srvDesc.Format = metadata.format; // フォーマット
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // コンポーネントマッピング
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
-	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels); // mipレベルの数
-
-	//SRVを作成するDescriptorHeapの先頭を取得する
-	UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
-	// テクスチャのSRVを作成する
-	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
-
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
-
 	float deltaTime = 1.0f / 60.0f;        // フレーム時間（簡易固定値）
 
 	bool isFiring = false;
@@ -1180,7 +1349,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	enum class MagicMode { Scatter, Laser };
 	static MagicMode currentMode = MagicMode::Scatter;
 
-
+	static float crackAmount = 1.0f;
 
 	// キーの状態
 	static BYTE key[256] = {};
@@ -1251,7 +1420,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// デバッグテキストの表示
 			ImGui::Begin("Window");
-		
+
+			ImGui::SliderFloat("Crack Amount", &barrierMaterial.crackAmount, 0.0f, 2.0f);
+
 			// 光の方向ベクトルの編集
 			static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
 			if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
@@ -1329,6 +1500,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				fireTimer = 0.0f;
 			}
 
+
+
 			ImGui::End();
 
 
@@ -1396,12 +1569,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
+			Vector3 barrierCenter = barrierTransform.translate;
+			float barrierRadius = 1.0f; // 盾モデルに合わせて調整
+
 			for (auto& frag : fragments) {
 				if (!frag.isActive) continue;
 
 				if (frag.isFlying) {
 					frag.transform.translate += frag.velocity * deltaTime;
 
+					// 衝突判定（球状バリアと）
+					Vector3 toBarrier = frag.transform.translate - barrierCenter;
+					float distance = Length(toBarrier);
+
+					if (distance <= barrierRadius) {
+						// 法線を計算
+						Vector3 normal = Normalize(toBarrier);
+						Vector3 incoming = frag.velocity;
+
+						// 反射ベクトル = 入射 - 2 * (入射・法線) * 法線
+						frag.velocity = Reflect(incoming, normal);
+
+						// 速度を少し減衰（摩擦のように）
+						frag.velocity *= 0.6f;
+
+						// ヒット時にその場で止めたいなら以下を有効化
+						// frag.isFlying = false;
+						// frag.isActive = false;
+					}
+
+					// 一定距離で非アクティブ化（消える）
 					if (Length(frag.transform.translate - frag.initialPosition) > 30.0f) {
 						frag.isFlying = false;
 						frag.isActive = false;
@@ -1409,7 +1606,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				} else if (isFiring) {
 					frag.detachTimer += deltaTime;
 
-					// 引き抜き中
 					if (frag.detachTimer >= frag.detachDelay && !frag.isDetached) {
 						frag.detachProgress += deltaTime * 1.0f;
 
@@ -1418,21 +1614,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 							frag.isDetached = true;
 						}
 
-						// 位置補間
 						Vector3 offset = frag.normal * (-frag.maxDetachDistance * frag.detachProgress);
 						frag.transform.translate = frag.initialPosition + offset;
-
-						// スケール補間
 						float scale = Lerp(0.2f, 0.3f, frag.detachProgress);
 						frag.transform.scale = { scale, scale, scale };
-
-						// 回転演出（飛ぶ方向に向かって回る）
-						float rotSpeed = XM_PI * 2.0f; // 1周ぶん
-						frag.transform.rotate.z = frag.detachProgress * rotSpeed;  // Z軸だけ回転
 					}
 				}
 			}
-
 
 
 
@@ -1484,18 +1672,42 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			// 描画処理
+
+			// ★ 追加する：SRVテーブル先頭の GPU ハンドル（t0 → t1）
+			D3D12_GPU_DESCRIPTOR_HANDLE srvTableHandle = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 0);
+
+			// --- 破片の描画 ---
 			UpdateAndDrawFragments(
 				commandList.Get(),
 				fragments,
 				materialResourceA,
 				directionalLightResource,
-				textureSrvHandleGPU,
+				srvTableHandle,
 				viewMatrix,
 				projectionMatrix
 			);
 
+			// 描画前に必ずセット
+			ID3D12DescriptorHeap* heaps[] = { srvDescriptorHeap.Get() };
+			commandList->SetDescriptorHeaps(1, heaps);
 
+			// 描画
+			commandList->SetGraphicsRootDescriptorTable(2, srvTableHandle);
+
+
+			DrawBarrier(
+				commandList.Get(),
+				barrierModel,
+				barrierMaterial,
+				barrierTransform,
+				barrierWvpResource,
+				barrierMaterialResource,
+				directionalLightResource,
+				srvTableHandle,
+				viewMatrix,
+				projectionMatrix,
+				crackShieldPSO
+			);
 
 
 			// ImGuiの描画

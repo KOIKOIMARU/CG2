@@ -23,13 +23,25 @@ struct Vector3 {
 		return *this;
 	}
 
-	// Vector3 に += を定義
+	// Vector3 に -= を定義
 	Vector3& operator-=(const Vector3& rhs) {
 		x -= rhs.x;
 		y -= rhs.y;
 		z -= rhs.z;
 		return *this;
 	}
+
+
+	// Vector3 に *= を定義
+	inline Vector3& operator*=(float s) {
+		x *= s;
+		y *= s;
+		z *= s;
+		return *this;
+	}
+
+
+
 
 	// 減算演算子の定義
 	Vector3 operator-(const Vector3& other) const {
@@ -333,6 +345,13 @@ inline float Length(const Vector3& v) {
 inline float Distance(const Vector3& a, const Vector3& b) {
 	return Length({ a.x - b.x, a.y - b.y, a.z - b.z });
 }
+
+
+inline Vector3 Reflect(const Vector3& incoming, const Vector3& normal) {
+	float dot = Dot(incoming, normal);
+	return incoming - normal * (2.0f * dot);
+}
+
 
 
 inline Matrix4x4 MakeLookLhMatrix(const Vector3& eye, const Vector3& target, const Vector3& up) {
