@@ -823,6 +823,12 @@ void DrawBarrier(
 	*materialData = material;
 	materialResource->Unmap(0, nullptr);
 
+	// ✅ ★ 各種バインドを追加（これが無いと意味がない）
+	commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress()); // b0: Material
+	commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress());      // b1: WVP
+	commandList->SetGraphicsRootConstantBufferView(3, lightResource->GetGPUVirtualAddress());    // b3: Light
+
+
 	// 描画
 	DrawSingleModel(
 		commandList,
@@ -1218,14 +1224,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		includeHandler); // includeHandler
 	assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
 
-	// ==== Shader読み込み・コンパイル処理の場所 ====
 	ComPtr<IDxcBlob> crackPixelShader = CompileShader(
-		L"GlassPS.hlsl", // ファイル名は必要に応じて変更
+		L"GlassPS.hlsl",
 		L"ps_6_0",
 		dxcUtils,
 		dxcCompiler,
 		includeHandler);
-	assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラ
+	assert(pixelShaderBlob != nullptr); // ← ✖ これ別の変数
+
 
 
 	// PSOを生成する
@@ -1476,7 +1482,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// デバッグテキストの表示
 			ImGui::Begin("Window");
 
-			ImGui::SliderFloat("Crack Amount", &barrierMaterial.crackAmount, 0.0f, 2.0f);
+			// ImGui による crackAmount の変更を反映
+			ImGui::SliderFloat("Crack Amount", &barrierMaterial.crackAmount, 0.0f, 1.0f);
+
+			// ★ GPU にアップロード（DrawBarrier前）
+			UploadBufferData(barrierMaterialResource.Get(), &barrierMaterial, sizeof(Material));
+
 
 			// 光の方向ベクトルの編集
 			static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
@@ -1830,13 +1841,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				projectionMatrix
 			);
 
+			UploadBufferData(barrierMaterialResource.Get(), &barrierMaterial, sizeof(Material));
+
 			// 描画前に必ずセット
 			ID3D12DescriptorHeap* heaps[] = { srvDescriptorHeap.Get() };
 			commandList->SetDescriptorHeaps(1, heaps);
 
-			// 描画
-			commandList->SetGraphicsRootDescriptorTable(2, srvTableHandle);
+			// ★ 追加：MaterialCBをシェーダに送る（b0用）
+			commandList->SetGraphicsRootConstantBufferView(0, barrierMaterialResource->GetGPUVirtualAddress());
 
+			// 描画（SRVのt0やt1など）
+			commandList->SetGraphicsRootDescriptorTable(2, srvTableHandle);
 
 			DrawBarrier(
 				commandList.Get(),
@@ -1851,6 +1866,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				projectionMatrix,
 				crackShieldPSO
 			);
+
 
 
 			// ImGuiの描画

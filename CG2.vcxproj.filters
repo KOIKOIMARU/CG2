@@ -52,7 +52,6 @@
   <ItemGroup>
     <FxCompile Include="Object3d.VS.hlsl" />
     <FxCompile Include="Object3d.PS.hlsl" />
-    <FxCompile Include="GlassPS.hlsl" />
     <FxCompile Include="SkyVS.hlsl" />
     <FxCompile Include="SkyPS.hlsl" />
   </ItemGroup>
@@ -98,5 +97,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Object3d.hlsli" />
+    <None Include="GlassPS.hlsl" />
   </ItemGroup>
 </Project>

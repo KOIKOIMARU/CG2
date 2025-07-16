@@ -5,8 +5,11 @@ struct Material
 {
     float4 color;
     int enableLighting;
+    float crackAmount;
+    float2 padding;
     float4x4 uvTransform;
 };
+
 
 struct DirectionalLight
 {
