@@ -112,6 +112,7 @@ struct GlassFragment {
 	float maxDetachDistance = 1.0f; // どれだけ引き抜くか（個別に差をつける）
 	Vector3 originalPosition;
 	bool hasBounced = false;
+	Vector3 originalRotate;
 
 	ComPtr<ID3D12Resource> wvpResource;
 };
@@ -135,9 +136,17 @@ struct ChunkHeader {
 	int32_t size;   // チャンクサイズ
 };
 
+enum class CameraMode {
+	Sphere,
+	Shield
+};
+
+
 // グローバル変数
 
 	// デバッグカメラの初期化
+DebugCamera sphereCamera;
+DebugCamera shieldCamera;
 DebugCamera debugCamera;
 bool useDebugCamera = false;
 
@@ -622,8 +631,8 @@ std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
 		frag.wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
 
 		frag.transform.scale = { 0.3f, 0.3f, 0.3f };
-
-		frag.transform.rotate = { pitch, yaw, roll };
+		frag.originalRotate = { pitch, yaw, roll }; // ← 初期角度を保存
+		frag.transform.rotate = frag.originalRotate;
 
 		frag.transform.translate = { x * radius, y * radius, z * radius + 5 };
 		frag.velocity = { 0, 0, 0 };
@@ -1378,6 +1387,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	static float crackAmount = 1.0f;
 
+
+	enum class CameraViewMode {
+		Sphere,
+		Shield
+	};
+
+	// 各視点カメラの初期化
+	sphereCamera.Initialize({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+	sphereCamera.Update(nullptr);  // ← ★ これがないと view/proj 未設定！
+
+	shieldCamera.Initialize({ 0.0f, 0.0f, 30.0f }, { 0.0f, 3.141592f ,0.0f });
+	shieldCamera.Update(nullptr);
+
+
+	static int selectedView = 0;
+
+	static bool enableDebugControl = false;
+
+	static bool enableShieldControl = false;
+
+
 	// キーの状態
 	static BYTE key[256] = {};
 	static BYTE keyPre[256] = {};
@@ -1411,9 +1441,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	keyboard->Acquire();
 	keyboard->GetDeviceState(sizeof(key), key);
 
-
-	debugCamera.Initialize();
-
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -1441,9 +1468,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// 毎フレームのキーボード入力取得
 			BYTE currentKey[256];
+			keyboard->GetDeviceState(sizeof(currentKey), currentKey); // ← 先に取得
 			memcpy(keyPre, key, sizeof(key));
 			memcpy(key, currentKey, sizeof(key));
-			keyboard->GetDeviceState(sizeof(currentKey), currentKey);
+
 
 			// デバッグテキストの表示
 			ImGui::Begin("Window");
@@ -1460,8 +1488,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 光の強さ
 			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
 			ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
-			// ImGui内のWindow内に追加（確認用）
-			ImGui::Checkbox("Use Debug Camera", &useDebugCamera);
+
+
+			ImGui::Combo("Camera View", &selectedView, "Sphere\0Shield\0");
+			CameraViewMode currentCameraView = static_cast<CameraViewMode>(selectedView);
+
+			ImGui::Checkbox("Enable Debug Control", &enableDebugControl);
+			// カメラ位置初期化ボタン
+			if (ImGui::Button("Reset Camera Position")) {
+				switch (currentCameraView) {
+				case CameraViewMode::Sphere:
+					sphereCamera.Initialize({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+					sphereCamera.Update(nullptr); // view/projを再計算
+					break;
+				case CameraViewMode::Shield:
+					shieldCamera.Initialize({ 0.0f, 0.0f, 30.0f }, { 0.0f, 3.141592f, 0.0f });
+					shieldCamera.Update(nullptr);
+					break;
+				}
+			}
+
+			ImGui::Checkbox("Enable Shield Control", &enableShieldControl);
+			if (ImGui::Button("Reset Shield Position")) {
+				barrierTransform.translate = { 0.0f, 0.0f, 20.0f };
+			}
 
 			ImGui::Begin("Magic Settings");
 
@@ -1478,9 +1528,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				std::shuffle(fragments.begin(), fragments.end(), std::mt19937{ std::random_device{}() });
 				fireQueue = std::queue<GlassFragment*>();
 
-				Vector3 cameraPos = useDebugCamera
-					? debugCamera.GetPosition()
-					: Vector3{ 0.0f, 0.0f, -5.0f };
+				Vector3 cameraPos;
+				switch (currentCameraView) {
+				case CameraViewMode::Sphere:
+					cameraPos = sphereCamera.GetPosition();
+					break;
+				case CameraViewMode::Shield:
+					cameraPos = shieldCamera.GetPosition();
+					break;
+				}
 
 
 				std::mt19937 rng(std::random_device{}());
@@ -1488,14 +1544,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 				for (int i = 0; i < fragments.size(); ++i) {
 					auto& frag = fragments[i];
+					frag.initialPosition = frag.originalPosition;
+					frag.transform.translate = frag.initialPosition;
+					frag.transform.scale = { 0.3f, 0.3f, 0.3f };
+					frag.transform.rotate = frag.originalRotate; // ★ 追加！
+
+					frag.velocity = { 0, 0, 0 };
 					frag.hasBounced = false;
 					frag.isFlying = false;
 					frag.isDetached = false;
 					frag.detachProgress = 0.0f;
 					frag.detachTimer = 0.0f;
 					frag.isActive = true;
-					frag.velocity = { 0, 0, 0 };
-					frag.transform.scale = { 0.3f, 0.3f, 0.3f };
+					frag.lifeTime = 0.0f;
 
 					if (currentMode == MagicMode::Scatter) {
 						// 通常：元の位置から引き抜き → 発射
@@ -1504,11 +1565,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						frag.detachDelay = i * 0.05f;
 						frag.maxDetachDistance = detachDistRange(rng);
 					} else if (currentMode == MagicMode::Laser) {
-						// 一点集中：カメラ位置から即発射
 						frag.isDetached = true;
 						frag.detachProgress = 1.0f;
-						frag.initialPosition = cameraPos;
-						frag.transform.translate = cameraPos;
+
+						// View行列から forward（前方向ベクトル）を取得
+						Matrix4x4 view = (currentCameraView == CameraViewMode::Sphere)
+							? sphereCamera.GetViewMatrix()
+							: shieldCamera.GetViewMatrix();
+
+						Vector3 forward = {
+							-view.m[2][0],
+							-view.m[2][1],
+							-view.m[2][2]
+						};
+						forward = Normalize(forward);
+
+						// カメラ前方にずらす
+						Vector3 offsetPos = cameraPos + forward * 0.5f;
+
+						frag.initialPosition = offsetPos;
+						frag.transform.translate = offsetPos;
 					}
 
 					fireQueue.push(&frag);
@@ -1534,42 +1610,46 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			float moveSpeed = 5.0f * deltaTime;
 			float rotateSpeed = 1.5f * deltaTime;
 
-			// 位置移動
-			if (key[DIK_A])  barrierTransform.translate.x -= moveSpeed;
-			if (key[DIK_D]) barrierTransform.translate.x += moveSpeed;
-			if (key[DIK_W])    barrierTransform.translate.y += moveSpeed;
-			if (key[DIK_S])  barrierTransform.translate.y -= moveSpeed;
+			if (enableShieldControl) {
+				// 位置移動
+				if (key[DIK_A])  barrierTransform.translate.x += moveSpeed;
+				if (key[DIK_D])  barrierTransform.translate.x -= moveSpeed;
+				if (key[DIK_W])  barrierTransform.translate.y += moveSpeed;
+				if (key[DIK_S])  barrierTransform.translate.y -= moveSpeed;
 
-			// Zキーで前進、Xキーで後退
-			if (key[DIK_Z]) barrierTransform.translate.z += moveSpeed;
-			if (key[DIK_X]) barrierTransform.translate.z -= moveSpeed;
-
-			// DebugCamera更新
-			if (useDebugCamera) {
-				debugCamera.Update(currentKey);
+				// Zキーで前進、Xキーで後退
+				if (key[DIK_Z])  barrierTransform.translate.z += moveSpeed;
+				if (key[DIK_X])  barrierTransform.translate.z -= moveSpeed;
 			}
 
-			// View / Projection 行列
+
+			if (enableDebugControl) {
+				switch (currentCameraView) {
+				case CameraViewMode::Sphere: sphereCamera.Update(currentKey); break;
+				case CameraViewMode::Shield: shieldCamera.Update(currentKey); break;
+				}
+			}
+
+
 			Vector3 cameraPos;
 			Matrix4x4 viewMatrix;
 			Matrix4x4 projectionMatrix;
 
-			if (useDebugCamera) {
-				cameraPos = debugCamera.GetPosition();
-				viewMatrix = debugCamera.GetViewMatrix();
-				projectionMatrix = debugCamera.GetProjectionMatrix();
-			} else {
-				// 固定カメラ
-				cameraPos = Vector3{ 0.0f, 0.0f, -5.0f };  // 固定カメラ位置
-				viewMatrix = MakeLookLhMatrix(
-					{ 0.0f, 0.0f, -5.0f },
-					{ 0.0f, 0.0f,  0.0f },
-					{ 0.0f, 1.0f,  0.0f }
-				);
-				projectionMatrix = MakePerspectiveFovMatrix(
-					0.45f, 1280.0f / 720.0f, 0.1f, 100.0f
-				);
+			switch (currentCameraView) {
+			case CameraViewMode::Sphere:
+				cameraPos = sphereCamera.GetPosition();
+				viewMatrix = sphereCamera.GetViewMatrix();
+				projectionMatrix = sphereCamera.GetProjectionMatrix();
+				break;
+
+			case CameraViewMode::Shield:
+				cameraPos = shieldCamera.GetPosition();
+				viewMatrix = shieldCamera.GetViewMatrix();
+				projectionMatrix = shieldCamera.GetProjectionMatrix();
+				break;
 			}
+
+
 			Vector3 rayDir = MouseToWorldRayDirection(
 				hwnd, 1280, 720,
 				viewMatrix, projectionMatrix
@@ -1684,7 +1764,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 			ImGui::Text("Aim Dir: %.2f %.2f %.2f", rayDir.x, rayDir.y, rayDir.z);
-
 
 			ImGui::End();
 

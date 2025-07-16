@@ -13,62 +13,50 @@ T Max(T a, T b) {
     return (a > b) ? a : b;
 }
 
-void DebugCamera::Initialize() {
-    theta_ = 3.141592f;           // ← Z = -1 方向を見るように反転
-    phi_ = 0.0f;
-    distance_ = 5.0f;
-    pivot_ = { 0.0f, 0.0f, 0.0f };
+void DebugCamera::Initialize(const Vector3& pos, const Vector3& rotation) {
+    position_ = pos;
+    yaw_ = rotation.y;
+    pitch_ = rotation.x;
 }
-
-
 
 void DebugCamera::Update(const uint8_t* keys) {
-    const float rotateSpeed = 0.02f;
     const float moveSpeed = 0.1f;
+    const float rotateSpeed = 0.02f;
 
-    // ✅ keys が nullptr ならキー入力スキップ（固定ビューのとき）
+    // ★ nullチェックを追加
     if (keys) {
-        // 回転
-        if (keys[DIK_LEFT])  theta_ += rotateSpeed;
-        if (keys[DIK_RIGHT]) theta_ -= rotateSpeed;
-        if (keys[DIK_UP])    phi_ += rotateSpeed;
-        if (keys[DIK_DOWN])  phi_ -= rotateSpeed;
+        if (keys[DIK_LEFT]) yaw_ -= rotateSpeed;
+        if (keys[DIK_RIGHT]) yaw_ += rotateSpeed;
+        if (keys[DIK_UP]) pitch_ += rotateSpeed;
+        if (keys[DIK_DOWN]) pitch_ -= rotateSpeed;
+    }
+    // 上下回転の制限
+    pitch_ = std::clamp(pitch_, -1.5f, 1.5f);
 
-        phi_ = std::clamp(phi_, -1.5f, 1.5f);
+    // 回転から方向ベクトルを算出（Y軸回転 → X軸回転）
+    Vector3 forward = {
+        cosf(pitch_) * sinf(yaw_),
+        sinf(pitch_),
+        cosf(pitch_) * cosf(yaw_)
+    };
+    forward = Normalize(forward);
 
-        // forward, right, upベクトルの再計算（後の移動のため）
-        Vector3 cameraPos = {
-            pivot_.x + distance_ * std::cosf(phi_) * std::sinf(theta_),
-            pivot_.y + distance_ * std::sinf(phi_),
-            pivot_.z + distance_ * std::cosf(phi_) * std::cosf(theta_)
-        };
+    Vector3 right = Normalize(Cross({ 0,1,0 }, forward));
+    Vector3 up = Normalize(Cross(forward, right));
 
-        Vector3 worldUp = { 0.0f, 1.0f, 0.0f };
-        Vector3 forward = Normalize(pivot_ - cameraPos);
-        if (std::abs(Dot(forward, worldUp)) > 0.99f) {
-            worldUp = { 0.0f, 0.0f, 1.0f };
-        }
-        Vector3 right = Normalize(Cross(worldUp, forward));
-        Vector3 up = Normalize(Cross(forward, right));
-
-        // 移動（pivotを動かす）
-        if (keys[DIK_W]) pivot_ += forward * moveSpeed;
-        if (keys[DIK_S]) pivot_ -= forward * moveSpeed;
-        if (keys[DIK_A]) pivot_ -= right * moveSpeed;
-        if (keys[DIK_D]) pivot_ += right * moveSpeed;
-        if (keys[DIK_Q]) pivot_ += up * moveSpeed;
-        if (keys[DIK_E]) pivot_ -= up * moveSpeed;
+    // キーで移動（WASD）
+    if (keys) {
+        if (keys[DIK_W]) position_ += forward * moveSpeed;
+        if (keys[DIK_S]) position_ -= forward * moveSpeed;
+        if (keys[DIK_A]) position_ -= right * moveSpeed;
+        if (keys[DIK_D]) position_ += right * moveSpeed;
+        if (keys[DIK_Q]) position_ += up * moveSpeed;
+        if (keys[DIK_E]) position_ -= up * moveSpeed;
     }
 
-    // カメラ再計算（キー入力の有無に関係なく必要）
-    Vector3 cameraPos = {
-        pivot_.x + distance_ * std::cosf(phi_) * std::sinf(theta_),
-        pivot_.y + distance_ * std::sinf(phi_),
-        pivot_.z + distance_ * std::cosf(phi_) * std::cosf(theta_)
-    };
-
-    viewMatrix_ = MakeLookLhMatrix(cameraPos, pivot_, { 0.0f, 1.0f, 0.0f });
+    // ビュー行列生成
+    viewMatrix_ = MakeLookLhMatrix(position_, position_ + forward, { 0, 1, 0 });
     projectionMatrix_ = MakePerspectiveFovMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
-    position_ = cameraPos;
 }
+
 
