@@ -1,3 +1,4 @@
+
 #define NOMINMAX
 #include <Windows.h>
 #include <cstdint>
@@ -107,8 +108,10 @@ struct GlassFragment {
 
 	float detachDelay = 0.0f;   // 引き抜きまでの遅延時間
 	float detachTimer = 0.0f;   // 経過時間
+	float lifeTime = 0.0f;
 	float maxDetachDistance = 1.0f; // どれだけ引き抜くか（個別に差をつける）
 	Vector3 originalPosition;
+	bool hasBounced = false;
 
 	ComPtr<ID3D12Resource> wvpResource;
 };
@@ -583,7 +586,7 @@ std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
 	int count,
 	float radius = 0.2f
 ) {
-	ModelData baseModel = LoadObjFile(device,"resources", filepath);
+	ModelData baseModel = LoadObjFile(device, "resources", filepath);
 
 	std::vector<GlassFragment> fragments;
 	fragments.reserve(count);
@@ -619,7 +622,7 @@ std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
 		frag.wvpResource = CreateBufferResource(device, sizeof(TransformationMatrix));
 
 		frag.transform.scale = { 0.3f, 0.3f, 0.3f };
-	
+
 		frag.transform.rotate = { pitch, yaw, roll };
 
 		frag.transform.translate = { x * radius, y * radius, z * radius + 5 };
@@ -644,33 +647,56 @@ std::vector<GlassFragment> GenerateSphereFragmentsFromSingleModel(
 }
 
 
-Vector3 MouseToWorldRayDirection(HWND hwnd, int screenWidth, int screenHeight, const Matrix4x4& viewMatrix, const Matrix4x4& projectionMatrix) {
-	// ① マウス座標（スクリーン）
+Vector3 MouseToWorldRayDirection(HWND hwnd, int width, int height,
+	const Matrix4x4& viewMatrix, const Matrix4x4& projectionMatrix) {
+
+	POINT mouse;
+	GetCursorPos(&mouse);
+	ScreenToClient(hwnd, &mouse);
+
+	// 1. スクリーン座標 → NDC
+	float x = (2.0f * mouse.x / width) - 1.0f;
+	float y = 1.0f - (2.0f * mouse.y / height); // Y反転
+
+	// 2. NDC → クリップ空間（z = 1: 遠くの点）
+	Vector4 rayClip = { x, y, 1.0f, 1.0f };
+
+	// 3. クリップ空間 → ビュー空間
+	Matrix4x4 invProj = Inverse(projectionMatrix);
+	Vector4 rayView = Transform4(rayClip, invProj);
+	rayView.z = 1.0f;
+	rayView.w = 0.0f; // ベクトルとして扱う
+
+	// 4. ビュー空間 → ワールド空間
+	Matrix4x4 invView = Inverse(viewMatrix);
+	Vector4 rayWorld4 = Transform4(rayView, invView);
+	Vector3 rayWorld = Normalize(Vector3{ rayWorld4.x, rayWorld4.y, rayWorld4.z });
+
+	return rayWorld;
+}
+
+
+
+
+Vector3 CalcMouseWorldPosition(HWND hwnd, float screenW, float screenH,
+	const Matrix4x4& view, const Matrix4x4& proj, float depthZ) {
 	POINT mousePos;
 	GetCursorPos(&mousePos);
-	ScreenToClient(hwnd, &mousePos); // クライアント座標に変換
+	ScreenToClient(hwnd, &mousePos);
 
-	// ② 正規化デバイス座標（NDC）に変換
-	float x = (2.0f * mousePos.x) / screenWidth - 1.0f;
-	float y = 1.0f - (2.0f * mousePos.y) / screenHeight;
-	Vector3 ndcRay = { x, y, 1.0f }; // z=1: 遠く方向
+	float ndcX = (float(mousePos.x) / screenW) * 2.0f - 1.0f;
+	float ndcY = 1.0f - (float(mousePos.y) / screenH) * 2.0f; // Y反転
 
-	// ③ ビュー × プロジェクション逆行列で逆変換
-	Matrix4x4 invVP = Inverse(multiplayMatrix(viewMatrix, projectionMatrix));
-	Vector4 rayClip = { ndcRay.x, ndcRay.y, 1.0f, 1.0f };
-	Vector4 rayWorld4 = Transform4(rayClip, invVP);
-	rayWorld4.w = 1.0f; // 任意（正規化の意味では）
+	Vector4 ndc = { ndcX, ndcY, depthZ, 1.0f };
 
-	// ④ カメラ位置（Z=-5 or DebugCamera）
-	Vector3 cameraPos = { 0.0f, 0.0f, -5.0f }; // 固定カメラデフォルト
-	if (useDebugCamera) {
-		cameraPos = debugCamera.GetPosition();
-	}
+	Matrix4x4 vp = multiplayMatrix(view, proj);
+	Matrix4x4 invVP = Inverse(vp);
+	Vector4 world = Transform4(ndc, invVP);
 
-	// ⑤ レイの方向（ワールド空間）
-	Vector3 rayWorld = { rayWorld4.x, rayWorld4.y, rayWorld4.z };
-	return Normalize(rayWorld - cameraPos);
+	return Vector3{ world.x / world.w, world.y / world.w, world.z / world.w };
 }
+
+
 
 void DrawSingleModel(
 	ComPtr<ID3D12GraphicsCommandList> commandList,
@@ -1190,7 +1216,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		dxcUtils,
 		dxcCompiler,
 		includeHandler);
-		assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラ
+	assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラ
 
 
 	// PSOを生成する
@@ -1260,7 +1286,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<GlassFragment> fragments = GenerateSphereFragmentsFromSingleModel(device, "glass_fragment.obj", 200);
 	InitializeGlassFragmentBuffers(device, fragments);
 
-	ModelData iceBackgroundModel = LoadObjFile(device,"Resources", "ice_background.obj");
+	ModelData iceBackgroundModel = LoadObjFile(device, "Resources", "ice_background.obj");
 	Transform iceTransform;
 	iceTransform.scale = { 1.0f, 1.0f, 1.0f };
 	iceTransform.rotate = { 0.0f, 0.0f, 0.0f };
@@ -1337,6 +1363,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorRect.bottom = kClientHeight;
 
 	float deltaTime = 1.0f / 60.0f;        // フレーム時間（簡易固定値）
+	bool isAimMode = false;
 
 	bool isFiring = false;
 	float fireTimer = 0.0f;
@@ -1451,25 +1478,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				std::shuffle(fragments.begin(), fragments.end(), std::mt19937{ std::random_device{}() });
 				fireQueue = std::queue<GlassFragment*>();
 
-				Matrix4x4 viewMatrix, projectionMatrix;
-				Vector3 cameraPos;
-				if (useDebugCamera) {
-					viewMatrix = debugCamera.GetViewMatrix();
-					projectionMatrix = debugCamera.GetProjectionMatrix();
-					cameraPos = debugCamera.GetPosition();
-				} else {
-					viewMatrix = MakeLookLhMatrix({ 0, 0, -5 }, { 0, 0, 0 }, { 0, 1, 0 });
-					projectionMatrix = MakePerspectiveFovMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
-					cameraPos = { 0.0f, 0.0f, -5.0f };
-				}
+				Vector3 cameraPos = useDebugCamera
+					? debugCamera.GetPosition()
+					: Vector3{ 0.0f, 0.0f, -5.0f };
 
-				Vector3 rayDir = MouseToWorldRayDirection(hwnd, 1280, 720, viewMatrix, projectionMatrix);
 
 				std::mt19937 rng(std::random_device{}());
 				std::uniform_real_distribution<float> detachDistRange(0.6f, 1.2f);
 
 				for (int i = 0; i < fragments.size(); ++i) {
 					auto& frag = fragments[i];
+					frag.hasBounced = false;
 					frag.isFlying = false;
 					frag.isDetached = false;
 					frag.detachProgress = 0.0f;
@@ -1490,7 +1509,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						frag.detachProgress = 1.0f;
 						frag.initialPosition = cameraPos;
 						frag.transform.translate = cameraPos;
-						frag.velocity = rayDir * 60.0f; // 加速気味
 					}
 
 					fireQueue.push(&frag);
@@ -1500,6 +1518,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				fireTimer = 0.0f;
 			}
 
+			ImGui::Checkbox("Aim Mode", &isAimMode);
 
 
 			ImGui::End();
@@ -1509,10 +1528,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			static Vector3 globalOffset = { 0.0f, 0.0f, 0.0f };
 			ImGui::DragFloat3("Global Offset", &globalOffset.x, 0.01f);
 
+			
 
-			ImGui::End();
+			// 毎フレームの入力処理後に追加（例：mainループ内のUpdate付近）
+			float moveSpeed = 5.0f * deltaTime;
+			float rotateSpeed = 1.5f * deltaTime;
 
+			// 位置移動
+			if (key[DIK_A])  barrierTransform.translate.x -= moveSpeed;
+			if (key[DIK_D]) barrierTransform.translate.x += moveSpeed;
+			if (key[DIK_W])    barrierTransform.translate.y += moveSpeed;
+			if (key[DIK_S])  barrierTransform.translate.y -= moveSpeed;
 
+			// Zキーで前進、Xキーで後退
+			if (key[DIK_Z]) barrierTransform.translate.z += moveSpeed;
+			if (key[DIK_X]) barrierTransform.translate.z -= moveSpeed;
 
 			// DebugCamera更新
 			if (useDebugCamera) {
@@ -1520,14 +1550,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 			// View / Projection 行列
+			Vector3 cameraPos;
 			Matrix4x4 viewMatrix;
 			Matrix4x4 projectionMatrix;
 
 			if (useDebugCamera) {
+				cameraPos = debugCamera.GetPosition();
 				viewMatrix = debugCamera.GetViewMatrix();
 				projectionMatrix = debugCamera.GetProjectionMatrix();
 			} else {
 				// 固定カメラ
+				cameraPos = Vector3{ 0.0f, 0.0f, -5.0f };  // 固定カメラ位置
 				viewMatrix = MakeLookLhMatrix(
 					{ 0.0f, 0.0f, -5.0f },
 					{ 0.0f, 0.0f,  0.0f },
@@ -1537,10 +1570,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					0.45f, 1280.0f / 720.0f, 0.1f, 100.0f
 				);
 			}
-
 			Vector3 rayDir = MouseToWorldRayDirection(
 				hwnd, 1280, 720,
 				viewMatrix, projectionMatrix
+			);
+
+
+
+			Vector3 mouseWorldPos = CalcMouseWorldPosition(
+				hwnd, 1280, 720,
+				viewMatrix, projectionMatrix,
+				0.999f
 			);
 
 
@@ -1557,10 +1597,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					fireQueue.pop(); // キューから削除
 					frag->isFlying = true;
 
-					// カメラ位置から rayDir 方向に発射
-					Vector3 origin = useDebugCamera ? debugCamera.GetPosition() : Vector3{ 0, 0, -5 };
-					frag->velocity = rayDir * 60.0f;
+					Vector3 origin = cameraPos;  // ← cameraPos は上で共通して決めてある
 
+					Vector3 dir = (isAimMode)
+						? rayDir                     // ← マウスの方向に撃つ
+						: Vector3{ 0.0f, 0.0f, 1.0f }; // ← 固定前方
+
+					frag->velocity = dir * 60.0f;
+					frag->transform.rotate.y = std::atan2(dir.x, dir.z);
+
+					frag->velocity = dir * 60.0f;
+					frag->transform.rotate.y = std::atan2(dir.x, dir.z);
+					;
 					fireTimer -= fireInterval;
 				}
 
@@ -1582,27 +1630,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					Vector3 toBarrier = frag.transform.translate - barrierCenter;
 					float distance = Length(toBarrier);
 
-					if (distance <= barrierRadius) {
-						// 法線を計算
-						Vector3 normal = Normalize(toBarrier);
+					if (!frag.hasBounced && distance <= barrierRadius) {
+						frag.hasBounced = true;
+
+						// --- 反射処理（先ほどのまま） ---
+						Matrix4x4 shieldWorld = MakeAffineMatrix(
+							barrierTransform.scale,
+							barrierTransform.rotate,
+							barrierTransform.translate
+						);
+
+						Vector4 localNormal = { 0.0f, 0.0f, 1.0f, 0.0f };
+						Vector4 worldNormal4 = Transform4(localNormal, shieldWorld);
+						Vector3 worldNormal = Normalize(Vector3{ worldNormal4.x, worldNormal4.y, worldNormal4.z });
+
 						Vector3 incoming = frag.velocity;
+						Vector3 reflected = Reflect(incoming, worldNormal);
 
-						// 反射ベクトル = 入射 - 2 * (入射・法線) * 法線
-						frag.velocity = Reflect(incoming, normal);
+						if (Length(reflected) < 1.0f) {
+							reflected += worldNormal * 2.0f;
+						}
 
-						// 速度を少し減衰（摩擦のように）
-						frag.velocity *= 0.6f;
+						frag.transform.translate += worldNormal * 0.1f;
+						frag.velocity = reflected * 0.6f;
 
-						// ヒット時にその場で止めたいなら以下を有効化
-						// frag.isFlying = false;
-						// frag.isActive = false;
+						frag.transform.rotate.x += 1.5f * deltaTime;
+						frag.transform.rotate.y += 2.0f * deltaTime;
 					}
 
-					// 一定距離で非アクティブ化（消える）
-					if (Length(frag.transform.translate - frag.initialPosition) > 30.0f) {
+					frag.lifeTime += deltaTime;
+					if (frag.lifeTime > 3.0f) {
 						frag.isFlying = false;
 						frag.isActive = false;
 					}
+
 				} else if (isFiring) {
 					frag.detachTimer += deltaTime;
 
@@ -1622,7 +1683,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
+			ImGui::Text("Aim Dir: %.2f %.2f %.2f", rayDir.x, rayDir.y, rayDir.z);
 
+
+			ImGui::End();
 
 			// ImGuiの描画
 			ImGui::Render();

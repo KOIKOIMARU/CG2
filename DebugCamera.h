@@ -1,3 +1,4 @@
+
 #pragma once
 #include "MathTypes.h"
 #include <cstdint>
@@ -9,7 +10,8 @@ public:
     void Update(const uint8_t* keys);
 
     // クラス内の private に追加
-    Vector3 position_ = { 0.0f, 0.0f, -distance_ }; // 初期値（適当）
+    Vector3 position_ = {}; // 初期化は Update() で正しく行う
+
 
     // GetPosition() の中身を以下のように修正
     Vector3 GetPosition() const {
