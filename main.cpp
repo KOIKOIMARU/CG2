@@ -1,4 +1,3 @@
-
 #define NOMINMAX
 #include <Windows.h>
 #include <cstdint>
@@ -1615,7 +1614,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			static Vector3 globalOffset = { 0.0f, 0.0f, 0.0f };
 			ImGui::DragFloat3("Global Offset", &globalOffset.x, 0.01f);
 
-			
+
 
 			// 毎フレームの入力処理後に追加（例：mainループ内のUpdate付近）
 			float moveSpeed = 5.0f * deltaTime;
