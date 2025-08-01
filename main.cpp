@@ -178,7 +178,6 @@ struct MeshRenderData {
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
 
-
  
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
@@ -787,6 +786,8 @@ std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
     return materials;
 }
 
+
+
 ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
 	ModelData modelData;
 	std::vector<Vector4> positions;  // 頂点位置
@@ -1062,6 +1063,32 @@ auto NormalizeTextureKey = [](const std::string& path) -> std::string {
 	std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
 	return filename;
 	};
+
+LPDIRECTINPUT8 directInput = nullptr;
+LPDIRECTINPUTDEVICE8 gamepad = nullptr;
+
+void InitGamepad(HWND hwnd) {
+	// DirectInputオブジェクトの生成
+	HRESULT hr = DirectInput8Create(
+		GetModuleHandle(nullptr),
+		DIRECTINPUT_VERSION,
+		IID_IDirectInput8,
+		(void**)&directInput,
+		nullptr);
+	assert(SUCCEEDED(hr));
+
+	// ゲームパッドの列挙と取得
+	directInput->EnumDevices(DI8DEVCLASS_GAMECTRL,
+		[](const DIDEVICEINSTANCE* pdidInstance, VOID* pContext) -> BOOL {
+			HRESULT hr = directInput->CreateDevice(pdidInstance->guidInstance, &gamepad, nullptr);
+			if (FAILED(hr)) return DIENUM_CONTINUE;
+
+			gamepad->SetDataFormat(&c_dfDIJoystick);
+			gamepad->SetCooperativeLevel((HWND)pContext, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
+			gamepad->Acquire();
+			return DIENUM_STOP; // 最初のゲームパッドで止める
+		}, hwnd, DIEDFL_ATTACHEDONLY);
+}
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1502,6 +1529,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
 
+	InitGamepad(hwnd); // ゲームパッドを初期化
+
+
 	// モデルデータの読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
 
@@ -1846,7 +1876,31 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// ImGuiのウィンドウを作成
 			ImGui::ShowDemoWindow();
 
+			ImGuiIO& io = ImGui::GetIO();
+			io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // ゲームパッド操作を有効化
+
+			// DirectInput ゲームパッド状態取得
+			DIJOYSTATE gamepadState = {};
+			if (gamepad) {
+				gamepad->Acquire();
+				gamepad->Poll();
+				gamepad->GetDeviceState(sizeof(DIJOYSTATE), &gamepadState);
+			}
+
+			io.NavInputs[ImGuiNavInput_DpadUp] = (gamepadState.lY < -500) ? 1.0f : 0.0f;
+			io.NavInputs[ImGuiNavInput_DpadDown] = (gamepadState.lY > 500) ? 1.0f : 0.0f;
+			io.NavInputs[ImGuiNavInput_DpadLeft] = (gamepadState.lX < -500) ? 1.0f : 0.0f;
+			io.NavInputs[ImGuiNavInput_DpadRight] = (gamepadState.lX > 500) ? 1.0f : 0.0f;
+
+			// 決定（Aボタン想定：0番ボタン）
+			io.NavInputs[ImGuiNavInput_Activate] = (gamepadState.rgbButtons[0] & 0x80) ? 1.0f : 0.0f;
+
+			// キャンセル（Bボタン：1番）
+			io.NavInputs[ImGuiNavInput_Cancel] = (gamepadState.rgbButtons[1] & 0x80) ? 1.0f : 0.0f;
+
 			ImGui::Begin("Window");
+
+			ImGui::SetItemDefaultFocus(); // ←追加！
 
 			// モデル切り替え
 			const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
@@ -1919,8 +1973,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
 				ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
 			}
-
-
 
 			ImGui::End();
 
@@ -2217,6 +2269,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	xAudio2.Reset(); // XAudio2の解放
 	SoundUnload(&soundData1); // 音声データの解放
 	CloseHandle(fenceEvent);
+	if (gamepad) {
+		gamepad->Unacquire();
+		gamepad->Release();
+		gamepad = nullptr;
+	}
+	if (directInput) {
+		directInput->Release();
+		directInput = nullptr;
+	}
+
 
 	CloseWindow(hwnd);
 
