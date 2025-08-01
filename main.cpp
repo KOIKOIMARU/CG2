@@ -13,6 +13,7 @@
 #include <cassert>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 #include <wrl.h>
 #include "ResourceObject.h"
 #include <wrl/client.h>
@@ -69,10 +70,12 @@ struct VertexData {
 
 struct Material {
 	Vector4 color;
-	int32_t lightingMode;  // ← enum値をここに渡す
-	float padding[3];      // 16バイトアライメント維持
+	int32_t lightingMode;
+	float padding[3]; // 16バイトアライメント維持
 	Matrix4x4 uvTransform;
+	std::string textureFilePath; // ← これを追加！
 };
+
 
 struct TransformationMatrix {
 	Matrix4x4 WVP;
@@ -142,7 +145,8 @@ enum class ModelType {
 	Sphere,
 	UtahTeapot,
 	StanfordBunny,
-	MultiMesh
+	MultiMesh,
+	MultiMaterial
 };
 
 enum class LightingMode {
@@ -151,15 +155,15 @@ enum class LightingMode {
 	HalfLambert,
 };
 
-// 新しい構造体
 struct Mesh {
 	std::vector<VertexData> vertices;
 	std::string name;
+	std::string materialName;
 };
 
 struct MultiModelData {
 	std::vector<Mesh> meshes;
-	MaterialData material;
+	std::unordered_map<std::string, Material> materials;
 };
 
 struct MeshRenderData {
@@ -167,6 +171,7 @@ struct MeshRenderData {
 	D3D12_VERTEX_BUFFER_VIEW vbView;
 	size_t vertexCount;
 	std::string name;
+	std::string materialName;
 };
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
@@ -730,6 +735,57 @@ MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::s
 	return materialData;
 }
 
+std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
+    const std::string& directoryPath,
+    const std::string& filename)
+{
+    std::unordered_map<std::string, Material> materials;
+    std::ifstream file(directoryPath + "/" + filename);
+    assert(file.is_open());
+
+    std::string line;
+    std::string currentMaterialName;
+    Material currentMaterial{};
+
+    while (std::getline(file, line)) {
+        std::istringstream s(line);
+        std::string identifier;
+        s >> identifier;
+
+        if (identifier == "newmtl") {
+            // 直前のマテリアルを保存
+            if (!currentMaterialName.empty()) {
+                materials[currentMaterialName] = currentMaterial;
+            }
+
+            // 新しいマテリアル名
+            s >> currentMaterialName;
+            currentMaterial = Material(); // 初期化
+            currentMaterial.color = { 1.0f, 1.0f, 1.0f, 1.0f };
+            currentMaterial.lightingMode = 1; // Lambertなど
+            currentMaterial.uvTransform = MakeIdentity4x4();
+        }
+        else if (identifier == "Kd") {
+            // 拡散反射色
+            s >> currentMaterial.color.x >> currentMaterial.color.y >> currentMaterial.color.z;
+            currentMaterial.color.w = 1.0f;
+        }
+        else if (identifier == "map_Kd") {
+            std::string textureFilename;
+            s >> textureFilename;
+            currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
+        }
+    }
+
+    // 最後のマテリアルを保存
+    if (!currentMaterialName.empty()) {
+        materials[currentMaterialName] = currentMaterial;
+    }
+
+    return materials;
+}
+
+
 
 ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
 	ModelData modelData;
@@ -812,6 +868,7 @@ MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::str
 
 	std::string line;
 	std::string currentMeshName = "default";
+	std::string currentMaterialName = "default"; // 現在のマテリアル名
 	Mesh currentMesh;
 
 	while (std::getline(file, line)) {
@@ -849,13 +906,13 @@ MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::str
 					normals[idx[2] - 1]
 				};
 			}
-			// 順番逆転
 			currentMesh.vertices.push_back(tri[2]);
 			currentMesh.vertices.push_back(tri[1]);
 			currentMesh.vertices.push_back(tri[0]);
 		} else if (identifier == "g" || identifier == "o") {
 			if (!currentMesh.vertices.empty()) {
 				currentMesh.name = currentMeshName;
+				currentMesh.materialName = currentMaterialName; // 使用中のマテリアル名を記録
 				modelData.meshes.push_back(currentMesh);
 				currentMesh = Mesh(); // 次のMeshへ
 			}
@@ -863,13 +920,28 @@ MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::str
 		} else if (identifier == "mtllib") {
 			std::string mtl;
 			s >> mtl;
-			modelData.material = LoadMaterialTemplate(directoryPath, mtl);
+			modelData.materials = LoadMaterialTemplateMulti(directoryPath, mtl); // マテリアル複数対応版
+		} else if (identifier == "usemtl") {
+			// 現在のマテリアル名を更新
+			s >> currentMaterialName;
+
+			// もし現メッシュに頂点があれば、いったん保存してマテリアル名を更新
+			if (!currentMesh.vertices.empty()) {
+				currentMesh.name = currentMeshName;
+				currentMesh.materialName = currentMaterialName;
+				modelData.meshes.push_back(currentMesh);
+				currentMesh = Mesh(); // 次のメッシュへ切り替え
+			}
 		}
+
 	}
+
 	if (!currentMesh.vertices.empty()) {
 		currentMesh.name = currentMeshName;
+		currentMesh.materialName = currentMaterialName;
 		modelData.meshes.push_back(currentMesh);
 	}
+
 	return modelData;
 }
 
@@ -980,9 +1052,16 @@ const char* GetModelFileName(ModelType type) {
 	case ModelType::UtahTeapot: return "teapot.obj";
 	case ModelType::StanfordBunny: return "bunny.obj";
 	case ModelType::MultiMesh: return "multiMesh.obj";
+	case ModelType::MultiMaterial: return "multiMaterial.obj";
 	default: return "plane.obj";
 	}
 }
+
+auto NormalizeTextureKey = [](const std::string& path) -> std::string {
+	std::string filename = std::filesystem::path(path).filename().string();
+	std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+	return filename;
+	};
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1494,6 +1573,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
 	vertexResource->Unmap(0, nullptr); // 書き込み完了したのでアンマップ
 
+	// GPU上のマテリアルリソース一覧（マテリアル名で識別）
+	std::unordered_map<std::string, ComPtr<ID3D12Resource>> materialResources;
+
+	// CPU側のマテリアルポインタ一覧（ImGuiで編集用）
+	std::unordered_map<std::string, Material*> materialDataList;
+
 	// A マテリアル（32バイト必要）
 	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, sizeof(Material));
 	Material* materialDataA = nullptr;
@@ -1604,10 +1689,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// 2枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages2 = LoadTexture("resources/checkerBoard.png");
+	DirectX::ScratchImage mipImages2 = LoadTexture("resources/monsterBall.png");
 	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
 	ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
 	UploadTextureData(textureResource2, mipImages2);
+
+	// 3枚目Textureを呼んで転送する
+	DirectX::ScratchImage mipImages3 = LoadTexture("resources/checkerBoard.png");
+	const DirectX::TexMetadata& metadata3 = mipImages3.GetMetadata();
+	ComPtr<ID3D12Resource> textureResource3 = CreateTextureResource(device, metadata3);
+	UploadTextureData(textureResource3, mipImages3);
 
 	// metadataを基にSRVを作成する
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -1622,6 +1713,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
 	srvDesc2.Texture2D.MipLevels = UINT(metadata2.mipLevels); // mipレベルの数
 
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc3{};
+	srvDesc3.Format = metadata3.format;
+	srvDesc3.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc3.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc3.Texture2D.MipLevels = UINT(metadata3.mipLevels);
+
 	//SRVを作成するDescriptorHeapの先頭を取得する
 	UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
@@ -1634,9 +1731,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// テクスチャのSRVを作成する
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 
+	// SRVの作成（3番目のスロット＝3番目のインデックス）
+	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU3 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU3 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+	device->CreateShaderResourceView(textureResource3.Get(), &srvDesc3, textureSrvHandleCPU3);
+
+	std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
+	std::vector<ComPtr<ID3D12Resource>> textureUploadBuffers; // アップロードバッファ保持用
+
+	// uvChecker.png のSRV作成後に登録
+	textureHandleMap[NormalizeTextureKey("uvChecker.png")] = textureSrvHandleGPU;
+	textureUploadBuffers.push_back(textureResource);
+
+	// monsterBall.png のSRV作成後に登録
+	textureHandleMap[NormalizeTextureKey("monsterBall.png")] = textureSrvHandleGPU2;
+	textureUploadBuffers.push_back(textureResource2);
+
+	// マップに登録（キーは .mtl に記載されてるファイル名に一致させる）
+	textureHandleMap[NormalizeTextureKey("checkerBoard.png")] = textureSrvHandleGPU3;
+	textureUploadBuffers.push_back(textureResource3);
+
 	// Sprite用の頂点リソースを作る
 	ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
-
 
 	// 頂点バッファビューを作成
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
@@ -1734,7 +1850,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::Begin("Window");
 
 			// モデル切り替え
-			const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot","StanfordBunny","MultiMesh"};
+			const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
 			int currentItem = static_cast<int>(selectedModel);
 			if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
 				selectedModel = static_cast<ModelType>(currentItem);
@@ -1763,6 +1879,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						ImGui::TreePop();
 					}
 				}
+				// UV変換（Sprite用）
+				if (ImGui::CollapsingHeader("Sprite UV")) {
+					ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
+					ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
+					ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
+				}
+			}
+			if (selectedModel == ModelType::MultiMaterial) {
+				if (ImGui::CollapsingHeader("MultiMaterial", ImGuiTreeNodeFlags_DefaultOpen)) {
+					int i = 0;
+					for (auto& [name, matData] : materialDataList) {
+						if (ImGui::TreeNode((name + "##" + std::to_string(i)).c_str())) {
+							ImGui::DragFloat2(("UV Translate##" + name).c_str(), &matData->uvTransform.m[3][0], 0.01f, -10.0f, 10.0f);
+							ImGui::DragFloat2(("UV Scale##" + name).c_str(), &matData->uvTransform.m[0][0], 0.01f, -10.0f, 10.0f);
+							ImGui::SliderAngle(("UV Rotate##" + name).c_str(), &matData->uvTransform.m[0][1]); // 任意（角度表現）
+							ImGui::ColorEdit3(("Color##" + name).c_str(), &matData->color.x);
+							int lighting = static_cast<int>(matData->lightingMode);
+							if (ImGui::Combo(("Lighting##" + name).c_str(), &lighting, "None\0Lambert\0HalfLambert\0")) {
+								matData->lightingMode = lighting;
+							}
+						}
+						++i;
+					}
+				}
 			}
 
 			// 光の設定
@@ -1781,12 +1921,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
 			}
 
-			// UV変換（Sprite用）
-			if (ImGui::CollapsingHeader("Sprite UV")) {
-				ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
-				ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
-				ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
-			}
+
 
 			ImGui::End();
 
@@ -1839,14 +1974,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
 
-			if (selectedModel == ModelType::MultiMesh && shouldReloadModel) {
-				multiModel = LoadObjFileMulti("resources", "multiMesh.obj");
+			if ((selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) && shouldReloadModel) {
+				const char* fileName = GetModelFileName(selectedModel);
+				multiModel = LoadObjFileMulti("resources", fileName);
 
 				meshRenderList.clear();
 				for (const auto& mesh : multiModel.meshes) {
 					MeshRenderData renderData;
 					renderData.vertexCount = mesh.vertices.size();
 					renderData.name = mesh.name;
+					renderData.materialName = mesh.materialName;
 
 					renderData.vertexResource = CreateBufferResource(device, sizeof(VertexData) * mesh.vertices.size());
 					void* vtxPtr = nullptr;
@@ -1861,8 +1998,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					meshRenderList.push_back(renderData);
 				}
 
-				shouldReloadModel = false;
+				// ✅ マルチマテリアル初期化（ここを追加）
+				materialResources.clear();
+				materialDataList.clear();
 
+				for (auto& [matName, mat] : multiModel.materials) {
+					ComPtr<ID3D12Resource> resource = CreateBufferResource(device, sizeof(Material));
+					Material* data = nullptr;
+					resource->Map(0, nullptr, reinterpret_cast<void**>(&data));
+					*data = mat;
+					data->lightingMode = static_cast<int32_t>(lightingMode);
+
+					materialResources[matName] = resource;
+					materialDataList[matName] = data;
+				}
+
+				shouldReloadModel = false;
 			} else if (shouldReloadModel) {
 				// 通常モデル（Plane, Sphereなど）
 				const char* fileName = GetModelFileName(selectedModel);
@@ -1880,7 +2031,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 				shouldReloadModel = false;
 			}
-
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -1974,7 +2124,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 				commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
 				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU2);
+				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU3);
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 			} else if (selectedModel == ModelType::StanfordBunny) {
@@ -1985,16 +2135,42 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-			}if (selectedModel == ModelType::MultiMesh) {
+			}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
 				for (const auto& mesh : meshRenderList) {
+					// テクスチャキーを取得
+					std::string texKey = "none";
+					auto it = multiModel.materials.find(mesh.materialName);
+					if (it != multiModel.materials.end()) {
+						texKey = NormalizeTextureKey(it->second.textureFilePath);
+					}
+
+					D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
+					if (textureHandleMap.count(texKey)) {
+						texHandle = textureHandleMap[texKey];
+					} else {
+						Log("❌ textureHandleMapに " + texKey + " が存在しない");
+					}
+
+					// 描画
 					commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
-					commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+
+					// ImGuiで操作されたマテリアルバッファを使う
+					auto matResourceIt = materialResources.find(mesh.materialName);
+					if (matResourceIt != materialResources.end()) {
+						commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
+					} else {
+						commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+					}
+
 					commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-					commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+					commandList->SetGraphicsRootDescriptorTable(2, texHandle);
 					commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+
 					commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
 				}
 			}
+
+
 
 			// ImGuiの描画
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());

@@ -25,16 +25,8 @@ PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
 
-    float2 uv;
-    if (gEnableLighting == 0)
-    {
-        float4 transformedUV = mul(float4(input.texcoord, 0.0f, 1.0f), uvTransform);
-        uv = transformedUV.xy;
-    }
-    else
-    {
-        uv = input.texcoord;
-    }
+    // ✅ どのLightingモードでもUV変換を反映
+    float2 uv = mul(float4(input.texcoord, 0.0f, 1.0f), uvTransform).xy;
 
     float4 tex = gTexture.Sample(gSampler, uv);
 
@@ -43,7 +35,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         float3 normal = normalize(input.normal);
         float3 lightDir = normalize(-gDirectionalLight.direction.xyz);
         float NdotL = saturate(dot(normal, lightDir));
-        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * NdotL ;
+        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * NdotL;
         output.color = float4(litColor, 1.0f) * tex;
     }
     else if (gEnableLighting == 2)
@@ -52,7 +44,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         float3 lightDir = normalize(-gDirectionalLight.direction.xyz);
         float NdotL = dot(normal, lightDir);
         float halfLambert = NdotL * 0.5 + 0.5;
-        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * halfLambert * halfLambert ;
+        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * halfLambert * halfLambert;
         output.color = float4(litColor, 1.0f) * tex;
     }
     else // Lightingなし
@@ -62,3 +54,4 @@ PixelShaderOutput main(VertexShaderOutput input)
 
     return output;
 }
+
