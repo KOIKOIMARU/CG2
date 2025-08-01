@@ -86,7 +86,9 @@ struct DirectionalLight {
 	Vector4 color;
 	Vector4 direction;
 	float intensity;
+	Vector3 padding; // ← float3 paddingで16バイト境界に揃える
 };
+
 
 
 struct MaterialData {
@@ -784,8 +786,6 @@ std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
 
     return materials;
 }
-
-
 
 ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
 	ModelData modelData;
@@ -1645,10 +1645,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 初期データ設定
 	directionalLightData->color = { 1.0f, 1.0f, 1.0f };
-	Vector3 dir = Normalize({ 0.0f, -1.0f, -1.0f });
+	Vector3 dir = Normalize({ -1.0f, -1.0f, 0.0f });
 	directionalLightData->direction = { dir.x, dir.y, dir.z, 0.0f };
-
-	directionalLightData->intensity = 1.0f;
+	directionalLightData->intensity = 3.0f;
 
 	// ビューポート
 	D3D12_VIEWPORT viewport{};
