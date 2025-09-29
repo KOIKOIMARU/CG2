@@ -949,7 +949,7 @@ MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::str
 
 // 音声データの読み込み
 SoundData SoundLoadWave(const char* filename) {
-	HRESULT result;
+	//HRESULT result;
 	// ファイル入力ストリームのインスタンス
 	std::ifstream file;
 	// .wavファイルをバイナリモードで開く
