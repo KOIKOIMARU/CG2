@@ -178,7 +178,7 @@ struct MeshRenderData {
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
 
- 
+
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
 	Matrix4x4 result;
@@ -737,53 +737,51 @@ MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::s
 }
 
 std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
-    const std::string& directoryPath,
-    const std::string& filename)
+	const std::string& directoryPath,
+	const std::string& filename)
 {
-    std::unordered_map<std::string, Material> materials;
-    std::ifstream file(directoryPath + "/" + filename);
-    assert(file.is_open());
+	std::unordered_map<std::string, Material> materials;
+	std::ifstream file(directoryPath + "/" + filename);
+	assert(file.is_open());
 
-    std::string line;
-    std::string currentMaterialName;
-    Material currentMaterial{};
+	std::string line;
+	std::string currentMaterialName;
+	Material currentMaterial{};
 
-    while (std::getline(file, line)) {
-        std::istringstream s(line);
-        std::string identifier;
-        s >> identifier;
+	while (std::getline(file, line)) {
+		std::istringstream s(line);
+		std::string identifier;
+		s >> identifier;
 
-        if (identifier == "newmtl") {
-            // 直前のマテリアルを保存
-            if (!currentMaterialName.empty()) {
-                materials[currentMaterialName] = currentMaterial;
-            }
+		if (identifier == "newmtl") {
+			// 直前のマテリアルを保存
+			if (!currentMaterialName.empty()) {
+				materials[currentMaterialName] = currentMaterial;
+			}
 
-            // 新しいマテリアル名
-            s >> currentMaterialName;
-            currentMaterial = Material(); // 初期化
-            currentMaterial.color = { 1.0f, 1.0f, 1.0f, 1.0f };
-            currentMaterial.lightingMode = 1; // Lambertなど
-            currentMaterial.uvTransform = MakeIdentity4x4();
-        }
-        else if (identifier == "Kd") {
-            // 拡散反射色
-            s >> currentMaterial.color.x >> currentMaterial.color.y >> currentMaterial.color.z;
-            currentMaterial.color.w = 1.0f;
-        }
-        else if (identifier == "map_Kd") {
-            std::string textureFilename;
-            s >> textureFilename;
-            currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
-        }
-    }
+			// 新しいマテリアル名
+			s >> currentMaterialName;
+			currentMaterial = Material(); // 初期化
+			currentMaterial.color = { 1.0f, 1.0f, 1.0f, 1.0f };
+			currentMaterial.lightingMode = 1; // Lambertなど
+			currentMaterial.uvTransform = MakeIdentity4x4();
+		} else if (identifier == "Kd") {
+			// 拡散反射色
+			s >> currentMaterial.color.x >> currentMaterial.color.y >> currentMaterial.color.z;
+			currentMaterial.color.w = 1.0f;
+		} else if (identifier == "map_Kd") {
+			std::string textureFilename;
+			s >> textureFilename;
+			currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
+		}
+	}
 
-    // 最後のマテリアルを保存
-    if (!currentMaterialName.empty()) {
-        materials[currentMaterialName] = currentMaterial;
-    }
+	// 最後のマテリアルを保存
+	if (!currentMaterialName.empty()) {
+		materials[currentMaterialName] = currentMaterial;
+	}
 
-    return materials;
+	return materials;
 }
 
 
@@ -817,7 +815,7 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 			s >> normal.x >> normal.y >> normal.z;
 			normals.push_back(normal);
 		} else if (identifier == "f") { // 面情報
-			  VertexData triangle[3];
+			VertexData triangle[3];
 			// 面は三角形限定。他のは未対応
 			for (int32_t faceVertex = 0; faceVertex < 3; ++faceVertex) {
 				std::string vertexDefinition;
@@ -949,7 +947,7 @@ MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::str
 
 // 音声データの読み込み
 SoundData SoundLoadWave(const char* filename) {
-	HRESULT result;
+	// HRESULT result;
 	// ファイル入力ストリームのインスタンス
 	std::ifstream file;
 	// .wavファイルをバイナリモードで開く
@@ -1436,8 +1434,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// BlendStateの設定
 	D3D12_BLEND_DESC blendDesc{};
 	// すべての色要素を書き込む
-	blendDesc.RenderTarget[0].RenderTargetWriteMask =
-		D3D12_COLOR_WRITE_ENABLE_ALL;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	blendDesc.RenderTarget[0].BlendEnable = TRUE; // ブレンドしない
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA; // ソースのブレンド係数
+	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD; // ブレンドの演算方法
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA; // デストのブレンド係数
+	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE; // アルファ値のソースのブレンド係数
+	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD; // アルファ値のブレンドの演算方法
+	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO; // アルファ値のデストのブレンド係数
+
+
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -1912,12 +1918,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// モデルAのTransform
 			if (ImGui::CollapsingHeader("Object A", ImGuiTreeNodeFlags_DefaultOpen)) {
-					ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
-					ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
-					ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
+				ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
+				ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
+				ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
 				// Material
 				if (ImGui::TreeNode("Material")) {
-					ImGui::ColorEdit3("Color", &materialDataA->color.x);
+					ImGui::ColorEdit4("Color", &materialDataA->color.x);
 					ImGui::TreePop();
 				}
 			}
@@ -1928,7 +1934,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					ImGui::DragFloat3("Scale##B", &transformB.scale.x, 0.01f, 0.0f, 4.0f);
 
 					if (ImGui::TreeNode("MaterialB")) {
-						ImGui::ColorEdit3("ColorB", &materialDataB->color.x);
+						ImGui::ColorEdit4("ColorB", &materialDataB->color.x);
 						ImGui::TreePop();
 					}
 				}
@@ -1947,7 +1953,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 							ImGui::DragFloat2(("UV Translate##" + name).c_str(), &matData->uvTransform.m[3][0], 0.01f, -10.0f, 10.0f);
 							ImGui::DragFloat2(("UV Scale##" + name).c_str(), &matData->uvTransform.m[0][0], 0.01f, -10.0f, 10.0f);
 							ImGui::SliderAngle(("UV Rotate##" + name).c_str(), &matData->uvTransform.m[0][1]); // 任意（角度表現）
-							ImGui::ColorEdit3(("Color##" + name).c_str(), &matData->color.x);
+							ImGui::ColorEdit4(("Color##" + name).c_str(), &matData->color.x);
 							int lighting = static_cast<int>(matData->lightingMode);
 							if (ImGui::Combo(("Lighting##" + name).c_str(), &lighting, "None\0Lambert\0HalfLambert\0")) {
 								matData->lightingMode = lighting;
@@ -2115,7 +2121,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->RSSetScissorRects(1, &scissorRect);
 
 			// デスクリプタヒープの設定
-			ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get()};
+			ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
 			commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
 			// 深度バッファのクリア
@@ -2237,7 +2243,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 			// GPUにコマンドリストを実行させる
-			ID3D12CommandList* commandLists[] = { commandList.Get()};
+			ID3D12CommandList* commandLists[] = { commandList.Get() };
 			commandQueue->ExecuteCommandLists(1, commandLists);
 			// GPUとOSに画面の交換をさせる
 			swapChain->Present(1, 0);
