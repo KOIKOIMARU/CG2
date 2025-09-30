@@ -1431,14 +1431,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
 	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
 
+
 	// BlendStateの設定
 	D3D12_BLEND_DESC blendDesc{};
 	// すべての色要素を書き込む
 	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 	blendDesc.RenderTarget[0].BlendEnable = TRUE; // ブレンドしない
-	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA; // ソースのブレンド係数
+	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR; // ソースのブレンド係数
 	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD; // ブレンドの演算方法
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA; // デストのブレンド係数
+	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE; // デストのブレンド係数
 	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE; // アルファ値のソースのブレンド係数
 	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD; // アルファ値のブレンドの演算方法
 	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO; // アルファ値のデストのブレンド係数
