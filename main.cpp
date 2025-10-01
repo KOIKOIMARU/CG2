@@ -178,6 +178,17 @@ struct MeshRenderData {
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
 
+enum class BlendMode {
+	None,       // ブレンドなし
+	Normal,     // Src*SrcA + Dst*(1-SrcA)
+	Add,        // Src*SrcA + Dst
+	Subtract,   // Dst - Src*SrcA
+	Multiply,   // Src*Dst
+	Screen,     // Src*(1-Dst) + Dst
+	Count,
+};
+
+
 
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
@@ -1122,7 +1133,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ウィンドウの作成
 	HWND hwnd = CreateWindow(
 		wc.lpszClassName, // ウィンドウクラス名
-		L"CG2", // ウィンドウ名
+		L"CG3", // ウィンドウ名
 		WS_OVERLAPPEDWINDOW, // ウィンドウスタイル
 		CW_USEDEFAULT, // 表示X座標(Windowsに任せる
 		CW_USEDEFAULT, // 表示Y座標
@@ -1408,6 +1419,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		Log(reinterpret_cast<char*>(errorBlob->GetBufferPointer()));
 		assert(false);
 	}
+
 	// バイナリを元に生成
 	ComPtr<ID3D12RootSignature> rootSignature = nullptr;
 	hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
@@ -1431,7 +1443,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
 	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
 
-
 	// BlendStateの設定
 	D3D12_BLEND_DESC blendDesc{};
 	// すべての色要素を書き込む
@@ -1443,8 +1454,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE; // アルファ値のソースのブレンド係数
 	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD; // アルファ値のブレンドの演算方法
 	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO; // アルファ値のデストのブレンド係数
-
-
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -1602,7 +1611,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 1つの頂点のサイズ
 	vertexBufferView.StrideInBytes = sizeof(VertexData);
 
-
 	// 頂点リソースにデータを書き込む
 	VertexData* vertexData = nullptr;
 	// 書き込むためのアドレスを取得
@@ -1710,6 +1718,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		  {0.0f, 0.0f, 0.0f},  // rotate
 		  {0.0f, 0.0f, 0.0f}   // translate
 	};
+
 	static Transform transformB = {
 		  {0.5f, 0.5f, 0.5f},  // scale
 		  {0.0f, 0.0f, 0.0f},  // rotate
