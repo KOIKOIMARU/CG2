@@ -1,4 +1,4 @@
-#include "ResourceObject.h"
+#include "engine/3d/ResourceObject.h"
 
 ResourceObject::ResourceObject(ID3D12Resource* resource)
     : resource_(resource) {

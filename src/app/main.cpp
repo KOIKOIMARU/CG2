@@ -14,16 +14,15 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
-#include <wrl.h>
-#include "ResourceObject.h"
+#include "engine/3d/ResourceObject.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
-#include "externals/imgui/imgui.h"
-#include "externals/imgui/imgui_impl_dx12.h"
-#include "externals/imgui/imgui_impl_win32.h"
-#include "externals/DirectXTex/DirectXTex.h"
+#include "imgui.h"
+#include "imgui_impl_dx12.h"
+#include "imgui_impl_win32.h"
+#include "DirectXTex.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 #pragma comment(lib, "d3d12.lib")
@@ -1448,7 +1447,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// Shaderのコンパイル
 	IDxcBlob* vertexShaderBlob = CompileShader(
-		L"Object3D.VS.hlsl", // コンパイルするファイルのパス
+		L"shaders/Object3D.VS.hlsl", // コンパイルするファイルのパス
 		L"vs_6_0", // プロファイル
 		dxcUtils, // dxcUtils
 		dxcCompiler, // dxcCompiler
@@ -1456,7 +1455,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	assert(vertexShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
 
 	IDxcBlob* pixelShaderBlob = CompileShader(
-		L"Object3D.PS.hlsl", // コンパイルするファイルのパス
+		L"shaders/Object3D.PS.hlsl", // コンパイルするファイルのパス
 		L"ps_6_0", // プロファイル
 		dxcUtils, // dxcUtils
 		dxcCompiler, // dxcCompiler
