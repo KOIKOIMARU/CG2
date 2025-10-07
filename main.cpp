@@ -1099,6 +1099,59 @@ void InitGamepad(HWND hwnd) {
 		}, hwnd, DIEDFL_ATTACHEDONLY);
 }
 
+static D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode) {
+	D3D12_BLEND_DESC desc{};
+	auto& rt = desc.RenderTarget[0];
+	rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	rt.BlendEnable = TRUE;
+	rt.BlendOp = D3D12_BLEND_OP_ADD;
+	rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+
+	switch (mode) {
+	case BlendMode::None:
+		rt.BlendEnable = FALSE;               // 書き込みだけ
+		rt.SrcBlend = D3D12_BLEND_ONE;
+		rt.DestBlend = D3D12_BLEND_ZERO;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+		break;
+	case BlendMode::Normal:                      // Result = S*Sa + D*(1-Sa)
+		rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA; // A = Sa + Da*(1-Sa)
+		break;
+	case BlendMode::Add:                         // Result = S*Sa + D
+		rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		rt.DestBlend = D3D12_BLEND_ONE;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_ONE;
+		break;
+	case BlendMode::Subtract:                    // Result = D - S*Sa
+		rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		rt.DestBlend = D3D12_BLEND_ONE;
+		rt.BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_ONE;
+		rt.BlendOpAlpha = D3D12_BLEND_OP_REV_SUBTRACT;
+		break;
+	case BlendMode::Multiply:                    // Result = S*D
+		rt.SrcBlend = D3D12_BLEND_DEST_COLOR;
+		rt.DestBlend = D3D12_BLEND_ZERO;
+		rt.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+		rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+		break;
+	case BlendMode::Screen:                      // Result = S*(1-D) + D
+		rt.SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+		rt.DestBlend = D3D12_BLEND_ONE;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
+		break;
+	}
+	return desc;
+}
+
+
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -1443,18 +1496,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
 	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
 
-	// BlendStateの設定
-	D3D12_BLEND_DESC blendDesc{};
-	// すべての色要素を書き込む
-	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-	blendDesc.RenderTarget[0].BlendEnable = TRUE; // ブレンドしない
-	blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_INV_DEST_COLOR; // ソースのブレンド係数
-	blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD; // ブレンドの演算方法
-	blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE; // デストのブレンド係数
-	blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE; // アルファ値のソースのブレンド係数
-	blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD; // アルファ値のブレンドの演算方法
-	blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO; // アルファ値のデストのブレンド係数
-
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	// 裏面を表示しない
@@ -1485,7 +1526,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc; // InputLayout
 	graphicsPipelineStateDesc.VS = { vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize() }; // VertexShader
 	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() }; // PixelShader
-	graphicsPipelineStateDesc.BlendState = blendDesc; // BlendState
 	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc; // RasterizerState
 	// 書き込むRTVの情報
 	graphicsPipelineStateDesc.NumRenderTargets = 1;
@@ -1516,6 +1556,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// DepthStencilの設定
 	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+
+	// どこか適切なスコープで保持
+	ComPtr<ID3D12PipelineState> pipelineByBlend[(int)BlendMode::Count];
+
+	// …シェーダやRS等を入れた graphicsPipelineStateDesc が出来たあとで：
+	for (int i = 0; i < (int)BlendMode::Count; ++i) {
+		graphicsPipelineStateDesc.BlendState = MakeBlendDesc((BlendMode)i);
+		hr = device->CreateGraphicsPipelineState(
+			&graphicsPipelineStateDesc, IID_PPV_ARGS(&pipelineByBlend[i]));
+		assert(SUCCEEDED(hr));
+	}
 
 	// DirectInputの初期化
 	IDirectInput8* directInput = nullptr;
@@ -1974,6 +2025,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
+			static BlendMode uiBlend = BlendMode::Normal;
+			if (ImGui::CollapsingHeader("Blend")) {
+				const char* items[] = { "None","Normal","Add","Subtract","Multiply","Screen" };
+				int idx = (int)uiBlend;
+				if (ImGui::Combo("BlendMode", &idx, items, IM_ARRAYSIZE(items))) {
+					uiBlend = (BlendMode)idx;
+				}
+			}
+
+
 			// 光の設定
 			if (ImGui::CollapsingHeader("Light")) {
 				const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
@@ -2142,7 +2203,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// RootSignatureとPSOの設定
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
-			commandList->SetPipelineState(graphicsPipelineState.Get());
+			commandList->SetPipelineState(pipelineByBlend[(int)uiBlend].Get());
+
 
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
