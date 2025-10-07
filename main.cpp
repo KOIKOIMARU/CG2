@@ -2393,6 +2393,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		directInput->Release();
 		directInput = nullptr;
 	}
+	if (vertexShaderBlob) { vertexShaderBlob->Release(); vertexShaderBlob = nullptr; }
+	if (pixelShaderBlob) { pixelShaderBlob->Release();  pixelShaderBlob = nullptr; }
+	if (signatureBlob) { signatureBlob->Release();    signatureBlob = nullptr; }
+	if (errorBlob) { errorBlob->Release();        errorBlob = nullptr; }
+	if (includeHandler) { includeHandler->Release();   includeHandler = nullptr; }
+	if (dxcCompiler) { dxcCompiler->Release();      dxcCompiler = nullptr; }
+	if (dxcUtils) { dxcUtils->Release();         dxcUtils = nullptr; }
 
 
 	CloseWindow(hwnd);
