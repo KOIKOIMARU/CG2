@@ -148,7 +148,8 @@ enum class ModelType {
 	UtahTeapot,
 	StanfordBunny,
 	MultiMesh,
-	MultiMaterial
+	MultiMaterial,
+	Fence,
 };
 
 enum class LightingMode {
@@ -1063,6 +1064,7 @@ const char* GetModelFileName(ModelType type) {
 	case ModelType::StanfordBunny: return "bunny.obj";
 	case ModelType::MultiMesh: return "multiMesh.obj";
 	case ModelType::MultiMaterial: return "multiMaterial.obj";
+	case ModelType::Fence: return "fence.obj";
 	default: return "plane.obj";
 	}
 }
@@ -1847,6 +1849,42 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	textureHandleMap[NormalizeTextureKey("checkerBoard.png")] = textureSrvHandleGPU3;
 	textureUploadBuffers.push_back(textureResource3);
 
+	static UINT nextSrvIndex = 4; // 1,2,3 を使っているので次は 4 から
+
+	auto ensureTextureSRV = [&](const std::string& texPath) -> D3D12_GPU_DESCRIPTOR_HANDLE {
+		if (texPath.empty()) {
+			// 何も指定が無いときの既定テクスチャ（例：uvChecker）
+			return textureSrvHandleGPU;
+		}
+
+		std::string key = NormalizeTextureKey(texPath);
+		if (auto it = textureHandleMap.find(key); it != textureHandleMap.end()) {
+			return it->second; // 既に作ってあればそれを使う
+		}
+
+		// 読み込み → GPUリソース化 → SRV を新規作成
+		DirectX::ScratchImage mip = LoadTexture(texPath);          // "resources/..." のフルパス想定
+		const auto& md = mip.GetMetadata();
+		ComPtr<ID3D12Resource> tex = CreateTextureResource(device, md);
+		UploadTextureData(tex, mip);
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+		sd.Format = md.format;
+		sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		sd.Texture2D.MipLevels = UINT(md.mipLevels);
+
+		auto cpu = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, nextSrvIndex);
+		auto gpu = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, nextSrvIndex);
+		device->CreateShaderResourceView(tex.Get(), &sd, cpu);
+
+		textureHandleMap[key] = gpu;          // ハンドルを記録
+		textureUploadBuffers.push_back(tex);  // リソース寿命を維持
+		++nextSrvIndex;
+		return gpu;
+		};
+
+
 	// Sprite用の頂点リソースを作る
 	ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
 
@@ -1970,7 +2008,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::SetItemDefaultFocus(); // ←追加！
 
 			// モデル切り替え
-			const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
+			const char* modelItems[] = { "Plane","Sphere","UtahTeapot","StanfordBunny","MultiMesh","MultiMaterial","Fence" };
 			int currentItem = static_cast<int>(selectedModel);
 			if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
 				selectedModel = static_cast<ModelType>(currentItem);
@@ -2102,7 +2140,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
 
-			if ((selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) && shouldReloadModel) {
+			if ((selectedModel == ModelType::MultiMesh
+				|| selectedModel == ModelType::MultiMaterial
+				|| selectedModel == ModelType::Fence) && shouldReloadModel) {
 				const char* fileName = GetModelFileName(selectedModel);
 				multiModel = LoadObjFileMulti("resources", fileName);
 
@@ -2139,6 +2179,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 					materialResources[matName] = resource;
 					materialDataList[matName] = data;
+
+					if (!mat.textureFilePath.empty()) {
+						ensureTextureSRV(mat.textureFilePath);
+					}
 				}
 
 				shouldReloadModel = false;
@@ -2264,28 +2308,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-			}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
+			}if (selectedModel == ModelType::MultiMesh
+				|| selectedModel == ModelType::MultiMaterial
+				|| selectedModel == ModelType::Fence) {                     // ★追加
 				for (const auto& mesh : meshRenderList) {
-					// テクスチャキーを取得
-					std::string texKey = "none";
-					auto it = multiModel.materials.find(mesh.materialName);
-					if (it != multiModel.materials.end()) {
-						texKey = NormalizeTextureKey(it->second.textureFilePath);
-					}
-
+					// マテリアルに紐づくテクスチャを取得（なければ既定にフォールバック）
 					D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
-					if (textureHandleMap.count(texKey)) {
-						texHandle = textureHandleMap[texKey];
-					} else {
-						Log("❌ textureHandleMapに " + texKey + " が存在しない");
+					if (auto it = multiModel.materials.find(mesh.materialName);
+						it != multiModel.materials.end()) {
+						texHandle = ensureTextureSRV(it->second.textureFilePath); // ★差し替え
 					}
 
 					// 描画
 					commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
 
-					// ImGuiで操作されたマテリアルバッファを使う
-					auto matResourceIt = materialResources.find(mesh.materialName);
-					if (matResourceIt != materialResources.end()) {
+					if (auto matResourceIt = materialResources.find(mesh.materialName);
+						matResourceIt != materialResources.end()) {
 						commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
 					} else {
 						commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
@@ -2294,7 +2332,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
 					commandList->SetGraphicsRootDescriptorTable(2, texHandle);
 					commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-
 					commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
 				}
 			}
