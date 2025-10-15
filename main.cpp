@@ -5,11 +5,10 @@
 #include <algorithm>
 #include <cctype>          
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <format>
 #include <d3d12.h>
-#include <d3dcompiler.h>
-#include <d3d12sdklayers.h>
 #include <dxgi1_6.h>
 #include <dxgidebug.h>
 #include <dxcapi.h>
@@ -17,7 +16,6 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
-#include "ResourceObject.h"
 #include <wrl/client.h>
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
@@ -33,7 +31,6 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "xaudio2.lib")
 #pragma comment(lib, "dinput8.lib")
-#pragma comment(lib, "dxguid.lib")
 
 using namespace Microsoft::WRL;
 
@@ -69,18 +66,28 @@ struct VertexData {
 	Vector3 normal;   // 法線ベクトル
 };
 
+struct GPUMaterial {
+	Vector4 color;           
+	int32_t enableLighting; 
+	float    pad_[3];       
+	Matrix4x4 uvTransform;
+};
+static_assert(sizeof(GPUMaterial) == 96, "MaterialCB size mismatch");
+
+
+// Material は CPU 専用に（必要なら）
 struct Material {
 	Vector4 color;
 	int32_t lightingMode;
-	float padding[3]; // 16バイトアライメント維持
+	float padding[3];
 	Matrix4x4 uvTransform;
-	std::string textureFilePath; // ← これを追加！
+	std::string textureFilePath; // CPU専用用途だけで使うならOK（CBVに流さない）
 };
-
 
 struct TransformationMatrix {
 	Matrix4x4 WVP;
 	Matrix4x4 World;
+	Matrix4x4 WorldInverseTranspose; // 追加
 };
 
 struct DirectionalLight {
@@ -90,6 +97,13 @@ struct DirectionalLight {
 	Vector3 padding; // ← float3 paddingで16バイト境界に揃える
 };
 
+struct GPUDirectionalLight {
+	Vector4 color;
+	Vector4 direction; // wは0でOK
+	float   intensity;
+	float   pad_[3];
+};
+static_assert(sizeof(GPUDirectionalLight) == 48, "DirLightCB size mismatch");
 
 
 struct MaterialData {
@@ -100,6 +114,14 @@ struct ModelData {
 	std::vector<VertexData> vertices; // 頂点データ
 	MaterialData material; // マテリアルデータ
 };
+
+struct Player {
+	Vector3 pos{ 0,0,0 };
+	Vector3 vel{ 0,0,0 };
+	Vector3 scale{ 1,1,1 };
+	Vector3 rot{ 0,0,0 };
+	bool onGround = false;
+} gPlayer;
 
 
 struct D3DResourceLeakChecker {
@@ -114,35 +136,11 @@ struct D3DResourceLeakChecker {
 	}
 };
 
-
-
 enum class LightingMode {
 	None,
 	Lambert,
 	HalfLambert,
 };
-
-struct Mesh {
-	std::vector<VertexData> vertices;
-	std::string name;
-	std::string materialName;
-};
-
-struct MultiModelData {
-	std::vector<Mesh> meshes;
-	std::unordered_map<std::string, Material> materials;
-};
-
-struct MeshRenderData {
-	ComPtr<ID3D12Resource> vertexResource;
-	D3D12_VERTEX_BUFFER_VIEW vbView;
-	size_t vertexCount;
-	std::string name;
-	std::string materialName;
-};
-MultiModelData multiModel;
-std::vector<MeshRenderData> meshRenderList;
-
  
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
@@ -308,6 +306,15 @@ static Matrix4x4 Inverse(const Matrix4x4& m) {
 
 	return result;
 }
+
+Matrix4x4 Transpose(const Matrix4x4& m) {
+	Matrix4x4 r{};
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
+			r.m[i][j] = m.m[j][i];
+	return r;
+}
+
 
 // 透視投影行列
 Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
@@ -621,12 +628,6 @@ Vector3 Normalize(const Vector3& v) {
 	return { v.x / length, v.y / length, v.z / length };
 }
 
-void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
-	v.position = pos;
-	v.texcoord = uv;
-	Vector3 p = { pos.x, pos.y, pos.z };
-	v.normal = Normalize(p);
-}
 
 MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename) {
 	MaterialData materialData;
@@ -648,58 +649,6 @@ MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::s
 	}
 	return materialData;
 }
-
-std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
-    const std::string& directoryPath,
-    const std::string& filename)
-{
-    std::unordered_map<std::string, Material> materials;
-    std::ifstream file(directoryPath + "/" + filename);
-    assert(file.is_open());
-
-    std::string line;
-    std::string currentMaterialName;
-    Material currentMaterial{};
-
-    while (std::getline(file, line)) {
-        std::istringstream s(line);
-        std::string identifier;
-        s >> identifier;
-
-        if (identifier == "newmtl") {
-            // 直前のマテリアルを保存
-            if (!currentMaterialName.empty()) {
-                materials[currentMaterialName] = currentMaterial;
-            }
-
-            // 新しいマテリアル名
-            s >> currentMaterialName;
-            currentMaterial = Material(); // 初期化
-            currentMaterial.color = { 1.0f, 1.0f, 1.0f, 1.0f };
-            currentMaterial.lightingMode = 1; // Lambertなど
-            currentMaterial.uvTransform = MakeIdentity4x4();
-        }
-        else if (identifier == "Kd") {
-            // 拡散反射色
-            s >> currentMaterial.color.x >> currentMaterial.color.y >> currentMaterial.color.z;
-            currentMaterial.color.w = 1.0f;
-        }
-        else if (identifier == "map_Kd") {
-            std::string textureFilename;
-            s >> textureFilename;
-            currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
-        }
-    }
-
-    // 最後のマテリアルを保存
-    if (!currentMaterialName.empty()) {
-        materials[currentMaterialName] = currentMaterial;
-    }
-
-    return materials;
-}
-
-
 
 ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
 	ModelData modelData;
@@ -770,102 +719,6 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 	return modelData;
 }
 
-MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::string& filename) {
-	MultiModelData modelData;
-
-	std::vector<Vector4> positions;
-	std::vector<Vector2> texcoords;
-	std::vector<Vector3> normals;
-
-	std::ifstream file(directoryPath + "/" + filename);
-	assert(file.is_open());
-
-	std::string line;
-	std::string currentMeshName = "default";
-	std::string currentMaterialName = "default"; // 現在のマテリアル名
-	Mesh currentMesh;
-
-	while (std::getline(file, line)) {
-		std::istringstream s(line);
-		std::string identifier;
-		s >> identifier;
-
-		if (identifier == "v") {
-			Vector4 pos; s >> pos.x >> pos.y >> pos.z;
-			pos.z *= -1.0f;
-			pos.w = 1.0f;
-			positions.push_back(pos);
-		} else if (identifier == "vt") {
-			Vector2 uv; s >> uv.x >> uv.y;
-			texcoords.push_back(uv);
-		} else if (identifier == "vn") {
-			Vector3 n; s >> n.x >> n.y >> n.z;
-			n.z *= -1.0f;
-			normals.push_back(n);
-		} else if (identifier == "f") {
-			VertexData tri[3];
-			for (int i = 0; i < 3; ++i) {
-				std::string vtx;
-				s >> vtx;
-				std::istringstream vs(vtx);
-				uint32_t idx[3] = {};
-				for (int j = 0; j < 3; ++j) {
-					std::string val;
-					std::getline(vs, val, '/');
-					idx[j] = std::stoi(val);
-				}
-				tri[i] = {
-					positions[idx[0] - 1],
-					{ texcoords[idx[1] - 1].x, 1.0f - texcoords[idx[1] - 1].y },
-					normals[idx[2] - 1]
-				};
-			}
-			currentMesh.vertices.push_back(tri[2]);
-			currentMesh.vertices.push_back(tri[1]);
-			currentMesh.vertices.push_back(tri[0]);
-		} else if (identifier == "g" || identifier == "o") {
-			if (!currentMesh.vertices.empty()) {
-				currentMesh.name = currentMeshName;
-				currentMesh.materialName = currentMaterialName; // 使用中のマテリアル名を記録
-				modelData.meshes.push_back(currentMesh);
-				currentMesh = Mesh(); // 次のMeshへ
-			}
-			s >> currentMeshName;
-		} else if (identifier == "mtllib") {
-			std::string mtl;
-			s >> mtl;
-			modelData.materials = LoadMaterialTemplateMulti(directoryPath, mtl); // マテリアル複数対応版
-		} else if (identifier == "usemtl") {
-			// 現在のマテリアル名を更新
-			s >> currentMaterialName;
-
-			// もし現メッシュに頂点があれば、いったん保存してマテリアル名を更新
-			if (!currentMesh.vertices.empty()) {
-				currentMesh.name = currentMeshName;
-				currentMesh.materialName = currentMaterialName;
-				modelData.meshes.push_back(currentMesh);
-				currentMesh = Mesh(); // 次のメッシュへ切り替え
-			}
-		}
-
-	}
-
-	if (!currentMesh.vertices.empty()) {
-		currentMesh.name = currentMeshName;
-		currentMesh.materialName = currentMaterialName;
-		modelData.meshes.push_back(currentMesh);
-	}
-
-	return modelData;
-}
-
-
-auto NormalizeTextureKey = [](const std::string& path) -> std::string {
-	std::string filename = std::filesystem::path(path).filename().string();
-	std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-	return filename;
-	};
-
 LPDIRECTINPUT8 directInput = nullptr;
 LPDIRECTINPUTDEVICE8 gamepad = nullptr;
 
@@ -892,6 +745,34 @@ void InitGamepad(HWND hwnd) {
 		}, hwnd, DIEDFL_ATTACHEDONLY);
 }
 
+// ベクトルユーティリティ
+static inline Vector3 Sub(const Vector3& a, const Vector3& b) { return { a.x - b.x,a.y - b.y,a.z - b.z }; }
+static inline float Dot(const Vector3& a, const Vector3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+static inline Vector3 Cross(const Vector3& a, const Vector3& b) {
+	return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
+}
+
+// Z=0の平面に位置を拘束（2.5D）
+static inline void ConstrainToZ0(Vector3& p) { p.z = 0.0f; }
+
+// 左手座標系のLookAt行列（ビュー行列を直接返す）
+static Matrix4x4 MakeLookAtMatrixLH(const Vector3& eye, const Vector3& target, const Vector3& upHint) {
+	Vector3 zaxis = Normalize(Sub(target, eye));           // 前（+Z 方向）
+	Vector3 xaxis = Normalize(Cross(upHint, zaxis));        // 右
+	Vector3 yaxis = Cross(zaxis, xaxis);                    // 上
+
+	Matrix4x4 m{};
+	m.m[0][0] = xaxis.x; m.m[1][0] = xaxis.y; m.m[2][0] = xaxis.z; m.m[3][0] = -Dot(xaxis, eye);
+	m.m[0][1] = yaxis.x; m.m[1][1] = yaxis.y; m.m[2][1] = yaxis.z; m.m[3][1] = -Dot(yaxis, eye);
+	m.m[0][2] = zaxis.x; m.m[1][2] = zaxis.y; m.m[2][2] = zaxis.z; m.m[3][2] = -Dot(zaxis, eye);
+	m.m[0][3] = 0.0f;    m.m[1][3] = 0.0f;    m.m[2][3] = 0.0f;    m.m[3][3] = 1.0f;
+	return m;
+}
+
+static size_t AlignCBSize(size_t size) {
+	const size_t kAlign = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT; // 256
+	return (size + (kAlign - 1)) & ~(kAlign - 1);
+}
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -1104,7 +985,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = swapChain->GetBuffer(1, IID_PPV_ARGS(&swapChainResources[1]));
 	assert(SUCCEEDED(hr)); // スワップチェーンのリソース取得に失敗したらエラー
 
-
 	// RTVの設定
 	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // 色の形式
@@ -1243,8 +1123,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
-	// 裏面を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
+	// 裏面を表示する
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
 	// 三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
@@ -1298,7 +1178,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
 	// DirectInputの初期化
-	IDirectInput8* directInput = nullptr;
 	result = DirectInput8Create(
 		GetModuleHandle(nullptr), // ← これで現在のインスタンスハンドルを取得
 		DIRECTINPUT_VERSION, IID_IDirectInput8,
@@ -1338,24 +1217,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
 
-
-
-	// 頂点リソース用のヒープの設定
-	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
-	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // アップロード用
-	// 頂点リソースの設定
-	D3D12_RESOURCE_DESC vertexResourceDesc{};
-	// バッファリソース。テクスチャの場合はまた別の設定をする
-	vertexResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	vertexResourceDesc.Width = sizeof(VertexData) * 6; // 頂点の数
-	// バッファの場合はこれらは1にする決まり
-	vertexResourceDesc.Height = 1;
-	vertexResourceDesc.DepthOrArraySize = 1;
-	vertexResourceDesc.MipLevels = 1;
-	vertexResourceDesc.SampleDesc.Count = 1;
-	// バッファの場合はこれにする決まり
-	vertexResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
 	// 頂点バッファビューを作成
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
 	// リソースの先頭のアドレスから使う
@@ -1364,7 +1225,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
 	// 1つの頂点のサイズ
 	vertexBufferView.StrideInBytes = sizeof(VertexData);
-
 
 	// 頂点リソースにデータを書き込む
 	VertexData* vertexData = nullptr;
@@ -1380,28 +1240,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::unordered_map<std::string, Material*> materialDataList;
 
 	// A マテリアル（32バイト必要）
-	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, sizeof(Material));
-	Material* materialDataA = nullptr;
+	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, AlignCBSize(sizeof(GPUMaterial)));
+	GPUMaterial* materialDataA = nullptr;
 	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
-	*materialDataA = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
+	*materialDataA = { {1,1,1,1}, static_cast<int32_t>(LightingMode::Lambert), {}, MakeIdentity4x4() };
+
 
 	// A WVP（128バイト必要）
-	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, sizeof(TransformationMatrix));
+	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, AlignCBSize(sizeof(TransformationMatrix)));
 	TransformationMatrix* wvpDataA = nullptr;
 	wvpResourceA->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataA));
 	wvpDataA->WVP = MakeIdentity4x4();
 	wvpDataA->World = MakeIdentity4x4();
 
 	// 平行光源のバッファを作成し、CPU 側から書き込めるようにする
-	ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
-	DirectionalLight* directionalLightData = nullptr;
+	ComPtr<ID3D12Resource> directionalLightResource =
+		CreateBufferResource(device, AlignCBSize(sizeof(GPUDirectionalLight)));
+	GPUDirectionalLight* directionalLightData = nullptr;
 	directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
-
-	// 初期データ設定
-	directionalLightData->color = { 1.0f, 1.0f, 1.0f };
-	Vector3 dir = Normalize({ -1.0f, -1.0f, 0.0f });
+	directionalLightData->color = { 1,1,1,1 };
+	Vector3 dir = Normalize({ -1,-1,0 });
 	directionalLightData->direction = { dir.x, dir.y, dir.z, 0.0f };
 	directionalLightData->intensity = 3.0f;
+
 
 	// ビューポート
 	D3D12_VIEWPORT viewport{};
@@ -1421,88 +1282,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorRect.top = 0;
 	scissorRect.bottom = kClientHeight;
 
-	// Transform変数を作る
-	static Transform transformA = {
-		  {0.5f, 0.5f, 0.5f},  // scale
-		  {0.0f, 0.0f, 0.0f},  // rotate
-		  {0.0f, 0.0f, 0.0f}   // translate
-	};
-	static Transform transformB = {
-		  {0.5f, 0.5f, 0.5f},  // scale
-		  {0.0f, 0.0f, 0.0f},  // rotate
-		  {1.0f, 0.0f, 0.0f}   // translate
-	};
-
-	// Textureを呼んで転送する
+	// Textureを呼んで転送する（1枚のみ）
 	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
 	ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
-	assert(textureResource);
 	UploadTextureData(textureResource, mipImages);
 
-
-	// 2枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages2 = LoadTexture("resources/monsterBall.png");
-	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
-	UploadTextureData(textureResource2, mipImages2);
-
-	// 3枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages3 = LoadTexture("resources/checkerBoard.png");
-	const DirectX::TexMetadata& metadata3 = mipImages3.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource3 = CreateTextureResource(device, metadata3);
-	UploadTextureData(textureResource3, mipImages3);
-
-	// metadataを基にSRVを作成する
+	// SRVを作成
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-	srvDesc.Format = metadata.format; // フォーマット
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // コンポーネントマッピング
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
-	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels); // mipレベルの数
+	srvDesc.Format = metadata.format;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels);
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2{};
-	srvDesc2.Format = metadata2.format; // フォーマット
-	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // コンポーネントマッピング
-	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
-	srvDesc2.Texture2D.MipLevels = UINT(metadata2.mipLevels); // mipレベルの数
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc3{};
-	srvDesc3.Format = metadata3.format;
-	srvDesc3.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc3.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc3.Texture2D.MipLevels = UINT(metadata3.mipLevels);
-
-	//SRVを作成するDescriptorHeapの先頭を取得する
-	UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	// Descriptor取得
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
-	// テクスチャのSRVを作成する
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
 
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
-	// テクスチャのSRVを作成する
-	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
+	D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
 
-	// SRVの作成（3番目のスロット＝3番目のインデックス）
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU3 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU3 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
-	device->CreateShaderResourceView(textureResource3.Get(), &srvDesc3, textureSrvHandleCPU3);
-
-	std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
-	std::vector<ComPtr<ID3D12Resource>> textureUploadBuffers; // アップロードバッファ保持用
-
-	// uvChecker.png のSRV作成後に登録
-	textureHandleMap[NormalizeTextureKey("uvChecker.png")] = textureSrvHandleGPU;
-	textureUploadBuffers.push_back(textureResource);
-
-	// monsterBall.png のSRV作成後に登録
-	textureHandleMap[NormalizeTextureKey("monsterBall.png")] = textureSrvHandleGPU2;
-	textureUploadBuffers.push_back(textureResource2);
-
-	// マップに登録（キーは .mtl に記載されてるファイル名に一致させる）
-	textureHandleMap[NormalizeTextureKey("checkerBoard.png")] = textureSrvHandleGPU3;
-	textureUploadBuffers.push_back(textureResource3);
 
 	// モデルの種類を選択するための変数
 
@@ -1542,18 +1341,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			ImGui::SetItemDefaultFocus(); // ←追加！
 
-			// モデルAのTransform
-			if (ImGui::CollapsingHeader("Object A", ImGuiTreeNodeFlags_DefaultOpen)) {
-					ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
-					ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
-					ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
-				// Material
-				if (ImGui::TreeNode("Material")) {
-					ImGui::ColorEdit3("Color", &materialDataA->color.x);
-					ImGui::TreePop();
-				}
-			}
-
 			// 光の設定
 			if (ImGui::CollapsingHeader("Light")) {
 				const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
@@ -1571,29 +1358,71 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 			ImGui::End();
+			materialDataA->enableLighting = static_cast<int32_t>(lightingMode); // 0=None,1=Lambert,2=Half
+
+			materialDataA->uvTransform = MakeIdentity4x4();
 
 
 			keyboard->Acquire();
 			memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
 			keyboard->GetDeviceState(sizeof(key), key);
 
-			// WVP行列の計算
-			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
-			Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
-			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+			// ★タイムステップ（簡易固定）
+			const float dt = 1.0f / 60.0f;
 
-			// 三角形A
-			Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
-			Matrix4x4 worldViewProjectionMatrixA = Multiply(worldMatrixA, Multiply(viewMatrix, projectionMatrix));
-			wvpDataA->WVP = worldViewProjectionMatrixA;
-			wvpDataA->World = worldMatrixA;
-			materialDataA->lightingMode = static_cast<int32_t>(lightingMode);			
+			// ★横移動（←→） & ジャンプ（Space）
+			const float runSpeed = 6.0f;
+			const float gravity = -20.0f;
+			const float jumpVel = 9.0f;
 
-			materialDataA->uvTransform = MakeIdentity4x4();
-		
-			D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
+			float moveX = 0.0f;
+			if (key[DIK_LEFT] & 0x80) moveX -= 1.0f;
+			if (key[DIK_RIGHT] & 0x80) moveX += 1.0f;
 
+			gPlayer.vel.x = moveX * runSpeed;
+			gPlayer.vel.y += gravity * dt;
+
+			// 簡易ジャンプ
+			bool pressedSpaceNow = (key[DIK_SPACE] & 0x80) && !(keyPre[DIK_SPACE] & 0x80);
+			if (pressedSpaceNow && gPlayer.onGround) {
+				gPlayer.vel.y = jumpVel;
+				gPlayer.onGround = false;
+			}
+
+			// ★位置更新
+			gPlayer.pos.x += gPlayer.vel.x * dt;
+			gPlayer.pos.y += gPlayer.vel.y * dt;
+
+			// ★地面当たり（Z=0平面上で、Y=0を床とする簡易判定）
+			if (gPlayer.pos.y < 0.0f) {
+				gPlayer.pos.y = 0.0f;
+				gPlayer.vel.y = 0.0f;
+				gPlayer.onGround = true;
+			}
+
+			// ★2.5D拘束（Zは常に0）
+			ConstrainToZ0(gPlayer.pos);
+
+			// ★カメラ（横スク用）
+			const float camDist = 12.0f; // 画面奥（+Z）
+			const float camHeight = 2.5f;  // 少し見下ろし
+			const float lead = 3.0f;  // 視線の先行（X方向）
+
+			Vector3 eye{ gPlayer.pos.x, gPlayer.pos.y + camHeight, camDist };
+			Vector3 target{ gPlayer.pos.x + lead, gPlayer.pos.y + 1.0f, 0.0f };
+			Vector3 upHint{ 0.0f, 1.0f, 0.0f };
+
+			Matrix4x4 viewMatrix = MakeLookAtMatrixLH(eye, target, upHint);
+			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 200.0f);
+
+			// ★プレイヤーのWorld行列（モデルを原点に置いてるならスケール/回転/平行移動）
+			Matrix4x4 world = MakeAffineMatrix(gPlayer.scale, gPlayer.rot, gPlayer.pos);
+
+			// ★GPUに渡すWVP/Worldを更新
+			wvpDataA->World = world;
+			wvpDataA->WVP = Multiply(Multiply(world, viewMatrix), projectionMatrix);
+			Matrix4x4 worldIT = Transpose(Inverse(world));
+			wvpDataA->WorldInverseTranspose = worldIT;   // ← TransformCB に追加した分を詰める
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -1704,6 +1533,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	if (directInput) {
 		directInput->Release();
 		directInput = nullptr;
+	}
+	if (keyboard) {
+		keyboard->Unacquire();
+		keyboard->Release();
+		keyboard = nullptr;
 	}
 
 
