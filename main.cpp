@@ -1153,6 +1153,21 @@ static D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode) {
 	return desc;
 }
 
+// どこか上の方に追加
+ModelData BuildQuadModelData(float w = 1.0f, float h = 1.0f)
+{
+	ModelData m;
+	const float hw = w * 0.5f, hh = h * 0.5f;
+	// 左下, 左上, 右下, 右上 を2三角形で（反時計回り）
+	VertexData v0{ {-hw, -hh, 0, 1}, {0,1}, {0,0,-1} };
+	VertexData v1{ {-hw,  hh, 0, 1}, {0,0}, {0,0,-1} };
+	VertexData v2{ { hw, -hh, 0, 1}, {1,1}, {0,0,-1} };
+	VertexData v3{ { hw,  hh, 0, 1}, {1,0}, {0,0,-1} };
+	m.vertices.push_back(v0); m.vertices.push_back(v1); m.vertices.push_back(v2);
+	m.vertices.push_back(v1); m.vertices.push_back(v3); m.vertices.push_back(v2);
+	m.material.textureFilePath = "resources/uvChecker.png"; // 資料通りテクスチャ指定
+	return m;
+}
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1507,7 +1522,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// Shaderのコンパイル
 	IDxcBlob* vertexShaderBlob = CompileShader(
-		L"Object3D.VS.hlsl", // コンパイルするファイルのパス
+		L"Particle.VS.hlsl", // コンパイルするファイルのパス
 		L"vs_6_0", // プロファイル
 		dxcUtils, // dxcUtils
 		dxcCompiler, // dxcCompiler
@@ -1515,7 +1530,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	assert(vertexShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
 
 	IDxcBlob* pixelShaderBlob = CompileShader(
-		L"Object3D.PS.hlsl", // コンパイルするファイルのパス
+		L"Particle.PS.hlsl", // コンパイルするファイルのパス
 		L"ps_6_0", // プロファイル
 		dxcUtils, // dxcUtils
 		dxcCompiler, // dxcCompiler
@@ -1746,6 +1761,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Vector3 dir = Normalize({ -1.0f, -1.0f, 0.0f });
 	directionalLightData->direction = { dir.x, dir.y, dir.z, 0.0f };
 	directionalLightData->intensity = 3.0f;
+
+	// 初期化フェーズ
+	ModelData particleModel = BuildQuadModelData(1.0f, 1.0f);
+	ComPtr<ID3D12Resource> vbParticle = CreateBufferResource(device, sizeof(VertexData) * particleModel.vertices.size());
+	{
+		void* p = nullptr;
+		vbParticle->Map(0, nullptr, &p);
+		memcpy(p, particleModel.vertices.data(), sizeof(VertexData) * particleModel.vertices.size());
+		vbParticle->Unmap(0, nullptr);
+	}
+	D3D12_VERTEX_BUFFER_VIEW vbvParticle{};
+	vbvParticle.BufferLocation = vbParticle->GetGPUVirtualAddress();
+	vbvParticle.SizeInBytes = UINT(sizeof(VertexData) * particleModel.vertices.size());
+	vbvParticle.StrideInBytes = sizeof(VertexData);
+
+	// 粒の数
+	const int kParticleCount = 200;
+
+	// 粒それぞれの Transform/WVP 用リソース
+	std::vector<ComPtr<ID3D12Resource>> particleWvpRes(kParticleCount);
+	std::vector<TransformationMatrix*>   particleWvpPtr(kParticleCount);
+
+	// 初期化時に確保＆Map
+	for (int i = 0; i < kParticleCount; ++i) {
+		particleWvpRes[i] = CreateBufferResource(device, sizeof(TransformationMatrix));
+		particleWvpRes[i]->Map(0, nullptr, reinterpret_cast<void**>(&particleWvpPtr[i]));
+		*particleWvpPtr[i] = { MakeIdentity4x4(), MakeIdentity4x4() };
+	}
+
+
 
 	// ビューポート
 	D3D12_VIEWPORT viewport{};
@@ -2107,6 +2152,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
 
+			Transform t;
+			t.scale = { 0.1f, 0.1f, 1.0f };
+			t.rotate = { 0.0f, 0.0f, 0.0f };
+			t.translate = { 0.0f, 0.0f, 0.0f }; // 原点に全部重ねる
+
+			Matrix4x4 world = MakeAffineMatrix(t.scale, t.rotate, t.translate);
+			Matrix4x4 wvp = Multiply(world, Multiply(viewMatrix, projectionMatrix));
+
+			for (int i = 0; i < kParticleCount; ++i) {
+				particleWvpPtr[i]->World = world;
+				particleWvpPtr[i]->WVP = wvp;
+			}
+
+
 			// 三角形A
 			Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
 			Matrix4x4 worldViewProjectionMatrixA = Multiply(worldMatrixA, Multiply(viewMatrix, projectionMatrix));
@@ -2336,6 +2395,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
+			// パーティクルをたくさん描く（非インスタンス版）
+			commandList->IASetVertexBuffers(0, 1, &vbvParticle);
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			// マテリアル/ライト/テクスチャは既存のを使い回し
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU); // uvChecker など
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+
+			// 粒の数だけ WVP を差し替えて描く
+			for (int i = 0; i < kParticleCount; ++i) {
+				commandList->SetGraphicsRootConstantBufferView(1, particleWvpRes[i]->GetGPUVirtualAddress());
+				commandList->DrawInstanced(UINT(particleModel.vertices.size()), 1, 0, 0);
+			}
 
 
 			// ImGuiの描画
