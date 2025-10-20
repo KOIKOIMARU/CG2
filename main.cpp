@@ -1208,30 +1208,39 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// モデルデータの読み込み
-	ModelData modelData = LoadObjFile("resources", "plane.obj");
-
-	// リソース作成
-	ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
+	ModelData modelGround = LoadObjFile("resources", "cube.obj");
+	ModelData modelPlayer = LoadObjFile("resources", "player.obj");
 
 	// リソース作成
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
 
-	// 頂点バッファビューを作成
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
-	// リソースの先頭のアドレスから使う
-	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();
-	// 使用するリソースサイズは頂点3つ分のサイズ
-	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
-	// 1つの頂点のサイズ
-	vertexBufferView.StrideInBytes = sizeof(VertexData);
+	// --- Ground ---
+	ComPtr<ID3D12Resource> vbGround = CreateBufferResource(device, sizeof(VertexData) * modelGround.vertices.size());
+	D3D12_VERTEX_BUFFER_VIEW vbvGround{};
+	vbvGround.BufferLocation = vbGround->GetGPUVirtualAddress();
+	vbvGround.SizeInBytes = UINT(sizeof(VertexData) * modelGround.vertices.size());
+	vbvGround.StrideInBytes = sizeof(VertexData);
+	{
+		VertexData* p = nullptr;
+		vbGround->Map(0, nullptr, reinterpret_cast<void**>(&p));
+		std::memcpy(p, modelGround.vertices.data(), sizeof(VertexData) * modelGround.vertices.size());
+		vbGround->Unmap(0, nullptr);
+	}
 
-	// 頂点リソースにデータを書き込む
-	VertexData* vertexData = nullptr;
-	// 書き込むためのアドレスを取得
-	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
-	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
-	vertexResource->Unmap(0, nullptr); // 書き込み完了したのでアンマップ
+	// --- Player ---
+	ComPtr<ID3D12Resource> vbPlayer = CreateBufferResource(device, sizeof(VertexData) * modelPlayer.vertices.size());
+	D3D12_VERTEX_BUFFER_VIEW vbvPlayer{};
+	vbvPlayer.BufferLocation = vbPlayer->GetGPUVirtualAddress();
+	vbvPlayer.SizeInBytes = UINT(sizeof(VertexData) * modelPlayer.vertices.size());
+	vbvPlayer.StrideInBytes = sizeof(VertexData);
+	{
+		VertexData* p = nullptr;
+		vbPlayer->Map(0, nullptr, reinterpret_cast<void**>(&p));
+		std::memcpy(p, modelPlayer.vertices.data(), sizeof(VertexData) * modelPlayer.vertices.size());
+		vbPlayer->Unmap(0, nullptr);
+	}
+
 
 	// GPU上のマテリアルリソース一覧（マテリアル名で識別）
 	std::unordered_map<std::string, ComPtr<ID3D12Resource>> materialResources;
@@ -1239,19 +1248,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// CPU側のマテリアルポインタ一覧（ImGuiで編集用）
 	std::unordered_map<std::string, Material*> materialDataList;
 
-	// A マテリアル（32バイト必要）
-	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, AlignCBSize(sizeof(GPUMaterial)));
-	GPUMaterial* materialDataA = nullptr;
-	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
-	*materialDataA = { {1,1,1,1}, static_cast<int32_t>(LightingMode::Lambert), {}, MakeIdentity4x4() };
+	// ▼ 地面用
+	ComPtr<ID3D12Resource> materialGround = CreateBufferResource(device, AlignCBSize(sizeof(GPUMaterial)));
+	GPUMaterial* matGround = nullptr;
+	materialGround->Map(0, nullptr, reinterpret_cast<void**>(&matGround));
+	*matGround = { {1,1,1,1}, static_cast<int32_t>(LightingMode::Lambert), {}, MakeIdentity4x4() };
 
+	ComPtr<ID3D12Resource> wvpGround = CreateBufferResource(device, AlignCBSize(sizeof(TransformationMatrix)));
+	TransformationMatrix* xformGround = nullptr;
+	wvpGround->Map(0, nullptr, reinterpret_cast<void**>(&xformGround));
+	xformGround->WVP = MakeIdentity4x4();
+	xformGround->World = MakeIdentity4x4();
 
-	// A WVP（128バイト必要）
-	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, AlignCBSize(sizeof(TransformationMatrix)));
-	TransformationMatrix* wvpDataA = nullptr;
-	wvpResourceA->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataA));
-	wvpDataA->WVP = MakeIdentity4x4();
-	wvpDataA->World = MakeIdentity4x4();
+	// ▼ プレイヤー用
+	ComPtr<ID3D12Resource> materialPlayer = CreateBufferResource(device, AlignCBSize(sizeof(GPUMaterial)));
+	GPUMaterial* matPlayer = nullptr;
+	materialPlayer->Map(0, nullptr, reinterpret_cast<void**>(&matPlayer));
+	*matPlayer = { {1,1,1,1}, static_cast<int32_t>(LightingMode::Lambert), {}, MakeIdentity4x4() };
+
+	ComPtr<ID3D12Resource> wvpPlayer = CreateBufferResource(device, AlignCBSize(sizeof(TransformationMatrix)));
+	TransformationMatrix* xformPlayer = nullptr;
+	wvpPlayer->Map(0, nullptr, reinterpret_cast<void**>(&xformPlayer));
+	xformPlayer->WVP = MakeIdentity4x4();
+	xformPlayer->World = MakeIdentity4x4();
 
 	// 平行光源のバッファを作成し、CPU 側から書き込めるようにする
 	ComPtr<ID3D12Resource> directionalLightResource =
@@ -1299,6 +1318,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
+
+	// ▼ プレイヤー用テクスチャ（index=2）を追加
+	DirectX::ScratchImage mipPlayer = LoadTexture("resources/player.png");
+	const DirectX::TexMetadata& metaPlayer = mipPlayer.GetMetadata();
+	ComPtr<ID3D12Resource> texPlayer = CreateTextureResource(device, metaPlayer);
+	UploadTextureData(texPlayer, mipPlayer);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvPlayer{};
+	srvPlayer.Format = metaPlayer.format;
+	srvPlayer.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvPlayer.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvPlayer.Texture2D.MipLevels = UINT(metaPlayer.mipLevels);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE playerSrvCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
+	D3D12_GPU_DESCRIPTOR_HANDLE playerSrvGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
+	device->CreateShaderResourceView(texPlayer.Get(), &srvPlayer, playerSrvCPU);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
 
@@ -1358,9 +1393,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 			ImGui::End();
-			materialDataA->enableLighting = static_cast<int32_t>(lightingMode); // 0=None,1=Lambert,2=Half
 
-			materialDataA->uvTransform = MakeIdentity4x4();
+			// 毎フレームの更新ループ内（行列更新のあたりでOK）
+			matGround->enableLighting = static_cast<int32_t>(lightingMode);
+			matPlayer->enableLighting = static_cast<int32_t>(lightingMode);
 
 
 			keyboard->Acquire();
@@ -1418,11 +1454,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// ★プレイヤーのWorld行列（モデルを原点に置いてるならスケール/回転/平行移動）
 			Matrix4x4 world = MakeAffineMatrix(gPlayer.scale, gPlayer.rot, gPlayer.pos);
 
-			// ★GPUに渡すWVP/Worldを更新
-			wvpDataA->World = world;
-			wvpDataA->WVP = Multiply(Multiply(world, viewMatrix), projectionMatrix);
-			Matrix4x4 worldIT = Transpose(Inverse(world));
-			wvpDataA->WorldInverseTranspose = worldIT;   // ← TransformCB に追加した分を詰める
+			// ★行列計算（既存の view/projection はそのまま）
+			Matrix4x4 worldGround = MakeAffineMatrix(/*scale*/{ 10.0f, 1.0f, 1.0f }, /*rot*/{ 0,0,0 }, /*trans*/{ 0.0f, 0.0f, 0.0f });
+			xformGround->World = worldGround;
+			xformGround->WVP = Multiply(Multiply(worldGround, viewMatrix), projectionMatrix);
+			xformGround->WorldInverseTranspose = Transpose(Inverse(worldGround));
+
+			// プレイヤー（gPlayer の値を使用）
+			Matrix4x4 worldPlayer = MakeAffineMatrix(gPlayer.scale, gPlayer.rot, gPlayer.pos);
+			xformPlayer->World = worldPlayer;
+			xformPlayer->WVP = Multiply(Multiply(worldPlayer, viewMatrix), projectionMatrix);
+			xformPlayer->WorldInverseTranspose = Transpose(Inverse(worldPlayer));
+
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -1472,14 +1515,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+// ▼ 地面（ground）
+commandList->IASetVertexBuffers(0, 1, &vbvGround);
+commandList->SetGraphicsRootConstantBufferView(0, materialGround->GetGPUVirtualAddress());
+commandList->SetGraphicsRootConstantBufferView(1, wvpGround->GetGPUVirtualAddress());
+commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+commandList->DrawInstanced(static_cast<UINT>(modelGround.vertices.size()), 1, 0, 0);
 
-				// Planeモデルを描画
-				commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-				commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+// ▼ プレイヤー（player）
+commandList->IASetVertexBuffers(0, 1, &vbvPlayer);
+commandList->SetGraphicsRootConstantBufferView(0, materialPlayer->GetGPUVirtualAddress());
+commandList->SetGraphicsRootConstantBufferView(1, wvpPlayer->GetGPUVirtualAddress());
+commandList->SetGraphicsRootDescriptorTable(2, playerSrvGPU);
+commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+commandList->DrawInstanced(static_cast<UINT>(modelPlayer.vertices.size()), 1, 0, 0);
+
+
 
 			// ImGuiの描画
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
