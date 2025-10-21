@@ -23,9 +23,8 @@ jobs:
           msbuild-architecture: x64
 
       - name: Build
-        shell: pwsh                # 明示しておくと安心
+        shell: pwsh
         run: |
-          msbuild "$env:SOLUTION_FILE_PATH" `
-            /m `
-            /p:Platform=x64;Configuration=$env:CONFIGURATION
+          msbuild "$env:SOLUTION_FILE_PATH" /m /p:Platform=x64 /p:Configuration=$env:CONFIGURATION
+
 
