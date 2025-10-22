@@ -1795,10 +1795,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	LightingMode lightingMode = LightingMode::HalfLambert;
 
-	// キーの状態
-	static BYTE key[256] = {};
-	static BYTE keyPre[256] = {};
-
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -1905,15 +1901,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			ImGui::End();
 
-
-			keyboard->Acquire();
-			memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
-			keyboard->GetDeviceState(sizeof(key), key);
+			// キーボード入力の更新
+			input->Update();
 
 			// トリガー処理：スペースキーを押した瞬間だけ再生
-			if (key[DIK_SPACE] && !keyPre[DIK_SPACE]) {
-				SoundPlayWave(xAudio2.Get(), soundData1);
-			}
+			//if (key[DIK_SPACE] && !keyPre[DIK_SPACE]) {
+			//	SoundPlayWave(xAudio2.Get(), soundData1);
+			//}
 
 			// WVP行列の計算
 			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };

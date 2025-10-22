@@ -93,7 +93,7 @@
     <ClCompile Include="src\engine\3d\ResourceObject.cpp">
       <Filter>src\engine\3d</Filter>
     </ClCompile>
-    <ClCompile Include="Input.cpp">
+    <ClCompile Include="src\engine\io\Input.cpp">
       <Filter>src\engine\io</Filter>
     </ClCompile>
   </ItemGroup>
@@ -139,10 +139,10 @@
     <ClInclude Include="include\engine\3d\ResourceObject.h">
       <Filter>include\engine\3d</Filter>
     </ClInclude>
-    <ClInclude Include="Input.h">
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="include\engine\io\Input.h">
       <Filter>include\engine\io</Filter>
     </ClInclude>
-    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">
