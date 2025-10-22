@@ -121,8 +121,23 @@ struct Player {
 	Vector3 scale{ 1,1,1 };
 	Vector3 rot{ 0,0,0 };
 	bool onGround = false;
+	int  jumpCount = 0;
+	bool  isDodging = false;
+	float dodgeTimer = 0.0f;        // 残り時間
+	float dodgeCooldown = 0.0f;     // 残りクールダウン
+	int   facing = 1;               // 向き（+1 右 / -1 左）
+	bool  invincible = false;       // iフレーム中か
+	float shootCooldown = 0.0f;
 } gPlayer;
 
+struct Bullet {
+	Vector3 pos;
+	Vector3 vel;
+	float   life;   // 秒
+	bool    alive;
+};
+
+std::vector<Bullet> gBullets;
 
 struct D3DResourceLeakChecker {
 	~D3DResourceLeakChecker() {
@@ -1241,6 +1256,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		vbPlayer->Unmap(0, nullptr);
 	}
 
+	// ▼ Bullet 用（マテリアルは白、テクスチャはuvChecker流用）
+	ComPtr<ID3D12Resource> materialBullet = CreateBufferResource(device, AlignCBSize(sizeof(GPUMaterial)));
+	GPUMaterial* matBullet = nullptr;
+	materialBullet->Map(0, nullptr, reinterpret_cast<void**>(&matBullet));
+	*matBullet = { {1,1,1,1}, static_cast<int32_t>(LightingMode::Lambert), {}, MakeIdentity4x4() };
+
+	// 1発ずつ都度書き換える用の行列CB（1つでOK）
+	ComPtr<ID3D12Resource> wvpBullet = CreateBufferResource(device, AlignCBSize(sizeof(TransformationMatrix)));
+	TransformationMatrix* xformBullet = nullptr;
+	wvpBullet->Map(0, nullptr, reinterpret_cast<void**>(&xformBullet));
+	xformBullet->WVP = MakeIdentity4x4();
+	xformBullet->World = MakeIdentity4x4();
+
 
 	// GPU上のマテリアルリソース一覧（マテリアル名で識別）
 	std::unordered_map<std::string, ComPtr<ID3D12Resource>> materialResources;
@@ -1342,6 +1370,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	LightingMode lightingMode = LightingMode::HalfLambert;
 
+
 	// キーの状態
 	static BYTE key[256] = {};
 	static BYTE keyPre[256] = {};
@@ -1403,38 +1432,140 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
 			keyboard->GetDeviceState(sizeof(key), key);
 
-			// ★タイムステップ（簡易固定）
+			const int kMaxJumps = 2;
 			const float dt = 1.0f / 60.0f;
-
-			// ★横移動（←→） & ジャンプ（Space）
 			const float runSpeed = 6.0f;
 			const float gravity = -20.0f;
 			const float jumpVel = 9.0f;
+
+			const float dodgeDuration = 0.25f;  // 持続
+			const float dodgeSpeed = 18.0f;  // 水平速度
+			const float dodgeCooldownSec = 0.60f;  // クールダウン
+			const float iFrameDuration = 0.18f;  // 無敵時間（持続の先頭側）
+
+			const float bulletSpeed = 24.0f;
+			const float bulletLife = 2.0f;   // 生存秒
+			const float bulletScale = 0.15f;  // 見た目サイズ
+			const float shootCooldownSec = 0.12f; // 連射間隔
+
+
+			// 入力更新のあと
+			bool pressedSpaceNow = (key[DIK_SPACE] & 0x80) && !(keyPre[DIK_SPACE] & 0x80);
+			bool pressedDodgeNow = (key[DIK_LSHIFT] & 0x80) && !(keyPre[DIK_LSHIFT] & 0x80);
+			bool pressedShootNow = (key[DIK_Z] & 0x80) && !(keyPre[DIK_Z] & 0x80);
+
 
 			float moveX = 0.0f;
 			if (key[DIK_LEFT] & 0x80) moveX -= 1.0f;
 			if (key[DIK_RIGHT] & 0x80) moveX += 1.0f;
 
-			gPlayer.vel.x = moveX * runSpeed;
-			gPlayer.vel.y += gravity * dt;
-
-			// 簡易ジャンプ
-			bool pressedSpaceNow = (key[DIK_SPACE] & 0x80) && !(keyPre[DIK_SPACE] & 0x80);
-			if (pressedSpaceNow && gPlayer.onGround) {
-				gPlayer.vel.y = jumpVel;
-				gPlayer.onGround = false;
+			// ★ドッジ中は入力で向きを変えない（水平入力も無効化する）
+			if (!gPlayer.isDodging) {
+				if (moveX > 0.0f) gPlayer.facing = +1;
+				if (moveX < 0.0f) gPlayer.facing = -1;
 			}
 
-			// ★位置更新
+			// 発動条件：地上・非ドッジ中・クールダウン終了・押した瞬間
+			if (pressedDodgeNow && gPlayer.onGround && !gPlayer.isDodging && gPlayer.dodgeCooldown <= 0.0f) {
+				gPlayer.isDodging = true;
+				gPlayer.dodgeTimer = dodgeDuration;
+				gPlayer.invincible = true;                       // 先頭は i フレーム
+				gPlayer.vel.x = gPlayer.facing * dodgeSpeed; // 水平速度を即付与
+				if (gPlayer.vel.y > 0.0f) gPlayer.vel.y = 0.0f;    // 上向き速度があれば潰す（任意）
+			}
+
+			// 重力は毎フレーム
+			gPlayer.vel.y += gravity * dt;
+
+			// ★ドッジ中の上書き
+			if (gPlayer.isDodging) {
+				// 水平は常に固定速度（入力無視）
+				gPlayer.vel.x = gPlayer.facing * dodgeSpeed;
+
+				// タイマー更新＆iフレーム判定
+				gPlayer.dodgeTimer -= dt;
+				float elapsed = dodgeDuration - gPlayer.dodgeTimer;
+				gPlayer.invincible = (elapsed <= iFrameDuration);
+
+				if (gPlayer.dodgeTimer <= 0.0f) {
+					gPlayer.isDodging = false;
+					gPlayer.invincible = false;
+					gPlayer.dodgeCooldown = dodgeCooldownSec; // クールダウン開始
+				}
+			} else {
+				// ★通常時だけ水平速度を入力から決める
+				gPlayer.vel.x = moveX * runSpeed;
+
+				// ★ジャンプ（既存のダブルジャンプロジックそのまま）
+				if (pressedSpaceNow) {
+					if (gPlayer.onGround || gPlayer.jumpCount < kMaxJumps) {
+						gPlayer.vel.y = jumpVel;
+						gPlayer.onGround = false;
+						gPlayer.jumpCount++;
+					}
+				}
+			}
+
+			// 射撃クールダウン
+			if (gPlayer.shootCooldown > 0.0f) {
+				gPlayer.shootCooldown -= dt;
+				if (gPlayer.shootCooldown < 0.0f) gPlayer.shootCooldown = 0.0f;
+			}
+
+			// 発射（Z）：押した瞬間 & クールダウン終了
+			if (pressedShootNow && gPlayer.shootCooldown <= 0.0f) {
+				Bullet b{};
+				// 口元オフセット（少し前方 & 少し上）
+				float muzzleX = gPlayer.pos.x + 0.6f * gPlayer.facing;
+				float muzzleY = gPlayer.pos.y + 0.8f;
+				b.pos = { muzzleX, muzzleY, 0.0f };
+				b.vel = { bulletSpeed * gPlayer.facing, 0.0f, 0.0f };
+				b.life = bulletLife;
+				b.alive = true;
+				gBullets.push_back(b);
+
+				gPlayer.shootCooldown = shootCooldownSec;
+			}
+
+			// 弾の更新
+			for (auto& b : gBullets) {
+				if (!b.alive) continue;
+				b.pos.x += b.vel.x * dt;
+				b.pos.y += b.vel.y * dt; // 今は水平のみだが拡張余地
+				ConstrainToZ0(b.pos);
+
+				b.life -= dt;
+				if (b.life <= 0.0f) b.alive = false;
+			}
+
+			// 死んだ弾を削除
+			gBullets.erase(
+				std::remove_if(gBullets.begin(), gBullets.end(),
+					[](const Bullet& b) { return !b.alive; }),
+				gBullets.end());
+
+
+			// 位置更新
 			gPlayer.pos.x += gPlayer.vel.x * dt;
 			gPlayer.pos.y += gPlayer.vel.y * dt;
 
-			// ★地面当たり（Z=0平面上で、Y=0を床とする簡易判定）
+
+			// 地面（Y=0）との当たり
 			if (gPlayer.pos.y < 0.0f) {
 				gPlayer.pos.y = 0.0f;
 				gPlayer.vel.y = 0.0f;
-				gPlayer.onGround = true;
+				if (!gPlayer.onGround) {
+					gPlayer.onGround = true;
+					gPlayer.jumpCount = 0; // 既存：ダブルジャンプリセット
+				}
 			}
+
+			// クールダウン減少
+			if (gPlayer.dodgeCooldown > 0.0f) {
+				gPlayer.dodgeCooldown -= dt;
+				if (gPlayer.dodgeCooldown < 0.0f) gPlayer.dodgeCooldown = 0.0f;
+			}
+
 
 			// ★2.5D拘束（Zは常に0）
 			ConstrainToZ0(gPlayer.pos);
@@ -1515,21 +1646,43 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-// ▼ 地面（ground）
-commandList->IASetVertexBuffers(0, 1, &vbvGround);
-commandList->SetGraphicsRootConstantBufferView(0, materialGround->GetGPUVirtualAddress());
-commandList->SetGraphicsRootConstantBufferView(1, wvpGround->GetGPUVirtualAddress());
-commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-commandList->DrawInstanced(static_cast<UINT>(modelGround.vertices.size()), 1, 0, 0);
+			// ▼ 地面（ground）
+			commandList->IASetVertexBuffers(0, 1, &vbvGround);
+			commandList->SetGraphicsRootConstantBufferView(0, materialGround->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpGround->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawInstanced(static_cast<UINT>(modelGround.vertices.size()), 1, 0, 0);
 
-// ▼ プレイヤー（player）
-commandList->IASetVertexBuffers(0, 1, &vbvPlayer);
-commandList->SetGraphicsRootConstantBufferView(0, materialPlayer->GetGPUVirtualAddress());
-commandList->SetGraphicsRootConstantBufferView(1, wvpPlayer->GetGPUVirtualAddress());
-commandList->SetGraphicsRootDescriptorTable(2, playerSrvGPU);
-commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-commandList->DrawInstanced(static_cast<UINT>(modelPlayer.vertices.size()), 1, 0, 0);
+			// ▼ プレイヤー（player）
+			commandList->IASetVertexBuffers(0, 1, &vbvPlayer);
+			commandList->SetGraphicsRootConstantBufferView(0, materialPlayer->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpPlayer->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, playerSrvGPU);
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawInstanced(static_cast<UINT>(modelPlayer.vertices.size()), 1, 0, 0);
+
+			// ▼ Bullets
+			for (const auto& b : gBullets) {
+				// ワールド行列：小スケールで配置
+				Matrix4x4 w = MakeAffineMatrix({ bulletScale, bulletScale, bulletScale },
+					{ 0,0,0 }, b.pos);
+				xformBullet->World = w;
+				xformBullet->WVP = Multiply(Multiply(w, viewMatrix), projectionMatrix);
+				xformBullet->WorldInverseTranspose = Transpose(Inverse(w));
+
+				// 頂点：cube（groundのVBを流用）
+				commandList->IASetVertexBuffers(0, 1, &vbvGround);
+
+				// マテリアル/行列/テクスチャ/ライト
+				commandList->SetGraphicsRootConstantBufferView(0, materialBullet->GetGPUVirtualAddress()); // b0
+				commandList->SetGraphicsRootConstantBufferView(1, wvpBullet->GetGPUVirtualAddress());      // b1
+				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);                        // t0（uvChecker）
+				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress()); // b3
+
+				// ドロー（cube頂点数）
+				commandList->DrawInstanced(static_cast<UINT>(modelGround.vertices.size()), 1, 0, 0);
+			}
 
 
 
