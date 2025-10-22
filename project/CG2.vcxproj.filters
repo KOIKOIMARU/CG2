@@ -93,6 +93,9 @@
     <ClCompile Include="src\engine\3d\ResourceObject.cpp">
       <Filter>src\engine\3d</Filter>
     </ClCompile>
+    <ClCompile Include="Input.cpp">
+      <Filter>src\engine\io</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -136,6 +139,10 @@
     <ClInclude Include="include\engine\3d\ResourceObject.h">
       <Filter>include\engine\3d</Filter>
     </ClInclude>
+    <ClInclude Include="Input.h">
+      <Filter>include\engine\io</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">
@@ -146,5 +153,8 @@
     <None Include="shaders\Object3d.hlsli">
       <Filter>shaders</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="CG2.rc" />
   </ItemGroup>
 </Project>

@@ -15,23 +15,21 @@
 #include <sstream>
 #include <filesystem>
 #include "engine/3d/ResourceObject.h"
+#include "engine/io/Input.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
-#define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
-#include <dinput.h>
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include "DirectXTex.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
+
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "xaudio2.lib")
-#pragma comment(lib, "dinput8.lib")
-#pragma comment(lib, "dxguid.lib")
+
 
 using namespace Microsoft::WRL;
 
@@ -1063,33 +1061,6 @@ auto NormalizeTextureKey = [](const std::string& path) -> std::string {
 	return filename;
 	};
 
-LPDIRECTINPUT8 directInput = nullptr;
-LPDIRECTINPUTDEVICE8 gamepad = nullptr;
-
-void InitGamepad(HWND hwnd) {
-	// DirectInputオブジェクトの生成
-	HRESULT hr = DirectInput8Create(
-		GetModuleHandle(nullptr),
-		DIRECTINPUT_VERSION,
-		IID_IDirectInput8,
-		(void**)&directInput,
-		nullptr);
-	assert(SUCCEEDED(hr));
-
-	// ゲームパッドの列挙と取得
-	directInput->EnumDevices(DI8DEVCLASS_GAMECTRL,
-		[](const DIDEVICEINSTANCE* pdidInstance, VOID* pContext) -> BOOL {
-			HRESULT hr = directInput->CreateDevice(pdidInstance->guidInstance, &gamepad, nullptr);
-			if (FAILED(hr)) return DIENUM_CONTINUE;
-
-			gamepad->SetDataFormat(&c_dfDIJoystick);
-			gamepad->SetCooperativeLevel((HWND)pContext, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE);
-			gamepad->Acquire();
-			return DIENUM_STOP; // 最初のゲームパッドで止める
-		}, hwnd, DIEDFL_ATTACHEDONLY);
-}
-
-
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3DResourceLeakChecker leakcheck;
@@ -1500,36 +1471,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
-	// DirectInputの初期化
-	IDirectInput8* directInput = nullptr;
-	result = DirectInput8Create(
-		GetModuleHandle(nullptr), // ← これで現在のインスタンスハンドルを取得
-		DIRECTINPUT_VERSION, IID_IDirectInput8,
-		(void**)&directInput, nullptr);
-	assert(SUCCEEDED(result));
+	// ポインタ
+	Input* input = nullptr;
 
-	// キーボードデバイスの生成
-	IDirectInputDevice8* keyboard = nullptr;
-	result = directInput->CreateDevice(GUID_SysKeyboard, &keyboard, NULL);
-	assert(SUCCEEDED(result));
-
-	// 入力データ形式のセット
-	result = keyboard->SetDataFormat(&c_dfDIKeyboard); // 標準形式
-	assert(SUCCEEDED(result));
-
-	// 排他制御レベルのセット
-	result = keyboard->SetCooperativeLevel(
-		hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
-	assert(SUCCEEDED(result));
-
+	// 入力の初期化
+	input = new Input();
+	input->Initialize(wc.hInstance,hwnd);
 
 	// 実際に生成
 	ComPtr<ID3D12PipelineState> graphicsPipelineState = nullptr;
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
-
-	InitGamepad(hwnd); // ゲームパッドを初期化
-
 
 	// モデルデータの読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
@@ -1874,28 +1826,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// ImGuiのウィンドウを作成
 			ImGui::ShowDemoWindow();
-
-			ImGuiIO& io = ImGui::GetIO();
-			io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad; // ゲームパッド操作を有効化
-
-			// DirectInput ゲームパッド状態取得
-			DIJOYSTATE gamepadState = {};
-			if (gamepad) {
-				gamepad->Acquire();
-				gamepad->Poll();
-				gamepad->GetDeviceState(sizeof(DIJOYSTATE), &gamepadState);
-			}
-
-			io.NavInputs[ImGuiNavInput_DpadUp] = (gamepadState.lY < -500) ? 1.0f : 0.0f;
-			io.NavInputs[ImGuiNavInput_DpadDown] = (gamepadState.lY > 500) ? 1.0f : 0.0f;
-			io.NavInputs[ImGuiNavInput_DpadLeft] = (gamepadState.lX < -500) ? 1.0f : 0.0f;
-			io.NavInputs[ImGuiNavInput_DpadRight] = (gamepadState.lX > 500) ? 1.0f : 0.0f;
-
-			// 決定（Aボタン想定：0番ボタン）
-			io.NavInputs[ImGuiNavInput_Activate] = (gamepadState.rgbButtons[0] & 0x80) ? 1.0f : 0.0f;
-
-			// キャンセル（Bボタン：1番）
-			io.NavInputs[ImGuiNavInput_Cancel] = (gamepadState.rgbButtons[1] & 0x80) ? 1.0f : 0.0f;
 
 			ImGui::Begin("Window");
 
@@ -2268,15 +2198,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	xAudio2.Reset(); // XAudio2の解放
 	SoundUnload(&soundData1); // 音声データの解放
 	CloseHandle(fenceEvent);
-	if (gamepad) {
-		gamepad->Unacquire();
-		gamepad->Release();
-		gamepad = nullptr;
-	}
-	if (directInput) {
-		directInput->Release();
-		directInput = nullptr;
-	}
+	delete input;
 
 
 	CloseWindow(hwnd);
