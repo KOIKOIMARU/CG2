@@ -12,7 +12,6 @@ void Input::Initialize(HINSTANCE hInstance, HWND hwnd) {
 	HRESULT result;
 
 	// DirectInputの初期化
-	IDirectInput8* directInput = nullptr;
 	result = DirectInput8Create(
 		GetModuleHandle(nullptr), // ← これで現在のインスタンスハンドルを取得
 		DIRECTINPUT_VERSION, IID_IDirectInput8,
@@ -38,8 +37,24 @@ void Input::Update() {
 	// 更新処理
 	keyboard->Acquire();
 	// キーの状態
-	static BYTE key[256] = {};
-	static BYTE keyPre[256] = {};
 	memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
 	keyboard->GetDeviceState(sizeof(key), key);
+}
+
+bool Input::PushKey(BYTE keyNumber)
+{
+	// 指定キーを押していればtrueを返す
+	if (key[keyNumber]) {
+		return true;
+	}
+	return false;
+}
+
+bool Input::TriggerKey(BYTE keyNumber)
+{
+	// 指定キーがトリガーならtrueを返す
+	if (key[keyNumber] && !keyPre[keyNumber]) {
+		return true;
+	}
+	return false;
 }

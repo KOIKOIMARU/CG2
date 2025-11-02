@@ -1905,9 +1905,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			input->Update();
 
 			// トリガー処理：スペースキーを押した瞬間だけ再生
-			//if (key[DIK_SPACE] && !keyPre[DIK_SPACE]) {
-			//	SoundPlayWave(xAudio2.Get(), soundData1);
-			//}
+			if (input->TriggerKey(DIK_SPACE)) {
+				SoundPlayWave(xAudio2.Get(), soundData1);
+			}
+
 
 			// WVP行列の計算
 			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
