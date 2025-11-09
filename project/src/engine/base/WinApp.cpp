@@ -69,10 +69,6 @@ void WinApp::Initialize()
 
 }
 
-void WinApp::Update()
-{
-}
-
 void WinApp::Finalize()
 {
 
@@ -80,4 +76,21 @@ void WinApp::Finalize()
 
 	// COMの終了処理
 	CoUninitialize();
+}
+
+bool WinApp::ProcessMessage()
+{
+	MSG msg{};
+	if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+		// メッセージがあったら処理する
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
+
+	// ウィンドウの×ボタンが押されたらtrueを返す
+	if (msg.message == WM_QUIT) {
+		return true;
+	}
+
+	return false;
 }

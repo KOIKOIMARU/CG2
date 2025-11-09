@@ -15,8 +15,6 @@ public: // 静的メンバ関数
 public: // メンバ関数
 	// 初期化
 	void Initialize();
-	// 更新
-	void Update();
 	// 終了
 	void Finalize();
 
@@ -24,6 +22,9 @@ public: // メンバ関数
 	HWND GetHwnd() const { return hwnd; }
 
 	HINSTANCE GetHInstance() const { return wc.hInstance; }
+
+	// メッセージの処理
+	bool ProcessMessage();
 
 
 private:
