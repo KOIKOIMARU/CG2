@@ -160,8 +160,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</WholeProgramOptimization>
     </ClCompile>
     <ClCompile Include="src\engine\3d\ResourceObject.cpp" />
+    <ClCompile Include="src\engine\base\WinApp.cpp" />
     <ClCompile Include="src\engine\io\Input.cpp" />
-    <ClCompile Include="WinApp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -201,9 +201,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
     <ClInclude Include="include\engine\3d\ResourceObject.h" />
+    <ClInclude Include="include\engine\base\WinApp.h" />
     <ClInclude Include="include\engine\io\Input.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="WinApp.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

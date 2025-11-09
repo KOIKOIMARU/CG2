@@ -96,7 +96,7 @@
     <ClCompile Include="src\engine\io\Input.cpp">
       <Filter>src\engine\io</Filter>
     </ClCompile>
-    <ClCompile Include="WinApp.cpp">
+    <ClCompile Include="src\engine\base\WinApp.cpp">
       <Filter>src\engine\base</Filter>
     </ClCompile>
   </ItemGroup>
@@ -146,7 +146,7 @@
     <ClInclude Include="include\engine\io\Input.h">
       <Filter>include\engine\io</Filter>
     </ClInclude>
-    <ClInclude Include="WinApp.h">
+    <ClInclude Include="include\engine\base\WinApp.h">
       <Filter>include\engine\base</Filter>
     </ClInclude>
   </ItemGroup>
