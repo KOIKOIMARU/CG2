@@ -317,3 +317,9 @@ DirectXGame/imgui.ini
 
 # DirectXTex Compiled Shaders
 **/DirectXTex/Shaders/Compiled/
+
+# Custom ignore rules
+# Dumps, logs, and ImGui configuration
+Dumps/
+logs/
+imgui.ini
