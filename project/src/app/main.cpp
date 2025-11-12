@@ -15,6 +15,7 @@
 #include "engine/3d/ResourceObject.h"
 #include "engine/io/Input.h"
 #include "engine/base/WinApp.h"
+#include "engine/base/DirectXCommon.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"

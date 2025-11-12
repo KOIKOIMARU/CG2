@@ -99,6 +99,9 @@
     <ClCompile Include="src\engine\base\WinApp.cpp">
       <Filter>src\engine\base</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\base\DirectXCommon.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -147,6 +150,9 @@
       <Filter>include\engine\io</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\base\WinApp.h">
+      <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\DirectXCommon.h">
       <Filter>include\engine\base</Filter>
     </ClInclude>
   </ItemGroup>
