@@ -1,4 +1,6 @@
+#define NOMINMAX
 #include <Windows.h>
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 #include <unordered_map>   
@@ -122,6 +124,81 @@ struct Player {
 	Vector3 rot{ 0,0,0 };
 	bool onGround = false;
 } gPlayer;
+
+enum class GameState { Title, Playing, Clear, GameOver };
+static GameState gState = GameState::Title;
+
+struct AABB {
+	float x, y, w, h; // 左下原点でOK（Y=0が床）
+};
+static inline bool Intersects(const AABB& a, const AABB& b) {
+	return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
+}
+
+struct Enemy {
+	Vector3 pos{ 8.0f, 0.0f, 0.0f }; // 右の方に1体
+	Vector3 size{ 1.2f, 1.2f, 1.0f };
+	bool alive = true;
+} gEnemy;
+
+struct Bullet {
+	Vector3 pos{};
+	Vector3 vel{};
+	float   life = 2.0f; // 秒
+	Vector3 size{ 0.3f, 0.3f, 1.0f };
+	bool alive = false;
+};
+static std::vector<Bullet> gBullets;
+
+// プレイヤーの見た目/当たり判定サイズ（plane を矩形として使う）
+static Vector3 kPlayerSize{ 1.0f, 1.6f, 1.0f };
+
+// ===== タイルマップ（見た目用） =====
+static constexpr float TILE = 1.0f;
+static const int MAP_W = 20;
+static const int MAP_H = 8;
+static int gMap[MAP_H][MAP_W] = {
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, // 一番下の床
+};
+
+// 前方宣言（gMaterialTemplate で使うため）
+Matrix4x4 MakeIdentity4x4();
+
+
+// ★ グローバル定数の「前」に置く
+constexpr size_t AlignCBSize(size_t size) {
+	constexpr size_t kAlign = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT; // 256
+	return (size + (kAlign - 1)) & ~(kAlign - 1);
+}
+
+
+// ======== CBリングバッファ用（グローバル） ========
+constexpr size_t kMaxDraws = 4096;
+constexpr size_t kMatSize = AlignCBSize(sizeof(GPUMaterial));          // 256B
+constexpr size_t kXformSize = AlignCBSize(sizeof(TransformationMatrix)); // 256B
+
+// 大きいCB
+Microsoft::WRL::ComPtr<ID3D12Resource> gMaterialCB;
+Microsoft::WRL::ComPtr<ID3D12Resource> gXformCB;
+
+// マップ先
+uint8_t* gMaterialMapped = nullptr;
+uint8_t* gXformMapped = nullptr;
+
+// フレーム内カーソル
+size_t gMaterialCursor = 0;
+size_t gXformCursor = 0;
+
+// 既存の「テンプレート」的に使うCPU側データ（ImGuiでいじる値の置き場）
+GPUMaterial gMaterialTemplate = { {1,1,1,1}, 1, {}, MakeIdentity4x4() };
+
 
 
 struct D3DResourceLeakChecker {
@@ -769,10 +846,165 @@ static Matrix4x4 MakeLookAtMatrixLH(const Vector3& eye, const Vector3& target, c
 	return m;
 }
 
-static size_t AlignCBSize(size_t size) {
-	const size_t kAlign = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT; // 256
-	return (size + (kAlign - 1)) & ~(kAlign - 1);
+void ResetGame() {
+	gPlayer.pos = { 1.0f, 1.0f, 0.0f };   // ← y=1.0
+	gPlayer.vel = { 0,0,0 };
+	gPlayer.onGround = true;
+
+	gEnemy.pos = { 8.0f, 1.0f, 0.0f };    // ← y=1.0
+	gEnemy.size = { 1.2f, 1.2f, 1.0f };
+	gEnemy.alive = true;
+
+	gBullets.clear();
 }
+
+
+// ===== 矩形描画（plane.objを矩形として使う） =====
+// ※ materialCB / transformCB / lightCB は WinMain で作ったリソースを渡す
+void DrawQuad(
+	ID3D12GraphicsCommandList* cmd,
+	const D3D12_VERTEX_BUFFER_VIEW& vbv,
+	ID3D12Resource* materialCB, GPUMaterial* mat,
+	ID3D12Resource* transformCB, TransformationMatrix* wvp,
+	const Matrix4x4& view, const Matrix4x4& proj,
+	float x, float y, float w, float h,
+	const Vector4& rgba,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+	ID3D12Resource* lightCB)
+{
+	// 左下原点→中心原点補正（plane が原点中心想定）
+	Vector3 scl{ w, h, 1.0f };
+	Vector3 rot{ 0,0,0 };
+	Vector3 trs{ x + w * 0.5f, y + h * 0.5f, 0.0f };
+
+	mat->color = rgba;
+
+	Matrix4x4 world = MakeAffineMatrix(scl, rot, trs);
+	wvp->World = world;
+	wvp->WVP = Multiply(Multiply(world, view), proj);
+	wvp->WorldInverseTranspose = Transpose(Inverse(world));
+
+	cmd->IASetVertexBuffers(0, 1, &vbv);
+	cmd->SetGraphicsRootConstantBufferView(0, materialCB->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootConstantBufferView(1, transformCB->GetGPUVirtualAddress());
+	cmd->SetGraphicsRootDescriptorTable(2, textureHandle);
+	cmd->SetGraphicsRootConstantBufferView(3, lightCB->GetGPUVirtualAddress());
+	cmd->DrawInstanced(6, 1, 0, 0); // plane.obj が2三角形=6頂点想定
+}
+
+// ===== タイル描画 =====
+void DrawTileMap(
+	ID3D12GraphicsCommandList* cmd,
+	const D3D12_VERTEX_BUFFER_VIEW& vbv,
+	ID3D12Resource* materialCB, GPUMaterial* mat,
+	ID3D12Resource* transformCB, TransformationMatrix* wvp,
+	const Matrix4x4& view, const Matrix4x4& proj,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+	ID3D12Resource* lightCB)
+{
+	for (int y = 0; y < MAP_H; ++y) {
+		for (int x = 0; x < MAP_W; ++x) {
+			if (gMap[y][x] == 1) {
+				DrawQuad(cmd, vbv, materialCB, mat, transformCB, wvp,
+					view, proj, x * TILE, y * TILE, TILE, TILE,
+					{ 0.25f,0.25f,0.28f,1.0f }, textureHandle, lightCB);
+			}
+		}
+	}
+}
+
+struct GfxModel {
+	ModelData               data;
+	ComPtr<ID3D12Resource> vb;
+	D3D12_VERTEX_BUFFER_VIEW vbv{};
+	UINT vertexCount = 0;
+};
+
+static GfxModel CreateGfxModel(
+	ComPtr<ID3D12Device>& device,
+	const std::string& dir, const std::string& filename)
+{
+	GfxModel m;
+	m.data = LoadObjFile(dir, filename);
+	m.vertexCount = static_cast<UINT>(m.data.vertices.size());
+
+	m.vb = CreateBufferResource(device, sizeof(VertexData) * m.data.vertices.size());
+	VertexData* vptr = nullptr;
+	m.vb->Map(0, nullptr, reinterpret_cast<void**>(&vptr));
+	std::memcpy(vptr, m.data.vertices.data(), sizeof(VertexData) * m.data.vertices.size());
+	m.vb->Unmap(0, nullptr);
+
+	m.vbv.BufferLocation = m.vb->GetGPUVirtualAddress();
+	m.vbv.SizeInBytes = UINT(sizeof(VertexData) * m.data.vertices.size());
+	m.vbv.StrideInBytes = sizeof(VertexData);
+	return m;
+}
+
+static void DrawModel(
+	ID3D12GraphicsCommandList* cmd,
+	const GfxModel& model,
+	ID3D12Resource* /*materialCB_unused*/, GPUMaterial* /*mat_unused*/,
+	ID3D12Resource* /*transformCB_unused*/, TransformationMatrix* /*wvp_unused*/,
+	const Matrix4x4& view, const Matrix4x4& proj,
+	const Vector3& pos, const Vector3& scale, const Vector3& rot,
+	const Vector4& rgba,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+	ID3D12Resource* lightCB)
+{
+	// 1) このDraw用のオフセットを確保
+	size_t matOff = kMatSize * (gMaterialCursor++);
+	size_t xformOff = kXformSize * (gXformCursor++);
+
+	// 2) CPU側に書き込み（テンプレートをベースに色など上書き）
+	auto* mat = reinterpret_cast<GPUMaterial*>(gMaterialMapped + matOff);
+	*mat = gMaterialTemplate;         // enableLighting/uvTransform等の共通値
+	mat->color = rgba;
+
+	auto* xform = reinterpret_cast<TransformationMatrix*>(gXformMapped + xformOff);
+	Matrix4x4 world = MakeAffineMatrix(scale, rot, pos);
+	xform->World = world;
+	xform->WVP = Multiply(Multiply(world, view), proj);
+	xform->WorldInverseTranspose = Transpose(Inverse(world));
+
+	// 3) 描画
+	cmd->IASetVertexBuffers(0, 1, &model.vbv);
+	cmd->SetGraphicsRootConstantBufferView(0, gMaterialCB->GetGPUVirtualAddress() + matOff);
+	cmd->SetGraphicsRootConstantBufferView(1, gXformCB->GetGPUVirtualAddress() + xformOff);
+	cmd->SetGraphicsRootDescriptorTable(2, textureHandle);
+	cmd->SetGraphicsRootConstantBufferView(3, lightCB->GetGPUVirtualAddress());
+	cmd->DrawInstanced(model.vertexCount, 1, 0, 0);
+}
+
+
+void DrawTileMapWithModel(
+	ID3D12GraphicsCommandList* cmd,
+	const GfxModel& blockModel,
+	ID3D12Resource* materialCB, GPUMaterial* mat,
+	ID3D12Resource* transformCB, TransformationMatrix* wvp,
+	const Matrix4x4& view, const Matrix4x4& proj,
+	D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+	ID3D12Resource* lightCB)
+{
+	for (int y = 0; y < MAP_H; ++y) {
+		for (int x = 0; x < MAP_W; ++x) {
+			if (gMap[y][x] == 1) {
+				// ←★ ここで反転（配列の最下行が yWorld=0 になる）
+				const int yWorld = MAP_H - 1 - y;
+
+				Vector3 pos{ x * TILE + TILE * 0.5f,
+							 yWorld * TILE + TILE * 0.5f,
+							 0.0f };
+				Vector3 scale{ TILE, TILE, 0.2f };
+				Vector3 rot{ 0,0,0 };
+				DrawModel(cmd, blockModel, materialCB, mat, transformCB, wvp,
+					view, proj, pos, scale, rot,
+					{ 0.25f,0.25f,0.28f,1.0f }, textureHandle, lightCB);
+			}
+		}
+	}
+}
+
+
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -1208,30 +1440,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// モデルデータの読み込み
-	ModelData modelData = LoadObjFile("resources", "plane.obj");
+	
+	// 旧: ModelData modelData = LoadObjFile("resources", "plane.obj"); … は削除
+	GfxModel gModelPlayer = CreateGfxModel(device, "resources", "player.obj");
+	GfxModel gModelEnemy = CreateGfxModel(device, "resources", "enemy.obj");
+	GfxModel gModelBullet = CreateGfxModel(device, "resources", "bullet.obj");
+	GfxModel gModelBlock = CreateGfxModel(device, "resources", "block.obj");
 
-	// リソース作成
-	ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
 
 	// リソース作成
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
-
-	// 頂点バッファビューを作成
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
-	// リソースの先頭のアドレスから使う
-	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();
-	// 使用するリソースサイズは頂点3つ分のサイズ
-	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
-	// 1つの頂点のサイズ
-	vertexBufferView.StrideInBytes = sizeof(VertexData);
-
-	// 頂点リソースにデータを書き込む
-	VertexData* vertexData = nullptr;
-	// 書き込むためのアドレスを取得
-	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
-	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
-	vertexResource->Unmap(0, nullptr); // 書き込み完了したのでアンマップ
 
 	// GPU上のマテリアルリソース一覧（マテリアル名で識別）
 	std::unordered_map<std::string, ComPtr<ID3D12Resource>> materialResources;
@@ -1239,19 +1458,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// CPU側のマテリアルポインタ一覧（ImGuiで編集用）
 	std::unordered_map<std::string, Material*> materialDataList;
 
-	// A マテリアル（32バイト必要）
-	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, AlignCBSize(sizeof(GPUMaterial)));
-	GPUMaterial* materialDataA = nullptr;
-	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
-	*materialDataA = { {1,1,1,1}, static_cast<int32_t>(LightingMode::Lambert), {}, MakeIdentity4x4() };
+	// ===== たくさん入るCB（リングバッファ）を作ってマップ =====
+	gMaterialCB = CreateBufferResource(device, kMatSize * kMaxDraws);
+	gXformCB = CreateBufferResource(device, kXformSize * kMaxDraws);
 
+	gMaterialCB->Map(0, nullptr, reinterpret_cast<void**>(&gMaterialMapped));
+	gXformCB->Map(0, nullptr, reinterpret_cast<void**>(&gXformMapped));
 
-	// A WVP（128バイト必要）
-	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, AlignCBSize(sizeof(TransformationMatrix)));
-	TransformationMatrix* wvpDataA = nullptr;
-	wvpResourceA->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataA));
-	wvpDataA->WVP = MakeIdentity4x4();
-	wvpDataA->World = MakeIdentity4x4();
 
 	// 平行光源のバッファを作成し、CPU 側から書き込めるようにする
 	ComPtr<ID3D12Resource> directionalLightResource =
@@ -1282,26 +1495,37 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorRect.top = 0;
 	scissorRect.bottom = kClientHeight;
 
-	// Textureを呼んで転送する（1枚のみ）
-	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
-	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
-	UploadTextureData(textureResource, mipImages);
+	// --- これを WinMain の SRV ヒープ作成後あたりに追加 ---
+	enum TexSlot : UINT { kTexPlayer = 1, kTexEnemy = 2, kTexBullet = 3, kTexBlock = 4 };
 
-	// SRVを作成
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-	srvDesc.Format = metadata.format;
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels);
+	auto LoadTextureToSlot = [&](const char* path, UINT slot,
+		ComPtr<ID3D12Resource>& outTex,
+		D3D12_GPU_DESCRIPTOR_HANDLE& outHandle)
+		{
+			DirectX::ScratchImage img = LoadTexture(path);
+			const DirectX::TexMetadata& meta = img.GetMetadata();
+			outTex = CreateTextureResource(device, meta);
+			UploadTextureData(outTex, img);
 
-	// Descriptor取得
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
-	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
+			D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+			srv.Format = meta.format;
+			srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			srv.Texture2D.MipLevels = UINT(meta.mipLevels);
 
-	D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
+			auto cpu = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, slot);
+			device->CreateShaderResourceView(outTex.Get(), &srv, cpu);
+			outHandle = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, slot);
+		};
 
+	// --- これまで使っていた uvChecker は不要なら消してOK ---
+	ComPtr<ID3D12Resource> texPlayer, texEnemy, texBullet, texBlock;
+	D3D12_GPU_DESCRIPTOR_HANDLE hPlayer{}, hEnemy{}, hBullet{}, hBlock{};
+
+	LoadTextureToSlot("resources/player.png", kTexPlayer, texPlayer, hPlayer);
+	LoadTextureToSlot("resources/enemy.png", kTexEnemy, texEnemy, hEnemy);
+	LoadTextureToSlot("resources/bullet.png", kTexBullet, texBullet, hBullet);
+	LoadTextureToSlot("resources/block.png", kTexBlock, texBlock, hBlock);
 
 	// モデルの種類を選択するための変数
 
@@ -1337,92 +1561,205 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::NewFrame();
 
 
-			ImGui::Begin("Window");
+			//ImGui::Begin("Window");
 
 			ImGui::SetItemDefaultFocus(); // ←追加！
 
+			/*
 			// 光の設定
-			if (ImGui::CollapsingHeader("Light")) {
-				const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
-				int currentLighting = static_cast<int>(lightingMode);
-				if (ImGui::Combo("Lighting Mode", &currentLighting, lightingItems, IM_ARRAYSIZE(lightingItems))) {
-					lightingMode = static_cast<LightingMode>(currentLighting);
+			if (imgui::collapsingheader("light")) {
+				const char* lightingitems[] = { "none", "lambert", "halflambert" };
+				int currentlighting = static_cast<int>(lightingmode);
+				if (imgui::combo("lighting mode", &currentlighting, lightingitems, im_arraysize(lightingitems))) {
+					lightingmode = static_cast<lightingmode>(currentlighting);
 				}
-				static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
-				if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
-					Vector3 normDir = Normalize(lightDirEdit);
-					directionalLightData->direction = { normDir.x, normDir.y, normDir.z, 0.0f };
+				static vector3 lightdiredit = { directionallightdata->direction.x, directionallightdata->direction.y, directionallightdata->direction.z };
+				if (imgui::dragfloat3("light dir", &lightdiredit.x, 0.01f, -1.0f, 1.0f)) {
+					vector3 normdir = normalize(lightdiredit);
+					directionallightdata->direction = { normdir.x, normdir.y, normdir.z, 0.0f };
 				}
-				ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
-				ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
+				imgui::dragfloat("light intensity", &directionallightdata->intensity, 0.01f, 0.0f, 10.0f);
+				imgui::coloredit3("light color", &directionallightdata->color.x);
 			}
 
-			ImGui::End();
-			materialDataA->enableLighting = static_cast<int32_t>(lightingMode); // 0=None,1=Lambert,2=Half
+			imgui::end();
+			
+			imgui::begin("game state");
+			switch (gstate) {
+			case gamestate::title:
+				imgui::textunformatted("title");
+				imgui::separator();
+				imgui::textunformatted("[space] start");
+				imgui::textunformatted("[esc]   back to title (anytime)");
+				imgui::textunformatted("[arrows] move, [space] jump, [z] shoot");
+				break;
+			case gamestate::playing:
+				imgui::textunformatted("playing");
+				imgui::textunformatted("kill the red enemy with [z]. touch = game over");
+				break;
+			case gamestate::clear:
+				imgui::textunformatted("clear!");
+				imgui::textunformatted("[space] back to title");
+				break;
+			case gamestate::gameover:
+				imgui::textunformatted("game over");
+				imgui::textunformatted("[space] back to title");
+				break;
+			}
+			imgui::end();*/
 
-			materialDataA->uvTransform = MakeIdentity4x4();
+			gMaterialTemplate.enableLighting = static_cast<int32_t>(lightingMode);
+			gMaterialTemplate.uvTransform = MakeIdentity4x4(); // 必要なら
 
-
+			// --- 入力は1回だけ ---
 			keyboard->Acquire();
-			memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
+			memcpy(keyPre, key, sizeof(key)); // 前フレームのコピー
 			keyboard->GetDeviceState(sizeof(key), key);
 
-			// ★タイムステップ（簡易固定）
+			auto Pressed = [&](int dik) { return (key[dik] & 0x80) && !(keyPre[dik] & 0x80); };
+			auto Down = [&](int dik) { return (key[dik] & 0x80); };
+
+			// --- 固定Δtも1回だけ ---
 			const float dt = 1.0f / 60.0f;
 
-			// ★横移動（←→） & ジャンプ（Space）
-			const float runSpeed = 6.0f;
-			const float gravity = -20.0f;
-			const float jumpVel = 9.0f;
-
-			float moveX = 0.0f;
-			if (key[DIK_LEFT] & 0x80) moveX -= 1.0f;
-			if (key[DIK_RIGHT] & 0x80) moveX += 1.0f;
-
-			gPlayer.vel.x = moveX * runSpeed;
-			gPlayer.vel.y += gravity * dt;
-
-			// 簡易ジャンプ
-			bool pressedSpaceNow = (key[DIK_SPACE] & 0x80) && !(keyPre[DIK_SPACE] & 0x80);
-			if (pressedSpaceNow && gPlayer.onGround) {
-				gPlayer.vel.y = jumpVel;
-				gPlayer.onGround = false;
+			// 共通ショートカット：ESCでタイトルへ
+			if (Pressed(DIK_ESCAPE)) {
+				gState = GameState::Title;
 			}
 
-			// ★位置更新
-			gPlayer.pos.x += gPlayer.vel.x * dt;
-			gPlayer.pos.y += gPlayer.vel.y * dt;
+			// ----------------- 状態更新 -----------------
+			switch (gState) {
+			case GameState::Title:
+				if (Pressed(DIK_SPACE)) { ResetGame(); gState = GameState::Playing; }
+				if (gState == GameState::Title) {
+					// 左上に操作説明を表示
+					ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_Always);
+					ImGui::SetNextWindowBgAlpha(0.0f); // 背景透明
+					ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
+						ImGuiWindowFlags_NoInputs |
+						ImGuiWindowFlags_AlwaysAutoResize;
+					ImGui::Begin("TitleHelp", nullptr, flags);
+					ImGui::Text("[SPACE] Start");
+					ImGui::Text("[A][D] Move");
+					ImGui::Text("[SPACE] Jump");
+					ImGui::Text("[Z] Shoot");
+					ImGui::End();
+				}
 
-			// ★地面当たり（Z=0平面上で、Y=0を床とする簡易判定）
-			if (gPlayer.pos.y < 0.0f) {
-				gPlayer.pos.y = 0.0f;
-				gPlayer.vel.y = 0.0f;
-				gPlayer.onGround = true;
+				break;
+
+			case GameState::Playing: {
+				const float runSpeed = 6.0f;
+				const float gravity = -20.0f;
+				const float jumpVel = 9.0f;
+
+				float moveX = 0.0f;
+				if (Down(DIK_LEFT) || Down(DIK_A)) moveX -= 1.0f;
+				if (Down(DIK_RIGHT) || Down(DIK_D)) moveX += 1.0f;
+
+
+				gPlayer.vel.x = moveX * runSpeed;
+
+				bool jump = Pressed(DIK_SPACE);
+				gPlayer.vel.y += gravity * dt;
+				if (jump && gPlayer.onGround) { gPlayer.vel.y = jumpVel; gPlayer.onGround = false; }
+
+				// 位置更新 & 床当たり
+				gPlayer.pos.x += gPlayer.vel.x * dt;
+				gPlayer.pos.y += gPlayer.vel.y * dt;
+
+				const float groundY = 1.0f;               // 最下段タイルの上面
+				if (gPlayer.pos.y < groundY) {
+					gPlayer.pos.y = groundY;
+					gPlayer.vel.y = 0.0f;
+					gPlayer.onGround = true;
+				}
+				ConstrainToZ0(gPlayer.pos);
+
+
+				// 弾発射
+				if (Pressed(DIK_Z)) {
+					Bullet b;
+					b.pos = { gPlayer.pos.x + kPlayerSize.x * 0.6f, gPlayer.pos.y + kPlayerSize.y * 0.5f, 0.0f };
+					b.vel = { 12.0f, 0.0f, 0.0f };
+					b.alive = true;
+					gBullets.push_back(b);
+				}
+
+				// 弾更新 & 敵ヒット
+				for (auto& b : gBullets) {
+					if (!b.alive) continue;
+					b.pos.x += b.vel.x * dt;
+					b.pos.y += b.vel.y * dt;
+					b.life -= dt;
+					if (b.life <= 0.0f) b.alive = false;
+
+					AABB aB{ b.pos.x, b.pos.y, b.size.x, b.size.y };
+					AABB aE{ gEnemy.pos.x, gEnemy.pos.y, gEnemy.size.x, gEnemy.size.y };
+					if (gEnemy.alive && Intersects(aB, aE)) {
+						gEnemy.alive = false;
+						gState = GameState::Clear;
+					}
+				}
+
+				// プレイヤー vs 敵 → GameOver
+				if (gEnemy.alive) {
+					AABB aP{ gPlayer.pos.x, gPlayer.pos.y, kPlayerSize.x, kPlayerSize.y };
+					AABB aE{ gEnemy.pos.x,  gEnemy.pos.y,  gEnemy.size.x, gEnemy.size.y };
+					if (Intersects(aP, aE)) {
+						gState = GameState::GameOver;
+					}
+				}
+			} break;
+
+			case GameState::Clear:
+				if (Pressed(DIK_SPACE)) { gState = GameState::Title; }
+				break;
+
+			case GameState::GameOver:
+				if (Pressed(DIK_SPACE)) { gState = GameState::Title; }
+				break;
 			}
 
-			// ★2.5D拘束（Zは常に0）
-			ConstrainToZ0(gPlayer.pos);
+			// グローバル変数に追加
+			Vector2 cameraCenter{ 0.0f, 0.0f }; // 初期値はプレイヤー開始位置など
 
-			// ★カメラ（横スク用）
-			const float camDist = 12.0f; // 画面奥（+Z）
-			const float camHeight = 2.5f;  // 少し見下ろし
-			const float lead = 3.0f;  // 視線の先行（X方向）
+			// --- カメラ（2D直交投影：少し“引く”）---
+			Matrix4x4 viewMatrix{}, projectionMatrix{};
+			{
+				// 固定の表示範囲（全体が見えるように調整）
+				float vw = 20.0f;   // 横方向に表示するワールド幅
+				float vh = 12.0f;   // 縦方向に表示するワールド高さ
 
-			Vector3 eye{ gPlayer.pos.x, gPlayer.pos.y + camHeight, camDist };
-			Vector3 target{ gPlayer.pos.x + lead, gPlayer.pos.y + 1.0f, 0.0f };
-			Vector3 upHint{ 0.0f, 1.0f, 0.0f };
+				// 原点(0,0)を左下、右上を(vw, vh)に設定
+				viewMatrix = MakeIdentity4x4();
+				projectionMatrix = MakeOrthographicMatrix(0.0f, vh, vw, 0.0f, 0.0f, 1.0f);
+			}
 
-			Matrix4x4 viewMatrix = MakeLookAtMatrixLH(eye, target, upHint);
-			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 200.0f);
 
-			// ★プレイヤーのWorld行列（モデルを原点に置いてるならスケール/回転/平行移動）
-			Matrix4x4 world = MakeAffineMatrix(gPlayer.scale, gPlayer.rot, gPlayer.pos);
 
-			// ★GPUに渡すWVP/Worldを更新
-			wvpDataA->World = world;
-			wvpDataA->WVP = Multiply(Multiply(world, viewMatrix), projectionMatrix);
-			Matrix4x4 worldIT = Transpose(Inverse(world));
-			wvpDataA->WorldInverseTranspose = worldIT;   // ← TransformCB に追加した分を詰める
+
+			auto ShowCenterText = [&](const char* text) {
+				ImGui::SetNextWindowPos(ImVec2(kClientWidth * 0.5f, kClientHeight * 0.5f),
+					ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+				ImGui::SetNextWindowBgAlpha(0.0f);
+				ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
+					ImGuiWindowFlags_NoInputs |
+					ImGuiWindowFlags_AlwaysAutoResize;
+				ImGui::Begin("CenterTextOverlay", nullptr, flags);
+				ImGui::SetWindowFontScale(2.5f);     // 文字を大きく
+				ImGui::TextUnformatted(text);
+				ImGui::End();
+				};
+
+			// シーンごとの表示
+			if (gState == GameState::Title)      ShowCenterText("TITLE");
+			if (gState == GameState::Clear)      ShowCenterText("GAME CLEAR");
+			if (gState == GameState::GameOver)   ShowCenterText("GAME OVER");
+
+
+			// --- ここから描画フェーズで viewMatrix / projectionMatrix を使う ---
+
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -1464,6 +1801,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], false, &dsvHandle);
 			commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
+			// ★ここでリセット（毎フレーム最初に一度だけ）
+			gMaterialCursor = 0;
+			gXformCursor = 0;
 
 			// RootSignatureとPSOの設定
 			commandList->SetGraphicsRootSignature(rootSignature.Get());
@@ -1473,13 +1813,59 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 
-				// Planeモデルを描画
-				commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-				commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+
+
+			if (gState == GameState::Playing) {
+				// --- タイル ---
+				DrawTileMapWithModel(commandList.Get(), gModelBlock,
+					nullptr, nullptr, nullptr, nullptr,
+					viewMatrix, projectionMatrix,
+					hBlock,   // ← block.png
+					directionalLightResource.Get());
+
+
+				// --- プレイヤー ---
+				{
+					Vector3 pos{ gPlayer.pos.x + kPlayerSize.x * 0.5f, gPlayer.pos.y + kPlayerSize.y * 0.5f, 0.0f };
+					Vector3 scale{ kPlayerSize.x, kPlayerSize.y, 0.6f };
+					Vector3 rot{ 0,0,0 };
+					DrawModel(commandList.Get(), gModelPlayer,
+						nullptr, nullptr, nullptr, nullptr,
+						viewMatrix, projectionMatrix,
+						pos, scale, rot,
+						{ 1,1,1,1 }, hPlayer, directionalLightResource.Get());
+				}
+
+
+				// --- 敵 ---
+				if (gEnemy.alive) {
+					Vector3 pos{ gEnemy.pos.x + gEnemy.size.x * 0.5f, gEnemy.pos.y + gEnemy.size.y * 0.5f, 0.0f };
+					Vector3 scale{ gEnemy.size.x, gEnemy.size.y, 0.6f };
+					Vector3 rot{ 0,0,0 };
+					DrawModel(commandList.Get(), gModelEnemy,
+						nullptr, nullptr, nullptr, nullptr,
+						viewMatrix, projectionMatrix,
+						pos, scale, rot,
+						{ 1,1,1,1 }, hEnemy, directionalLightResource.Get());
+
+				}
+
+				// --- 弾 ---
+				for (auto& b : gBullets) if (b.alive) {
+					Vector3 pos{ b.pos.x + b.size.x * 0.5f, b.pos.y + b.size.y * 0.5f, 0.0f };
+					Vector3 scale{ b.size.x, b.size.y, 0.4f };
+					Vector3 rot{ 0,0,0 };
+					DrawModel(commandList.Get(), gModelBullet,
+						nullptr, nullptr, nullptr, nullptr,
+						viewMatrix, projectionMatrix,
+						pos, scale, rot,
+						{ 1,1,1,1 }, hBullet, directionalLightResource.Get());
+
+				}
+			}
+
+
+
 
 			// ImGuiの描画
 			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
@@ -1541,6 +1927,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 
+
 	CloseWindow(hwnd);
 
 	// ImGuiの終了処理
@@ -1551,4 +1938,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// COMの終了処理
 	CoUninitialize();
 	return 0;
+
+
 }
+
