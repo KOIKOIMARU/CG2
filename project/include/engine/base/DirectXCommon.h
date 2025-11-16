@@ -46,7 +46,10 @@ public:
     IDxcCompiler3* GetDxcCompiler() const { return dxcCompiler_.Get(); }
     IDxcIncludeHandler* GetDxcIncludeHandler() const { return dxcIncludeHandler_.Get(); }
 
-
+    // 描画前処理
+	void PreDraw();
+	// 描画後処理
+	void PostDraw();
 
 private:
     // --- ここから「Initialize」専用の内部関数たち ---

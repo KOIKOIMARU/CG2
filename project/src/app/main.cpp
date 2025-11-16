@@ -1144,6 +1144,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
 
+
+	/*
 	// モデルデータの読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
 
@@ -1438,25 +1440,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	LightingMode lightingMode = LightingMode::HalfLambert;
 
-	// Imguiの初期化
-	DXGI_SWAP_CHAIN_DESC swapChainDesc{};
-	dxCommon->GetSwapChain()->GetDesc(&swapChainDesc);
-
-	DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // RTVのフォーマット（DirectXCommonと揃える）
-
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGui::StyleColorsDark();
-	ImGui_ImplWin32_Init(winApp->GetHwnd());
-	ImGui_ImplDX12_Init(
-		device,                     // device_.Get() の代わりにポインタ
-		swapChainDesc.BufferCount,  // バックバッファ数
-		rtvFormat,
-		srvDescriptorHeap,          // SRV用のヒープ
-		srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
-		srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart()
-	);
-
+	*/
 
 	// ウィンドウのxボタンが押されるまでループ
 	while (true) {
@@ -1475,7 +1459,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 
 		ImGui::SetItemDefaultFocus(); // ←追加！
-
+		/*
 		// モデル切り替え
 		const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
 		int currentItem = static_cast<int>(selectedModel);
@@ -1659,43 +1643,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// ImGuiの描画
 		ImGui::Render();
 
-		// バックバッファのインデックスを取得
-		UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
-		// TransitionBarrierの設定
-		D3D12_RESOURCE_BARRIER barrier{};
-		// 今回のバリアはTransition
-		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		// Noneにしておく
-		barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		// バリアを張る対象のリソース。現在のバックバッファに対して行う
-		barrier.Transition.pResource = swapChainResources[backBufferIndex].Get();
-		// 遷移前のResourceState
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-		// 遷移後のResourceState
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		// TransitionBarrierを張る
-		commandList->ResourceBarrier(1, &barrier);
-
-		// 描画先のRTVを設定
-		commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], false, nullptr);
-
-		// 指定した色で画面全体をクリア
-		float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f };
-		commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
-
-		// ビューポートとシザーの設定
-		commandList->RSSetViewports(1, &viewport);
-		commandList->RSSetScissorRects(1, &scissorRect);
-
-		// デスクリプタヒープの設定
-		ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
-		commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-
-		// 深度バッファのクリア
-		D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = dsvDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-		commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], false, &dsvHandle);
-		commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-
+		dxCommon->PreDraw();
 
 		// RootSignatureとPSOの設定
 		commandList->SetGraphicsRootSignature(rootSignature.Get());
@@ -1799,39 +1747,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// ImGuiの描画
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
 
-		// RenderTargetからPresentにする
-		barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-		// TransitionBarrierを張る
-		commandList->ResourceBarrier(1, &barrier);
-		// コマンドリストを確定させてクローズ
-		hr = commandList->Close();
-		assert(SUCCEEDED(hr)); // コマンドリストのクローズに失敗したらエラー
-
-
-		// GPUにコマンドリストを実行させる
-		ID3D12CommandList* commandLists[] = { commandList.Get() };
-		commandQueue->ExecuteCommandLists(1, commandLists);
-		// GPUとOSに画面の交換をさせる
-		swapChain->Present(1, 0);
-		// Fenceの値を更新
-		fenceValue++;
-		// GPUがここまできたとき、Fenceの値を指定した値に代入するようにSignalを送る
-		commandQueue->Signal(fence.Get(), fenceValue);
-		// Fenceの値が指定した値になったか確認する
-		if (fence->GetCompletedValue() < fenceValue) {
-			// 指定した値になっていなかったら、指定した値になるまで待つように設定する
-			fence->SetEventOnCompletion(fenceValue, fenceEvent);
-			// 指定した値になるまで待つ
-			WaitForSingleObject(fenceEvent, INFINITE);
-		}
-
-		// 次のフレーム用のコマンドリストを取得
-		hr = commandAllocator->Reset();
-		assert(SUCCEEDED(hr)); // コマンドアロケータのリセットに失敗したらエラー
-		// コマンドリストをリセット
-		hr = commandList->Reset(commandAllocator.Get(), nullptr);
-		assert(SUCCEEDED(hr)); // コマンドリストのリセットに失敗したらエラー
+		dxCommon->PostDraw();
+		*/
 	}
 
 	// 出力ウィンドウへの文字出力
@@ -1839,7 +1756,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 解放処理
 	xAudio2.Reset(); // XAudio2の解放
-	SoundUnload(&soundData1); // 音声データの解放
+	//SoundUnload(&soundData1); // 音声データの解放
 	CloseHandle(fenceEvent);
 	delete input;
 

@@ -1,5 +1,5 @@
 #include "engine/base/Logger.h"
-#include <debugapi.h>  // または <Windows.h>
+#include <Windows.h>
 
 namespace Logger {
 

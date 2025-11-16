@@ -35,6 +35,103 @@ void DirectXCommon::Initialize(WinApp* winApp)
 }
 
 
+void DirectXCommon::PreDraw() {
+
+    // バックバッファの番号取得
+    UINT bbIndex = swapChain_->GetCurrentBackBufferIndex();
+
+    // 2. TransitionBarrier PRESENT → RENDER_TARGET
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    barrier.Transition.pResource = swapChainResources_[bbIndex].Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    commandList_->ResourceBarrier(1, &barrier);
+
+    // 3. RTV & DSV の設定
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle =
+        rtvHeap_->GetCPUDescriptorHandleForHeapStart();
+    rtvHandle.ptr += bbIndex * rtvDescriptorSize_;
+
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+        dsvHeap_->GetCPUDescriptorHandleForHeapStart();
+
+    commandList_->OMSetRenderTargets(1, &rtvHandle, false, &dsvHandle);
+
+    // 4. 画面全体のクリア（色）
+    float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f };
+    commandList_->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+
+    // 深度のクリア
+    commandList_->ClearDepthStencilView(
+        dsvHandle,
+        D3D12_CLEAR_FLAG_DEPTH,
+        1.0f,
+        0,
+        0,
+        nullptr
+    );
+
+    // 5. ビューポート & シザー
+    commandList_->RSSetViewports(1, &viewport_);
+    commandList_->RSSetScissorRects(1, &scissorRect_);
+
+    // 6. SRV デスクリプタヒープ設定（モデルもImGuiも使う）
+    ID3D12DescriptorHeap* heaps[] = { srvHeap_.Get() };
+    commandList_->SetDescriptorHeaps(_countof(heaps), heaps);
+}
+
+
+void DirectXCommon::PostDraw()
+{
+    HRESULT hr = S_OK;
+
+    // バックバッファの番号取得
+    UINT bbIndex = swapChain_->GetCurrentBackBufferIndex();
+
+    // RenderTarget → Present へのリソースバリア
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    barrier.Transition.pResource = swapChainResources_[bbIndex].Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+    commandList_->ResourceBarrier(1, &barrier);
+
+    // コマンドリストをクローズ
+    hr = commandList_->Close();
+    assert(SUCCEEDED(hr));
+
+    // GPU コマンドの実行
+    ID3D12CommandList* cmdLists[] = { commandList_.Get() };
+    commandQueue_->ExecuteCommandLists(_countof(cmdLists), cmdLists);
+
+    // 画面のフリップ（Present）
+    hr = swapChain_->Present(1, 0);
+    assert(SUCCEEDED(hr));
+
+    // Fence の値更新 & Signal
+    fenceValue_++;
+    hr = commandQueue_->Signal(fence_.Get(), fenceValue_);
+    assert(SUCCEEDED(hr));
+
+    // コマンド完了待ち
+    if (fence_->GetCompletedValue() < fenceValue_) {
+        hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
+        assert(SUCCEEDED(hr));
+        WaitForSingleObject(fenceEvent_, INFINITE);
+    }
+
+    // コマンドアロケータのリセット
+    hr = commandAllocator_->Reset();
+    assert(SUCCEEDED(hr));
+
+    // コマンドリストのリセット
+    hr = commandList_->Reset(commandAllocator_.Get(), nullptr);
+    assert(SUCCEEDED(hr));
+}
+
 void DirectXCommon::InitializeDevice() {
 
 #ifdef _DEBUG
