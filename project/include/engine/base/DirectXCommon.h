@@ -4,7 +4,9 @@
 #include <wrl.h>
 #include <array>
 #include <dxcapi.h>
+#include <string>
 #include "engine/base/WinApp.h"
+#include "DirectXTex.h"
 
 // DirectX基盤
 class DirectXCommon
@@ -46,10 +48,30 @@ public:
     IDxcCompiler3* GetDxcCompiler() const { return dxcCompiler_.Get(); }
     IDxcIncludeHandler* GetDxcIncludeHandler() const { return dxcIncludeHandler_.Get(); }
 
+    // バッファリソース生成
+    Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(size_t sizeInBytes);
+
+    // テクスチャリソース生成
+    Microsoft::WRL::ComPtr<ID3D12Resource>
+        CreateTextureResource(const DirectX::TexMetadata& metadata);
+
+    // テクスチャデータ転送
+    void UploadTextureData(
+        const Microsoft::WRL::ComPtr<ID3D12Resource>& texture,
+        const DirectX::ScratchImage& mipImages);
+
     // 描画前処理
 	void PreDraw();
 	// 描画後処理
 	void PostDraw();
+
+    // シェーダーのコンパイル
+    Microsoft::WRL::ComPtr<IDxcBlob> CompileShader(
+        const std::wstring& filePath,
+        const wchar_t* profile);
+
+	// テクスチャ読み込み（static／外から使う便利版）
+    static DirectX::ScratchImage LoadTexture(const std::string& filePath);
 
 private:
     // --- ここから「Initialize」専用の内部関数たち ---

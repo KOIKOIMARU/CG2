@@ -8,12 +8,14 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <unordered_map>
 #include "engine/3d/ResourceObject.h"
 #include "engine/io/Input.h"
 #include "engine/base/WinApp.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/Logger.h"
 #include "engine/base/StringUtility.h"
+#include "engine/base/D3DResourceLeakChecker.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -89,19 +91,6 @@ struct MaterialData {
 struct ModelData {
 	std::vector<VertexData> vertices; // 頂点データ
 	MaterialData material; // マテリアルデータ
-};
-
-
-struct D3DResourceLeakChecker {
-	~D3DResourceLeakChecker() {
-		// リソースリークチェック
-		ComPtr<IDXGIDebug1> debug;
-		if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&debug)))) {
-			debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_APP, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
-		}
-	}
 };
 
 // チャンクヘッダ
@@ -362,165 +351,6 @@ Matrix4x4 MakeOrthographicMatrix(float left, float top, float right, float botto
 }
 
 // 関数の作成
-
-IDxcBlob* CompileShader(
-	// CompilerするShaderファイルへのパス
-	const std::wstring& filePath,
-	// Compileに使用するProfile
-	const wchar_t* profile,
-	// 初期化で生成したものを3つ
-	IDxcUtils* dxcUtils,
-	IDxcCompiler3* dxcCompiler,
-	IDxcIncludeHandler* includeHandler) {
-	// 1.hlslファイルを読む
-	// これからシェーダーをコンパイルする旨をログに出す
-	Log(ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile)));
-	// hlslファイルを読む
-	IDxcBlobEncoding* shaderSource = nullptr;
-	HRESULT hr = dxcUtils->LoadFile(filePath.c_str(), nullptr, &shaderSource);
-	// 読めなかったら止める
-	assert(SUCCEEDED(hr));
-	// 読み込んだファイルの内容を設定する
-	DxcBuffer shaderSourceBuffer;
-	shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();
-	shaderSourceBuffer.Size = shaderSource->GetBufferSize();
-	shaderSourceBuffer.Encoding = DXC_CP_UTF8;  // UTF8の文字コードであることを通知
-
-	// 2.Compileする
-	LPCWSTR arguments[] = {
-		filePath.c_str(), // コンパイル対象のhlslファイル名
-		L"-E", L"main", // エントリーポイントの指定。基本的にmain以外には市内
-		L"-T", profile, // ShaderProfileの設定
-		L"-Zi", L"-Qembed_debug",   // デバッグ用の情報を埋め込む
-		L"-Od",     // 最適化を外しておく
-		L"-Zpr",     // メモリレイアウトは行優先
-	};
-	// 実際にShaderをコンパイルする
-	IDxcResult* shaderResult = nullptr;
-	hr = dxcCompiler->Compile(
-		&shaderSourceBuffer, // 読み込んだファイル
-		arguments,           // コンパイルオプション
-		_countof(arguments),  // コンパイルオプションの数
-		includeHandler,      // includeが含まれた諸々
-		IID_PPV_ARGS(&shaderResult) // コンパイル結果
-	);
-	// コンパイルエラーではなくdxcが起動できないなど致命的な状況
-	assert(SUCCEEDED(hr));
-
-	// 3.警告・エラーがでていないか確認する
-	// 警告・エラーが出てたらログに出して止める
-	IDxcBlobUtf8* shaderError = nullptr;
-	shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr);
-	if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
-		Log(shaderError->GetStringPointer());
-	}
-
-	// 4.Compile結果を受け取って返す
-	// コンパイル結果から実行用のバイナリ部分を取得
-	IDxcBlob* shaderBlob = nullptr;
-	hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
-	assert(SUCCEEDED(hr));
-	// 成功したログを出す
-	Log(ConvertString(std::format(L"CompileSucceded, path:{}, profile:{}\n", filePath, profile)));
-	// 実行用のバイナリを返却
-	return shaderBlob;
-}
-
-
-ComPtr<ID3D12Resource> CreateBufferResource(ComPtr<ID3D12Device>& device, size_t sizeInBytes) {
-	// ヒープ設定（UploadHeap）
-	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
-	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
-
-	// リソース設定（バッファ用）
-	D3D12_RESOURCE_DESC vertexResourceDesc{};
-	vertexResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	vertexResourceDesc.Width = sizeInBytes;
-	vertexResourceDesc.Height = 1;
-	vertexResourceDesc.DepthOrArraySize = 1;
-	vertexResourceDesc.MipLevels = 1;
-	vertexResourceDesc.SampleDesc.Count = 1;
-	vertexResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
-	// リソース作成
-	ComPtr<ID3D12Resource> vertexResource = nullptr;
-	HRESULT hr = device->CreateCommittedResource(
-		&uploadHeapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&vertexResourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&vertexResource)
-	);
-	assert(SUCCEEDED(hr));
-
-	return vertexResource;
-}
-
-static DirectX::ScratchImage LoadTexture(const std::string& filePath) {
-	// テクスチャファイルを読んでプログラムで扱えるようにする
-	DirectX::ScratchImage image{};
-	std::wstring filePathW = ConvertString(filePath);
-	HRESULT hr = DirectX::LoadFromWICFile(filePathW.c_str(), DirectX::WIC_FLAGS_NONE, nullptr, image);
-	assert(SUCCEEDED(hr)); // テクスチャの読み込みに失敗したらエラー
-
-	// ミップマップの作成
-	DirectX::ScratchImage mipImages{};
-	hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_DEFAULT, 0, mipImages);
-	assert(SUCCEEDED(hr)); // ミップマップの生成に失敗したらエラー
-
-	return mipImages;
-
-}
-
-static ComPtr<ID3D12Resource> CreateTextureResource(ComPtr<ID3D12Device>& device, const DirectX::TexMetadata& metadata) {
-	// metadateを基にResourceの設定
-	D3D12_RESOURCE_DESC resourceDesc{};
-	resourceDesc.Width = UINT(metadata.width);
-	resourceDesc.Height = UINT(metadata.height); resourceDesc.MipLevels = UINT(metadata.mipLevels);
-	resourceDesc.DepthOrArraySize = UINT(metadata.arraySize);
-	resourceDesc.Format = metadata.format;
-	resourceDesc.SampleDesc.Count = 1;
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION(metadata.dimension);
-	// 利用するヒープの設定
-	D3D12_HEAP_PROPERTIES heapProperties{};
-	heapProperties.Type = D3D12_HEAP_TYPE_CUSTOM;
-	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
-	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
-	// Resourceの生成
-	ComPtr<ID3D12Resource> resource = nullptr;
-	HRESULT hr = device->CreateCommittedResource(
-		&heapProperties,
-		D3D12_HEAP_FLAG_NONE,
-		&resourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&resource));
-	assert(SUCCEEDED(hr)); // テクスチャリソースの生成に失敗したらエラー
-	// テクスチャリソースの生成に成功したら、リソースを返す
-	return resource;
-
-};
-
-static void UploadTextureData(
-	ComPtr<ID3D12Resource>& texture, const DirectX::ScratchImage& mipImages) {
-	// Meta情報を取得
-	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
-	// 全mipmapについて
-	for (size_t mipLevel = 0; mipLevel < metadata.mipLevels; ++mipLevel) {
-		// mipmapの情報を取得
-		const DirectX::Image* img = mipImages.GetImage(mipLevel, 0, 0);
-		HRESULT hr = texture->WriteToSubresource(
-			UINT(mipLevel), // mipmapレベル
-			0, // mipmapの最初のレベル
-			img->pixels, // ピクセルデータ
-			UINT(img->rowPitch), // 行のピッチ
-			UINT(img->slicePitch) // スライスのピッチ
-		);
-		assert(SUCCEEDED(hr)); // テクスチャデータのアップロードに失敗したらエラー
-	}
-}
-
 
 // 球メッシュ生成
 void GenerateSphereMesh(std::vector<VertexData>& outVertices, std::vector<uint32_t>& outIndices, int latitudeCount, int longitudeCount) {
@@ -1078,21 +908,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
 	// Shaderのコンパイル
-	IDxcBlob* vertexShaderBlob = CompileShader(
-		L"shaders/Object3D.VS.hlsl", // コンパイルするファイルのパス
-		L"vs_6_0", // プロファイル
-		dxcUtils, // dxcUtils
-		dxcCompiler, // dxcCompiler
-		includeHandler); // includeHandler
-	assert(vertexShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
+	Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob =
+		dxCommon->CompileShader(L"shaders/Object3D.VS.hlsl", L"vs_6_0");
+	assert(vertexShaderBlob); // null チェック
 
-	IDxcBlob* pixelShaderBlob = CompileShader(
-		L"shaders/Object3D.PS.hlsl", // コンパイルするファイルのパス
-		L"ps_6_0", // プロファイル
-		dxcUtils, // dxcUtils
-		dxcCompiler, // dxcCompiler
-		includeHandler); // includeHandler
-	assert(pixelShaderBlob != nullptr); // シェーダーのコンパイルに失敗したらエラー
+	Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob =
+		dxCommon->CompileShader(L"shaders/Object3D.PS.hlsl", L"ps_6_0");
+	assert(pixelShaderBlob);
 
 	// PSOを生成する
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
@@ -1144,13 +966,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
 	assert(SUCCEEDED(hr));
 
-
-	/*
 	// モデルデータの読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
 
 	// リソース作成
-	ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
+	ComPtr<ID3D12Resource> vertexResource =
+		dxCommon->CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
+
 
 	// リソース作成
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
@@ -1161,7 +983,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	GenerateSphereMesh(sphereVertices, sphereIndices, 32, 32);  // 分割数32で球生成
 
 	// 頂点バッファ
-	ComPtr<ID3D12Resource> vertexResourceSphere = CreateBufferResource(device, sizeof(VertexData) * sphereVertices.size());
+	ComPtr<ID3D12Resource> vertexResourceSphere = dxCommon->CreateBufferResource(sizeof(VertexData) * sphereVertices.size());
 	void* vertexDataSphere = nullptr;
 	vertexResourceSphere->Map(0, nullptr, &vertexDataSphere);
 	memcpy(vertexDataSphere, sphereVertices.data(), sizeof(VertexData) * sphereVertices.size());
@@ -1173,7 +995,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	vertexBufferViewSphere.StrideInBytes = sizeof(VertexData);
 
 	// インデックスバッファ
-	ComPtr<ID3D12Resource> indexResourceSphere = CreateBufferResource(device, sizeof(uint32_t) * sphereIndices.size());
+	ComPtr<ID3D12Resource> indexResourceSphere = dxCommon->CreateBufferResource(sizeof(uint32_t) * sphereIndices.size());
 	void* indexDataSphere = nullptr;
 	indexResourceSphere->Map(0, nullptr, &indexDataSphere);
 	memcpy(indexDataSphere, sphereIndices.data(), sizeof(uint32_t) * sphereIndices.size());
@@ -1224,26 +1046,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::unordered_map<std::string, Material*> materialDataList;
 
 	// A マテリアル（32バイト必要）
-	ComPtr<ID3D12Resource> materialResourceA = CreateBufferResource(device, sizeof(Material));
+	ComPtr<ID3D12Resource> materialResourceA = dxCommon->CreateBufferResource(sizeof(Material));
 	Material* materialDataA = nullptr;
 	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
 	*materialDataA = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
 
 	// A WVP（128バイト必要）
-	ComPtr<ID3D12Resource> wvpResourceA = CreateBufferResource(device, sizeof(TransformationMatrix));
+	ComPtr<ID3D12Resource> wvpResourceA = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
 	TransformationMatrix* wvpDataA = nullptr;
 	wvpResourceA->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataA));
 	wvpDataA->WVP = MakeIdentity4x4();
 	wvpDataA->World = MakeIdentity4x4();
 
 	// B マテリアル
-	ComPtr<ID3D12Resource> materialResourceB = CreateBufferResource(device, sizeof(Material));
+	ComPtr<ID3D12Resource> materialResourceB = dxCommon->CreateBufferResource(sizeof(Material));
 	Material* materialDataB = nullptr;
 	materialResourceB->Map(0, nullptr, reinterpret_cast<void**>(&materialDataB));
 	*materialDataB = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
 
 	// B WVP
-	ComPtr<ID3D12Resource> wvpResourceB = CreateBufferResource(device, sizeof(TransformationMatrix));
+	ComPtr<ID3D12Resource> wvpResourceB = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
 	TransformationMatrix* wvpDataB = nullptr;
 	wvpResourceB->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataB));
 	wvpDataB->WVP = MakeIdentity4x4();
@@ -1251,7 +1073,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// Sprite用のマテリアルリソースを作成する。今回はcolor1つ分のサイズを用意する
-	ComPtr<ID3D12Resource> materialResourceSprite = CreateBufferResource(device, sizeof(Material));
+	ComPtr<ID3D12Resource> materialResourceSprite = dxCommon->CreateBufferResource(sizeof(Material));
 	Material* materialDataSprite = nullptr;
 	materialResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&materialDataSprite));
 
@@ -1265,7 +1087,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// Index用
-	ComPtr<ID3D12Resource> indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
+	ComPtr<ID3D12Resource> indexResourceSprite = dxCommon->CreateBufferResource(sizeof(uint32_t) * 6);
 	// view
 	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
 	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
@@ -1283,7 +1105,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indexDataSprite[5] = 2; // 右下2
 
 	// 平行光源のバッファを作成し、CPU 側から書き込めるようにする
-	ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
+	ComPtr<ID3D12Resource> directionalLightResource = dxCommon->CreateBufferResource(sizeof(DirectionalLight));
 	DirectionalLight* directionalLightData = nullptr;
 	directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
 
@@ -1306,24 +1128,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	};
 
 	// Textureを呼んで転送する
-	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
+	DirectX::ScratchImage mipImages = DirectXCommon::LoadTexture("resources/uvChecker.png");
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
+	ComPtr<ID3D12Resource> textureResource =
+		dxCommon->CreateTextureResource(metadata);
 	assert(textureResource);
-	UploadTextureData(textureResource, mipImages);
+	dxCommon->UploadTextureData(textureResource, mipImages);
 
 
 	// 2枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages2 = LoadTexture("resources/monsterBall.png");
+	DirectX::ScratchImage mipImages2 = DirectXCommon::LoadTexture("resources/monsterBall.png");
 	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
-	UploadTextureData(textureResource2, mipImages2);
+	ComPtr<ID3D12Resource> textureResource2 =
+		dxCommon->CreateTextureResource(metadata2);
+	dxCommon->UploadTextureData(textureResource2, mipImages2);
 
 	// 3枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages3 = LoadTexture("resources/checkerBoard.png");
+	DirectX::ScratchImage mipImages3 = DirectXCommon::LoadTexture("resources/checkerBoard.png");
 	const DirectX::TexMetadata& metadata3 = mipImages3.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource3 = CreateTextureResource(device, metadata3);
-	UploadTextureData(textureResource3, mipImages3);
+	ComPtr<ID3D12Resource> textureResource3 =
+		dxCommon->CreateTextureResource(metadata3);
+	dxCommon->UploadTextureData(textureResource3, mipImages3);
 
 	// metadataを基にSRVを作成する
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -1346,19 +1171,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//SRVを作成するDescriptorHeapの先頭を取得する
 	UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
+	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU =
+		dxCommon->GetSRVCPUDescriptorHandle(1);   // 1番目のSRV
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU =
+		dxCommon->GetSRVGPUDescriptorHandle(1);
 	// テクスチャのSRVを作成する
 	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
 
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
+	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = dxCommon->GetSRVCPUDescriptorHandle(2);
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = dxCommon->GetSRVGPUDescriptorHandle(2);
 	// テクスチャのSRVを作成する
 	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
 
 	// SRVの作成（3番目のスロット＝3番目のインデックス）
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU3 = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU3 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU3 = dxCommon->GetSRVCPUDescriptorHandle(3);
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU3 = dxCommon->GetSRVGPUDescriptorHandle(3);
 	device->CreateShaderResourceView(textureResource3.Get(), &srvDesc3, textureSrvHandleCPU3);
 
 	std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
@@ -1377,7 +1204,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	textureUploadBuffers.push_back(textureResource3);
 
 	// Sprite用の頂点リソースを作る
-	ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
+	ComPtr<ID3D12Resource> vertexResourceSprite = dxCommon->CreateBufferResource(sizeof(VertexData) * 4);
 
 	// 頂点バッファビューを作成
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
@@ -1412,7 +1239,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	// TransformationMatrix 構造体を使う
-	ComPtr<ID3D12Resource> transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(TransformationMatrix));
+	ComPtr<ID3D12Resource> transformationMatrixResourceSprite = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
 	TransformationMatrix* transformationMatrixDataSprite = nullptr;
 	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
 	// 単位行列で初期化
@@ -1440,7 +1267,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	LightingMode lightingMode = LightingMode::HalfLambert;
 
-	*/
+	
 
 	// ウィンドウのxボタンが押されるまでループ
 	while (true) {
@@ -1459,7 +1286,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		ImGui::Begin("Window");
 
 		ImGui::SetItemDefaultFocus(); // ←追加！
-		/*
+		
 		// モデル切り替え
 		const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
 		int currentItem = static_cast<int>(selectedModel);
@@ -1593,7 +1420,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				renderData.name = mesh.name;
 				renderData.materialName = mesh.materialName;
 
-				renderData.vertexResource = CreateBufferResource(device, sizeof(VertexData) * mesh.vertices.size());
+				renderData.vertexResource = dxCommon->CreateBufferResource( sizeof(VertexData) * mesh.vertices.size());
 				void* vtxPtr = nullptr;
 				renderData.vertexResource->Map(0, nullptr, &vtxPtr);
 				memcpy(vtxPtr, mesh.vertices.data(), sizeof(VertexData) * mesh.vertices.size());
@@ -1611,7 +1438,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			materialDataList.clear();
 
 			for (auto& [matName, mat] : multiModel.materials) {
-				ComPtr<ID3D12Resource> resource = CreateBufferResource(device, sizeof(Material));
+				ComPtr<ID3D12Resource> resource = dxCommon->CreateBufferResource( sizeof(Material));
 				Material* data = nullptr;
 				resource->Map(0, nullptr, reinterpret_cast<void**>(&data));
 				*data = mat;
@@ -1627,7 +1454,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			const char* fileName = GetModelFileName(selectedModel);
 			modelData = LoadObjFile("resources", fileName);
 
-			vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
+			vertexResource = dxCommon->CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
 			void* vertexPtr = nullptr;
 			vertexResource->Map(0, nullptr, &vertexPtr);
 			memcpy(vertexPtr, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
@@ -1652,103 +1479,108 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// 頂点バッファの設定
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+
 		// 球の描画
-		if (selectedModel == ModelType::Plane) {
-			// Planeモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		//if (selectedModel == ModelType::Plane) {
+		//	// Planeモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 
-			// さらにSphereも描画！
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
-			commandList->IASetIndexBuffer(&indexBufferViewSphere);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle); // Sphere用テクスチャ
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+		//	// さらにSphereも描画！
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+		//	commandList->IASetIndexBuffer(&indexBufferViewSphere);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle); // Sphere用テクスチャ
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
 
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-			// Spriteの描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
-			commandList->IASetIndexBuffer(&indexBufferViewSprite);
-			// TransformationBufferの設定
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+		//	// Spriteの描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
+		//	commandList->IASetIndexBuffer(&indexBufferViewSprite);
+		//	// TransformationBufferの設定
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
 
-			// 描画
-			commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+		//	// 描画
+		//	commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
-		} else if (selectedModel == ModelType::Sphere) {
-			// Sphereモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
-			commandList->IASetIndexBuffer(&indexBufferViewSphere);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
-		} else if (selectedModel == ModelType::UtahTeapot) {
-			// Teapotモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU3);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-		} else if (selectedModel == ModelType::StanfordBunny) {
-			// Stanford Bunnyモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-		}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
-			for (const auto& mesh : meshRenderList) {
-				// テクスチャキーを取得
-				std::string texKey = "none";
-				auto it = multiModel.materials.find(mesh.materialName);
-				if (it != multiModel.materials.end()) {
-					texKey = NormalizeTextureKey(it->second.textureFilePath);
-				}
+		//} else if (selectedModel == ModelType::Sphere) {
+		//	// Sphereモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+		//	commandList->IASetIndexBuffer(&indexBufferViewSphere);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+		//} else if (selectedModel == ModelType::UtahTeapot) {
+		//	// Teapotモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU3);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		//} else if (selectedModel == ModelType::StanfordBunny) {
+		//	// Stanford Bunnyモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		//}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
+		//	for (const auto& mesh : meshRenderList) {
+		//		// テクスチャキーを取得
+		//		std::string texKey = "none";
+		//		auto it = multiModel.materials.find(mesh.materialName);
+		//		if (it != multiModel.materials.end()) {
+		//			texKey = NormalizeTextureKey(it->second.textureFilePath);
+		//		}
 
-				D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
-				if (textureHandleMap.count(texKey)) {
-					texHandle = textureHandleMap[texKey];
-				} else {
-					Log("❌ textureHandleMapに " + texKey + " が存在しない");
-				}
+		//		D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
+		//		if (textureHandleMap.count(texKey)) {
+		//			texHandle = textureHandleMap[texKey];
+		//		} else {
+		//			Log("❌ textureHandleMapに " + texKey + " が存在しない");
+		//		}
 
-				// 描画
-				commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
+		//		// 描画
+		//		commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
 
-				// ImGuiで操作されたマテリアルバッファを使う
-				auto matResourceIt = materialResources.find(mesh.materialName);
-				if (matResourceIt != materialResources.end()) {
-					commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
-				} else {
-					commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-				}
+		//		// ImGuiで操作されたマテリアルバッファを使う
+		//		auto matResourceIt = materialResources.find(mesh.materialName);
+		//		if (matResourceIt != materialResources.end()) {
+		//			commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
+		//		} else {
+		//			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//		}
 
-				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootDescriptorTable(2, texHandle);
-				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//		commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//		commandList->SetGraphicsRootDescriptorTable(2, texHandle);
+		//		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 
-				commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
-			}
-		}
+		//		commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
+		//	}
+		//}
 
 
 
 		// ImGuiの描画
-		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get());
+		ImGui_ImplDX12_RenderDrawData(
+			ImGui::GetDrawData(),
+			dxCommon->GetCommandList()
+		);
+
 
 		dxCommon->PostDraw();
-		*/
+		
 	}
 
 	// 出力ウィンドウへの文字出力
@@ -1764,13 +1596,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	winApp->Finalize();
 	// WindowsAPI解放
 	delete winApp;
-	// DirectX解放
-	delete dxCommon;
 
-	// ImGuiの終了処理
+	// ImGuiの終了
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
+
+	delete dxCommon;
+
 
 
 	return 0;

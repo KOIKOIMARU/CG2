@@ -108,6 +108,9 @@
     <ClCompile Include="src\engine\base\StringUtility.cpp">
       <Filter>src\engine\base</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\base\D3DResourceLeakChecker.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -165,6 +168,9 @@
       <Filter>include\engine\base</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\base\StringUtility.h">
+      <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\D3DResourceLeakChecker.h">
       <Filter>include\engine\base</Filter>
     </ClInclude>
   </ItemGroup>
