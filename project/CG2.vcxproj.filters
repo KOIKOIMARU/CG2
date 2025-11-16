@@ -102,6 +102,12 @@
     <ClCompile Include="src\engine\base\DirectXCommon.cpp">
       <Filter>src\engine\base</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\base\Logger.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\base\StringUtility.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -153,6 +159,12 @@
       <Filter>include\engine\base</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\base\DirectXCommon.h">
+      <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\Logger.h">
+      <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\StringUtility.h">
       <Filter>include\engine\base</Filter>
     </ClInclude>
   </ItemGroup>

@@ -148,6 +148,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\base\Logger.cpp" />
     <ClCompile Include="src\engine\base\DirectXCommon.cpp" />
     <ClCompile Include="externals\imgui\imgui.cpp" />
     <ClCompile Include="externals\imgui\imgui_demo.cpp" />
@@ -163,6 +164,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\3d\ResourceObject.cpp" />
     <ClCompile Include="src\engine\base\WinApp.cpp" />
     <ClCompile Include="src\engine\io\Input.cpp" />
+    <ClCompile Include="src\engine\base\StringUtility.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -205,7 +207,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\ResourceObject.h" />
     <ClInclude Include="include\engine\base\WinApp.h" />
     <ClInclude Include="include\engine\io\Input.h" />
+    <ClInclude Include="include\engine\base\Logger.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="include\engine\base\StringUtility.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
