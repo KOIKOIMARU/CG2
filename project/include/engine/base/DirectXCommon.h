@@ -7,6 +7,8 @@
 #include <string>
 #include "engine/base/WinApp.h"
 #include "DirectXTex.h"
+#include <chrono>   // ← 必須
+#include <thread>   // ← sleep_for に必要
 
 // DirectX基盤
 class DirectXCommon
@@ -152,4 +154,13 @@ private:
     Microsoft::WRL::ComPtr<IDxcUtils>          dxcUtils_;
     Microsoft::WRL::ComPtr<IDxcCompiler3>      dxcCompiler_;
     Microsoft::WRL::ComPtr<IDxcIncludeHandler> dxcIncludeHandler_;
+
+    // ==== FPS 固定用 ====
+  // FPS 固定の初期化
+    void InitializeFixFPS();
+    // FPS 固定の更新
+    void UpdateFixFPS();
+
+    // 前フレームの基準時間
+    std::chrono::steady_clock::time_point reference_;
 };

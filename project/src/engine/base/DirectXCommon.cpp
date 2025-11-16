@@ -5,6 +5,8 @@
 #include <dxcapi.h>            // DXC（dxcUtils, dxcCompiler, IncludeHandler）
 #include <vector>              // arguments 用
 #include <string>              // wstring
+#include <chrono>
+#include <thread>   // sleep_for 用
 
 
 
@@ -38,6 +40,9 @@ void DirectXCommon::Initialize(WinApp* winApp)
     InitializeScissorRect();
     InitializeDXC();
     InitializeImGui();
+
+    // ★ FPS 固定の初期化
+    InitializeFixFPS();
 }
 
 
@@ -109,6 +114,7 @@ void DirectXCommon::PostDraw()
     barrier.Transition.pResource = swapChainResources_[bbIndex].Get();
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList_->ResourceBarrier(1, &barrier);
 
     // コマンドリストをクローズ
@@ -134,6 +140,10 @@ void DirectXCommon::PostDraw()
         assert(SUCCEEDED(hr));
         WaitForSingleObject(fenceEvent_, INFINITE);
     }
+
+    // ★ ここで FPS 固定
+    UpdateFixFPS();
+
 
 }
 
@@ -773,5 +783,35 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
     return mipImages;  // これをそのまま返して使う
 }
 
+void DirectXCommon::InitializeFixFPS() {
+    // 現在時間を記録
+    reference_ = std::chrono::steady_clock::now();
+}
+
+void DirectXCommon::UpdateFixFPS() {
+
+    // 1/60秒の時間（約16666マイクロ秒）
+    const std::chrono::microseconds kMinTime(uint64_t(1000000.0f / 60.0f));
+
+    // 1/60秒よりわずかに短いチェック用（65fps相当）
+    const std::chrono::microseconds kMinCheckTime(uint64_t(1000000.0f / 65.0f));
+
+    // 現在時間
+    auto now = std::chrono::steady_clock::now();
+
+    // 前回からの経過時間
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - reference_);
+
+    // 1/60秒経っていない場合 → 1マイクロ秒ずつ寝る
+    if (elapsed < kMinTime) {
+        while (std::chrono::steady_clock::now() - reference_ < kMinTime) {
+            // 1マイクロ秒寝る
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
+        }
+    }
+
+    // 現在時間を次回用に記録
+    reference_ = std::chrono::steady_clock::now();
+}
 
 
