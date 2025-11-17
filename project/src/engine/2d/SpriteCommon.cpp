@@ -13,6 +13,7 @@ void SpriteCommon::Initialize(DirectXCommon* dxCommon)
     CreateGraphicsPipelineState();
 }
 
+
 void SpriteCommon::CreateRootSignature()
 {
     // ★ここには後で main.cpp に書いてある
