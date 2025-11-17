@@ -148,6 +148,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\2d\Sprite.cpp" />
+    <ClCompile Include="src\engine\2d\SpriteCommon.cpp" />
     <ClCompile Include="src\engine\base\D3DResourceLeakChecker.cpp" />
     <ClCompile Include="src\engine\base\Logger.cpp" />
     <ClCompile Include="src\engine\base\DirectXCommon.cpp" />
@@ -212,6 +214,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\base\Logger.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />
+    <ClInclude Include="include\engine\2d\Sprite.h" />
+    <ClInclude Include="include\engine\2d\SpriteCommon.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
