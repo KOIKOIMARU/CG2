@@ -1477,6 +1477,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		dxCommon->PreDraw();
 
+		// ここで共通描画設定
+		spriteCommon->CommonDrawSetting();
+
 		// RootSignatureとPSOの設定
 		commandList->SetGraphicsRootSignature(rootSignature.Get());
 		commandList->SetPipelineState(graphicsPipelineState.Get());
