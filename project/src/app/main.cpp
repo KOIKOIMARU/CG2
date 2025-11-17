@@ -878,18 +878,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// InputLayout
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
-	inputElementDescs[0].SemanticName = "POSITION"; // セマンティクス名
-	inputElementDescs[0].SemanticIndex = 0; // セマンティクスのインデックス
+
+	// POSITION (float4 = 16 バイト)
+	inputElementDescs[0].SemanticName = "POSITION";
+	inputElementDescs[0].SemanticIndex = 0;
 	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	inputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[1].SemanticName = "TEXCOORD"; // セマンティクス名
-	inputElementDescs[1].SemanticIndex = 0; // セマンティクスのインデックス
+	inputElementDescs[0].AlignedByteOffset = 0;
+
+	// TEXCOORD (float2 = 8 バイト)
+	inputElementDescs[1].SemanticName = "TEXCOORD";
+	inputElementDescs[1].SemanticIndex = 0;
 	inputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	inputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[2].SemanticName = "NORMAL"; // セマンティクス名
-	inputElementDescs[2].SemanticIndex = 0; // セマンティクスのインデックス
+	inputElementDescs[1].AlignedByteOffset = 16;
+
+	// NORMAL (float3 = 12 バイト)
+	inputElementDescs[2].SemanticName = "NORMAL";
+	inputElementDescs[2].SemanticIndex = 0;
 	inputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	inputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	inputElementDescs[2].AlignedByteOffset = 24;
+
 	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
 	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
 	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
@@ -1481,94 +1488,94 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 		// 球の描画
-		//if (selectedModel == ModelType::Plane) {
-		//	// Planeモデルを描画
-		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		if (selectedModel == ModelType::Plane) {
+			// Planeモデルを描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 
-		//	// さらにSphereも描画！
-		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
-		//	commandList->IASetIndexBuffer(&indexBufferViewSphere);
-		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle); // Sphere用テクスチャ
-		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-		//	commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+			// さらにSphereも描画！
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+			commandList->IASetIndexBuffer(&indexBufferViewSphere);
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle); // Sphere用テクスチャ
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
 
-		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-		//	// Spriteの描画
-		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
-		//	commandList->IASetIndexBuffer(&indexBufferViewSprite);
-		//	// TransformationBufferの設定
-		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+			// Spriteの描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
+			commandList->IASetIndexBuffer(&indexBufferViewSprite);
+			// TransformationBufferの設定
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
 
-		//	// 描画
-		//	commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+			// 描画
+			commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
-		//} else if (selectedModel == ModelType::Sphere) {
-		//	// Sphereモデルを描画
-		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
-		//	commandList->IASetIndexBuffer(&indexBufferViewSphere);
-		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-		//	commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
-		//} else if (selectedModel == ModelType::UtahTeapot) {
-		//	// Teapotモデルを描画
-		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU3);
-		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-		//} else if (selectedModel == ModelType::StanfordBunny) {
-		//	// Stanford Bunnyモデルを描画
-		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-		//}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
-		//	for (const auto& mesh : meshRenderList) {
-		//		// テクスチャキーを取得
-		//		std::string texKey = "none";
-		//		auto it = multiModel.materials.find(mesh.materialName);
-		//		if (it != multiModel.materials.end()) {
-		//			texKey = NormalizeTextureKey(it->second.textureFilePath);
-		//		}
+		} else if (selectedModel == ModelType::Sphere) {
+			// Sphereモデルを描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+			commandList->IASetIndexBuffer(&indexBufferViewSphere);
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+		} else if (selectedModel == ModelType::UtahTeapot) {
+			// Teapotモデルを描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU3);
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		} else if (selectedModel == ModelType::StanfordBunny) {
+			// Stanford Bunnyモデルを描画
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
+			for (const auto& mesh : meshRenderList) {
+				// テクスチャキーを取得
+				std::string texKey = "none";
+				auto it = multiModel.materials.find(mesh.materialName);
+				if (it != multiModel.materials.end()) {
+					texKey = NormalizeTextureKey(it->second.textureFilePath);
+				}
 
-		//		D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
-		//		if (textureHandleMap.count(texKey)) {
-		//			texHandle = textureHandleMap[texKey];
-		//		} else {
-		//			Log("❌ textureHandleMapに " + texKey + " が存在しない");
-		//		}
+				D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
+				if (textureHandleMap.count(texKey)) {
+					texHandle = textureHandleMap[texKey];
+				} else {
+					Log("❌ textureHandleMapに " + texKey + " が存在しない");
+				}
 
-		//		// 描画
-		//		commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
+				// 描画
+				commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
 
-		//		// ImGuiで操作されたマテリアルバッファを使う
-		//		auto matResourceIt = materialResources.find(mesh.materialName);
-		//		if (matResourceIt != materialResources.end()) {
-		//			commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
-		//		} else {
-		//			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-		//		}
+				// ImGuiで操作されたマテリアルバッファを使う
+				auto matResourceIt = materialResources.find(mesh.materialName);
+				if (matResourceIt != materialResources.end()) {
+					commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
+				} else {
+					commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+				}
 
-		//		commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-		//		commandList->SetGraphicsRootDescriptorTable(2, texHandle);
-		//		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+				commandList->SetGraphicsRootDescriptorTable(2, texHandle);
+				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 
-		//		commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
-		//	}
-		//}
+				commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
+			}
+		}
 
 
 

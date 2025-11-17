@@ -273,7 +273,7 @@ void DirectXCommon::InitializeSwapChain()
     DXGI_SWAP_CHAIN_DESC1 swapChainDesc{};
     swapChainDesc.Width = WinApp::kClientWidth;   // 画面の幅
     swapChainDesc.Height = WinApp::kClientHeight;  // 画面の高さ
-    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;   // 色の形式
+    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     swapChainDesc.SampleDesc.Count = 1;                       // マルチサンプルなし
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.BufferCount = 2;                       // ダブルバッファ
@@ -388,14 +388,25 @@ void DirectXCommon::InitializeRenderTargetView()
         HRESULT hr = swapChain_->GetBuffer(i, IID_PPV_ARGS(&swapChainResources_[i]));
         assert(SUCCEEDED(hr));
 
+        // SRGB の RTV 設定
+        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
+        rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;          // ★ SRGB でビューを作る
+        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+        rtvDesc.Texture2D.MipSlice = 0;
+        rtvDesc.Texture2D.PlaneSlice = 0;
+
         // 対応するRTVハンドルを計算
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle =
             GetCPUDescriptorHandle(rtvHeap_, rtvDescriptorSize_, i);
 
         // RTVを生成
-        device_->CreateRenderTargetView(swapChainResources_[i].Get(), nullptr, rtvHandle);
+        device_->CreateRenderTargetView(
+            swapChainResources_[i].Get(),
+            &rtvDesc,                 // ★ nullptr ではなく &rtvDesc
+            rtvHandle);
     }
 }
+
 
 
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetCPUDescriptorHandle(
@@ -505,22 +516,17 @@ void DirectXCommon::InitializeDXC()
 
 void DirectXCommon::InitializeImGui()
 {
-    // バージョンチェック & コンテキスト作成
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-
-    // スタイル設定（好きなものに変えてOK）
     ImGui::StyleColorsDark();
 
-    // Win32 用初期化（ウィンドウハンドルが必要）
     ImGui_ImplWin32_Init(winApp_->GetHwnd());
 
-    // DirectX12 用初期化
-    // SRVヒープは shaderVisible=true で作ってあるので、そのまま渡せる
     ImGui_ImplDX12_Init(
         device_.Get(),
         kBackBufferCount,
-        DXGI_FORMAT_R8G8B8A8_UNORM,
+        // ★ ここも SRGB に揃える
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
         srvHeap_.Get(),
         srvHeap_->GetCPUDescriptorHandleForHeapStart(),
         srvHeap_->GetGPUDescriptorHandleForHeapStart());
