@@ -18,6 +18,7 @@
 #include "engine/base/D3DResourceLeakChecker.h"
 #include "engine/2d/SpriteCommon.h"
 #include "engine/2d/Sprite.h"
+#include "engine/base/Math.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -30,32 +31,7 @@
 using namespace Microsoft::WRL;
 using Logger::Log;
 using StringUtility::ConvertString;
-
-// ベクター2
-struct Vector2 {
-	float x, y;
-};
-
-// ベクター3
-struct Vector3 {
-	float x, y, z;
-};
-
-// ベクター4
-struct Vector4 {
-	float x, y, z, w;
-};
-
-// 4x4行列の定義
-struct Matrix4x4 {
-	float m[4][4];
-};
-
-struct Transform {
-	Vector3 scale;
-	Vector3 rotate;
-	Vector3 translate;
-};
+using namespace Math;
 
 struct VertexData {
 	Vector4 position; // 頂点の位置
@@ -83,8 +59,6 @@ struct DirectionalLight {
 	float intensity;
 	Vector3 padding; // ← float3 paddingで16バイト境界に揃える
 };
-
-
 
 struct MaterialData {
 	std::string textureFilePath;
@@ -160,116 +134,6 @@ struct MeshRenderData {
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
 
- 
-// 単位行列の作成
-Matrix4x4 MakeIdentity4x4() {
-	Matrix4x4 result;
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			if (i == j) {
-				result.m[i][j] = 1.0f;
-			} else {
-				result.m[i][j] = 0.0f;
-			}
-		}
-	}
-	return result;
-}
-
-// 4x4行列の積
-Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
-	Matrix4x4 result;
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			result.m[i][j] = 0;
-			for (int k = 0; k < 4; k++) {
-				result.m[i][j] += m1.m[i][k] * m2.m[k][j];
-			}
-		}
-	}
-	return result;
-}
-
-// 拡大縮小
-Matrix4x4 MakeScaleMatrix(const Vector3& scale) {
-	Matrix4x4 result{};
-	result.m[0][0] = scale.x;
-	result.m[1][1] = scale.y;
-	result.m[2][2] = scale.z;
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-Matrix4x4 MakeTranslateMatrix(const Vector3& translate) {
-	Matrix4x4 result{};
-	result.m[0][0] = 1.0f;
-	result.m[1][1] = 1.0f;
-	result.m[2][2] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[3][0] = translate.x;
-	result.m[3][1] = translate.y;
-	result.m[3][2] = translate.z;
-	return result;
-}
-
-
-// X軸回転行列
-Matrix4x4 MakeRotateXMatrix(float angle) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[1][1] = std::cos(angle);
-	result.m[1][2] = std::sin(angle);
-	result.m[2][1] = -std::sin(angle);
-	result.m[2][2] = std::cos(angle);
-	return result;
-}
-// Y軸回転行列
-Matrix4x4 MakeRotateYMatrix(float angle) {
-	Matrix4x4 result = {};
-	result.m[1][1] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[0][0] = std::cos(angle);
-	result.m[0][2] = -std::sin(angle);
-	result.m[2][0] = std::sin(angle);
-	result.m[2][2] = std::cos(angle);
-	return result;
-}
-// Z軸回転行列
-Matrix4x4 MakeRotateZMatrix(float angle) {
-	Matrix4x4 result = {};
-	result.m[2][2] = 1.0f;
-	result.m[3][3] = 1.0f;
-	result.m[0][0] = std::cos(angle);
-	result.m[0][1] = std::sin(angle);
-	result.m[1][0] = -std::sin(angle);
-	result.m[1][1] = std::cos(angle);
-	return result;
-}
-
-// アフィン変換行列
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
-	Matrix4x4 result = {};
-	// X,Y,Z軸の回転をまとめる
-	Matrix4x4 rotateXYZ =
-		Multiply(MakeRotateXMatrix(rotate.x), Multiply(MakeRotateYMatrix(rotate.y), MakeRotateZMatrix(rotate.z)));
-
-	result.m[0][0] = scale.x * rotateXYZ.m[0][0];
-	result.m[0][1] = scale.x * rotateXYZ.m[0][1];
-	result.m[0][2] = scale.x * rotateXYZ.m[0][2];
-	result.m[1][0] = scale.y * rotateXYZ.m[1][0];
-	result.m[1][1] = scale.y * rotateXYZ.m[1][1];
-	result.m[1][2] = scale.y * rotateXYZ.m[1][2];
-	result.m[2][0] = scale.z * rotateXYZ.m[2][0];
-	result.m[2][1] = scale.z * rotateXYZ.m[2][1];
-	result.m[2][2] = scale.z * rotateXYZ.m[2][2];
-	result.m[3][0] = translate.x;
-	result.m[3][1] = translate.y;
-	result.m[3][2] = translate.z;
-	result.m[3][3] = 1.0f;
-
-	return result;
-}
 
 // 3x3の行列式を計算
 static float Determinant3x3(float matrix[3][3]) {
@@ -326,32 +190,6 @@ static Matrix4x4 Inverse(const Matrix4x4& m) {
 	return result;
 }
 
-// 透視投影行列
-Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 1.0f / (aspectRatio * std::tan(fovY / 2.0f));
-	result.m[1][1] = 1.0f / std::tan(fovY / 2.0f);
-	result.m[2][2] = farClip / (farClip - nearClip);
-	result.m[2][3] = 1.0f;
-	result.m[3][2] = -(farClip * nearClip) / (farClip - nearClip);
-	return result;
-}
-
-// 平行投影行列（左手座標系）
-Matrix4x4 MakeOrthographicMatrix(float left, float top, float right, float bottom, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-
-	result.m[0][0] = 2.0f / (right - left);
-	result.m[1][1] = 2.0f / (top - bottom);
-	result.m[2][2] = 1.0f / (farClip - nearClip);
-	result.m[3][0] = (left + right) / (left - right);
-	result.m[3][1] = (top + bottom) / (bottom - top);
-	result.m[3][2] = -nearClip / (farClip - nearClip);
-	result.m[3][3] = 1.0f;
-
-	return result;
-}
-
 // 関数の作成
 
 // 球メッシュ生成
@@ -404,12 +242,6 @@ void GenerateSphereMesh(std::vector<VertexData>& outVertices, std::vector<uint32
 
 		}
 	}
-}
-
-Vector3 Normalize(const Vector3& v) {
-	float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-	if (length == 0.0f) return { 0.0f, 0.0f, 0.0f };
-	return { v.x / length, v.y / length, v.z / length };
 }
 
 void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
@@ -975,11 +807,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// スプライト共通部の初期化
 	spriteCommon = new SpriteCommon;
-	spriteCommon->Initialize();
+	spriteCommon->Initialize(dxCommon); // ★ 修正
 
 	// スプライトの初期化
 	sprite = new Sprite();
-	sprite->Initialize();
+	sprite->Initialize(spriteCommon);      // ★ SpriteCommon* を渡す
+
 
 	// 実際に生成
 	ComPtr<ID3D12PipelineState> graphicsPipelineState = nullptr;
@@ -1207,6 +1040,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// マップに登録（キーは .mtl に記載されてるファイル名に一致させる）
 	textureHandleMap[NormalizeTextureKey("checkerBoard.png")] = textureSrvHandleGPU3;
 	textureUploadBuffers.push_back(textureResource3);
+
+	// ★ スプライトに使うテクスチャを設定（ここでは uvChecker.png を貼る）
+	sprite->SetTexture(textureSrvHandleGPU);
 
 	// Sprite用の頂点リソースを作る
 	ComPtr<ID3D12Resource> vertexResourceSprite = dxCommon->CreateBufferResource(sizeof(VertexData) * 4);
@@ -1472,15 +1308,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			shouldReloadModel = false;
 		}
 
+		// …三角形や球の WVP 計算の後
+		sprite->Update();
+
 		// ImGuiの描画
 		ImGui::Render();
 
 		dxCommon->PreDraw();
 
-		// ここで共通描画設定
-		spriteCommon->CommonDrawSetting();
-
-		// RootSignatureとPSOの設定
+		// 3D用 RootSignature と PSO をセット
 		commandList->SetGraphicsRootSignature(rootSignature.Get());
 		commandList->SetPipelineState(graphicsPipelineState.Get());
 
@@ -1490,7 +1326,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		// 球の描画
 		if (selectedModel == ModelType::Plane) {
-			// Planeモデルを描画
+			// Plane
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
 			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
@@ -1498,25 +1334,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 
-			// さらにSphereも描画！
+			// Sphere
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
 			commandList->IASetIndexBuffer(&indexBufferViewSphere);
 			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
 			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle); // Sphere用テクスチャ
+			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
 			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
-
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-			// Spriteの描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
-			commandList->IASetIndexBuffer(&indexBufferViewSprite);
-			// TransformationBufferの設定
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
-
-			// 描画
-			commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 
 		} else if (selectedModel == ModelType::Sphere) {
 			// Sphereモデルを描画
@@ -1578,7 +1403,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 		}
 
-
+		// ===== スプライト描画 =====
+		spriteCommon->CommonDrawSetting(); // Sprite用 RootSig / PSO セット
+		sprite->Draw();
 
 		// ImGuiの描画
 		ImGui_ImplDX12_RenderDrawData(

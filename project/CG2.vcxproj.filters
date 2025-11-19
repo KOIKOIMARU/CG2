@@ -117,6 +117,9 @@
     <ClCompile Include="src\engine\2d\Sprite.cpp">
       <Filter>src\engine\2d</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\base\Math.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -184,6 +187,9 @@
     </ClInclude>
     <ClInclude Include="include\engine\2d\SpriteCommon.h">
       <Filter>include\engine\2d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\Math.h">
+      <Filter>include\engine\base</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
