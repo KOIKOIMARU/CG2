@@ -24,9 +24,8 @@ VertexShaderOutput main(VertexShaderInput input)
     output.position = mul(input.position, gWVP);
     output.texcoord = input.texcoord;
 
-    // 法線をワールド空間へ変換（スケーリングがある場合は inverse-transpose 必須）
     float3x3 normalMatrix = (float3x3) gWorld;
-    output.normal = normalize(mul(input.normal, normalMatrix));
+    output.normal = mul(input.normal, normalMatrix);
 
     return output;
 }

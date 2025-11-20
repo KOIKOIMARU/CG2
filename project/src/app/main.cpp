@@ -25,6 +25,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include "DirectXTex.h"
+#include <DirectXMath.h>
 
 #pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "xaudio2.lib")
@@ -33,6 +34,7 @@ using namespace Microsoft::WRL;
 using Logger::Log;
 using StringUtility::ConvertString;
 using namespace Math;
+using namespace DirectX;
 
 struct VertexData {
 	Vector4 position; // 頂点の位置
@@ -56,7 +58,7 @@ struct TransformationMatrix {
 
 struct DirectionalLight {
 	Vector4 color;
-	Vector4 direction;
+	Vector3 direction;
 	float intensity;
 	Vector3 padding; // ← float3 paddingで16バイト境界に揃える
 };
@@ -135,7 +137,6 @@ struct MeshRenderData {
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
 
-
 // 3x3の行列式を計算
 static float Determinant3x3(float matrix[3][3]) {
 	return matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
@@ -163,31 +164,13 @@ static float Minor(const Matrix4x4& m, int row, int col) {
 }
 
 // 4x4行列の逆行列を計算
-static Matrix4x4 Inverse(const Matrix4x4& m) {
-	Matrix4x4 result = {};
+Matrix4x4 Inverse(const Matrix4x4& m)
+{
+	XMMATRIX xm = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&m));
+	XMMATRIX inv = XMMatrixInverse(nullptr, xm);
 
-	// 4x4行列の行列式を計算
-	float det = 0.0f;
-	for (int col = 0; col < 4; ++col) {
-		int sign = (col % 2 == 0) ? 1 : -1;
-		det += sign * m.m[0][col] * Minor(m, 0, col);
-	}
-
-	// 行列式が0の場合は逆行列が存在しない
-	if (det == 0.0f) {
-		return result;
-	}
-
-	float invDet = 1.0f / det;
-
-	// 各要素の計算
-	for (int i = 0; i < 4; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			int sign = ((i + j) % 2 == 0) ? 1 : -1;
-			result.m[j][i] = sign * Minor(m, i, j) * invDet;
-		}
-	}
-
+	Matrix4x4 result;
+	XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&result), inv);
 	return result;
 }
 
@@ -327,70 +310,102 @@ std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
 
 ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
 	ModelData modelData;
-	std::vector<Vector4> positions;  // 頂点位置
-	std::vector<Vector2> texcoords; // テクスチャ座標
-	std::vector<Vector3> normals; // 法線ベクトル
-	std::string line; // ファイルから読んだ1行を格納するもの
+
+	std::vector<Vector4> positions;
+	std::vector<Vector2> texcoords;
+	std::vector<Vector3> normals;
 
 	std::ifstream file(directoryPath + "/" + filename);
-	assert(file.is_open()); // ファイルが開けなかったらエラー
+	assert(file.is_open());
+
+	std::string line;
 
 	while (std::getline(file, line)) {
-		std::string identifier;
 		std::istringstream s(line);
+		std::string id;
+		s >> id;
 
-		s >> identifier; // 行の先頭の文字列を取得
-		if (identifier == "v") { // 頂点位置
-			Vector4 position;
-			s >> position.x >> position.y >> position.z;
-			position.w = 1.0f; // 同次座標系のためw成分を1に設定
-			positions.push_back(position);
-		} else if (identifier == "vt") { // テクスチャ座標
-			Vector2 texcoord;
-			s >> texcoord.x >> texcoord.y;
-			texcoords.push_back(texcoord);
-		} else if (identifier == "vn") { // 法線ベクトル
-			Vector3 normal;
-			s >> normal.x >> normal.y >> normal.z;
-			normals.push_back(normal);
-		} else if (identifier == "f") { // 面情報
-			  VertexData triangle[3];
-			// 面は三角形限定。他のは未対応
-			for (int32_t faceVertex = 0; faceVertex < 3; ++faceVertex) {
-				std::string vertexDefinition;
-				s >> vertexDefinition;
+		if (id == "v") {
+			Vector4 p{};
+			s >> p.x >> p.y >> p.z;
+			p.w = 1.0f;
 
-				std::istringstream v(vertexDefinition);
-				uint32_t elementIndices[3];
-				for (int32_t element = 0; element < 3; ++element) {
-					std::string index;
-					std::getline(v, index, '/');
-					elementIndices[element] = std::stoi(index);
+			// 右手系 → 左手系（Z反転）
+			p.z *= -1.0f;
+			positions.push_back(p);
+
+		} else if (id == "vt") {
+			Vector2 uv{};
+			s >> uv.x >> uv.y;
+			// DirectX 用に V 反転
+			uv.y = 1.0f - uv.y;
+			texcoords.push_back(uv);
+
+		} else if (id == "vn") {
+			Vector3 n{};
+			s >> n.x >> n.y >> n.z;
+			// 法線も Z 反転
+			n.z *= -1.0f;
+			normals.push_back(n);
+
+		} else if (id == "f") {
+			// f v/t/n  or v//n or v/t のどれでもOKにする
+			VertexData tri[3]{};
+
+			for (int i = 0; i < 3; ++i) {
+				std::string vStr;
+				s >> vStr;
+				if (vStr.empty()) continue;
+
+				int idxV = 0, idxT = 0, idxN = 0;
+
+				std::istringstream vs(vStr);
+				std::string token;
+
+				// v
+				if (std::getline(vs, token, '/') && !token.empty()) {
+					idxV = std::stoi(token);
+				}
+				// t（無い場合は空文字）
+				if (std::getline(vs, token, '/') && !token.empty()) {
+					idxT = std::stoi(token);
+				}
+				// n（無い場合は空文字）
+				if (std::getline(vs, token, '/') && !token.empty()) {
+					idxN = std::stoi(token);
 				}
 
-				Vector4 position = positions[elementIndices[0] - 1];
-				Vector2 texcoord = texcoords[elementIndices[1] - 1];
-				Vector3 normal = normals[elementIndices[2] - 1];
+				// 安全に参照
+				Vector4 pos{ 0,0,0,1 };
+				if (idxV > 0 && idxV <= (int)positions.size()) {
+					pos = positions[idxV - 1];
+				}
 
-				// 🔁 座標系変換：X軸反転（右手 → 左手）
-				// position.x *= -1.0f; ← やらない
-				// normal.x *= -1.0f; ← やらない
-				texcoord.y = 1.0f - texcoord.y;
+				Vector2 uv{ 0.0f, 0.0f };
+				if (idxT > 0 && idxT <= (int)texcoords.size()) {
+					uv = texcoords[idxT - 1];
+				}
 
+				Vector3 nor{ 0.0f, 1.0f, 0.0f };
+				if (idxN > 0 && idxN <= (int)normals.size()) {
+					nor = normals[idxN - 1];
+				}
 
-				triangle[faceVertex] = { position, texcoord, normal };
+				tri[i] = { pos, uv, nor };
 			}
 
-			// 🔁 頂点の登録順を逆順にする（面の回り順を逆にする）
-			modelData.vertices.push_back(triangle[2]);
-			modelData.vertices.push_back(triangle[1]);
-			modelData.vertices.push_back(triangle[0]);
-		} else if (identifier == "mtllib") {
-			std::string materialFilename;
-			s >> materialFilename;
-			modelData.material = LoadMaterialTemplate(directoryPath, materialFilename);
+			// 左手系なので順番そのままでOK（OBJは通常CCW）
+			modelData.vertices.push_back(tri[0]);
+			modelData.vertices.push_back(tri[1]);
+			modelData.vertices.push_back(tri[2]);
+
+		} else if (id == "mtllib") {
+			std::string mtl;
+			s >> mtl;
+			modelData.material = LoadMaterialTemplate(directoryPath, mtl);
 		}
 	}
+
 	return modelData;
 }
 
@@ -712,25 +727,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	assert(SUCCEEDED(hr));
 
 	// InputLayout
-	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
+	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
+	{
+		// POSITION (float4)
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+			D3D12_APPEND_ALIGNED_ELEMENT,
+			D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 
-	// POSITION (float4 = 16 バイト)
-	inputElementDescs[0].SemanticName = "POSITION";
-	inputElementDescs[0].SemanticIndex = 0;
-	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	inputElementDescs[0].AlignedByteOffset = 0;
+			// TEXCOORD (float2)
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
+				D3D12_APPEND_ALIGNED_ELEMENT,
+				D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 
-	// TEXCOORD (float2 = 8 バイト)
-	inputElementDescs[1].SemanticName = "TEXCOORD";
-	inputElementDescs[1].SemanticIndex = 0;
-	inputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	inputElementDescs[1].AlignedByteOffset = 16;
-
-	// NORMAL (float3 = 12 バイト)
-	inputElementDescs[2].SemanticName = "NORMAL";
-	inputElementDescs[2].SemanticIndex = 0;
-	inputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	inputElementDescs[2].AlignedByteOffset = 24;
+				// NORMAL (float3)
+				{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+					D3D12_APPEND_ALIGNED_ELEMENT,
+					D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
 
 	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
 	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
@@ -912,7 +925,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 初期データ設定
 	directionalLightData->color = { 1.0f, 1.0f, 1.0f };
 	Vector3 dir = Normalize({ -1.0f, -1.0f, 0.0f });
-	directionalLightData->direction = { dir.x, dir.y, dir.z, 0.0f };
+	directionalLightData->direction = { dir.x, dir.y, dir.z };
 	directionalLightData->intensity = 3.0f;
 
 	// Transform変数を作る
@@ -1021,8 +1034,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	LightingMode lightingMode = LightingMode::HalfLambert;
 
-	
-
 	// ウィンドウのxボタンが押されるまでループ
 	while (true) {
 		// Windowsにメッセージが来てたら最優先で処理させる
@@ -1101,7 +1112,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
 			if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
 				Vector3 normDir = Normalize(lightDirEdit);
-				directionalLightData->direction = { normDir.x, normDir.y, normDir.z, 0.0f };
+				directionalLightData->direction = { normDir.x, normDir.y, normDir.z };
 			}
 			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
 			ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
@@ -1119,21 +1130,46 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 		// WVP行列の計算
-		Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
-		Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
+		Transform cameraTransform = {
+			{ 1.0f, 1.0f, 1.0f },   // scale
+			{ 0.0f, 0.0f, 0.0f },   // rotate
+			{ 0.0f, 0.0f, -5.0f }   // translate（カメラ位置）
+		};
+
+		// カメラ行列 → View行列
+		Matrix4x4 cameraMatrix = MakeAffineMatrix(
+			cameraTransform.scale,
+			cameraTransform.rotate,
+			cameraTransform.translate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(WinApp::kClientWidth) / float(WinApp::kClientHeight), 0.1f, 100.0f);
 
-		// 三角形A
-		Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
-		Matrix4x4 worldViewProjectionMatrixA = Multiply(worldMatrixA, Multiply(viewMatrix, projectionMatrix));
-		wvpDataA->WVP = worldViewProjectionMatrixA;
-		wvpDataA->World = worldMatrixA;
-		materialDataA->lightingMode = static_cast<int32_t>(lightingMode);
+		// 射影行列
+		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(
+			0.45f,
+			float(WinApp::kClientWidth) / float(WinApp::kClientHeight),
+			0.1f,
+			100.0f);
 
-		// 三角形B
-		Matrix4x4 worldMatrixB = MakeAffineMatrix(transformB.scale, transformB.rotate, transformB.translate);
-		Matrix4x4 worldViewProjectionMatrixB = Multiply(worldMatrixB, Multiply(viewMatrix, projectionMatrix));
+		// View と Projection を先に掛けておく
+		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
+
+		// -------- 三角形A --------
+		Matrix4x4 worldMatrixA =
+			MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
+
+		Matrix4x4 worldViewProjectionMatrixA =
+			Multiply(worldMatrixA, viewProjectionMatrix);
+
+		wvpDataA->WVP = Transpose(worldViewProjectionMatrixA);
+		wvpDataA->World = Transpose(worldMatrixA);
+
+		// -------- 三角形B（Sphere 用など）---------
+		Matrix4x4 worldMatrixB =
+			MakeAffineMatrix(transformB.scale, transformB.rotate, transformB.translate);
+
+		Matrix4x4 worldViewProjectionMatrixB =
+			Multiply(worldMatrixB, viewProjectionMatrix);
+
 		wvpDataB->WVP = worldViewProjectionMatrixB;
 		wvpDataB->World = worldMatrixB;
 

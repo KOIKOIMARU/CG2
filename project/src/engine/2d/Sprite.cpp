@@ -19,7 +19,7 @@ void Sprite::Initialize(SpriteCommon* spriteCommon)
 void Sprite::Update()
 {
     transform_.translate = { position_.x, position_.y, 0.0f };
-	transform_.rotate = { 0.0f, 0.0f, rotation_ };
+    transform_.rotate = { 0.0f, 0.0f, rotation_ };
     transform_.scale = { size_.x, size_.y, 1.0f };
 
     Matrix4x4 world = MakeAffineMatrix(
@@ -27,12 +27,21 @@ void Sprite::Update()
         transform_.rotate,
         transform_.translate);
 
-    Matrix4x4 view = MakeIdentity4x4();
-    Matrix4x4 proj = MakeIdentity4x4();
-    Matrix4x4 vp = Multiply(view, proj);
+    float width = (float)WinApp::kClientWidth;
+    float height = (float)WinApp::kClientHeight;
 
-    transformData_->World = world;
-    transformData_->WVP = Multiply(world, vp);
+    Matrix4x4 screenMatrix = {
+        2.0f / width,   0,              0, 0,
+        0,             -2.0f / height,  0, 0,
+        0,              0,              1, 0,
+       -1,              1,              0, 1
+    };
+
+    Matrix4x4 wvp = Multiply(world, screenMatrix);
+
+    // ★ 3D と同じく転置してから定数バッファへ
+    transformData_->World = Transpose(world);
+    transformData_->WVP = Transpose(wvp);
 }
 
 void Sprite::Draw()

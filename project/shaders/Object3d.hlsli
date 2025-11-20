@@ -15,7 +15,7 @@ struct Material
 struct DirectionalLight
 {
     float4 color;
-    float4 direction;
+    float3 direction;
     float intensity;
-    float3 padding; // アライメント用
+    float3 padding;
 };

@@ -1,10 +1,10 @@
-#include "Object3d.hlsli" // DirectionalLight 構造体を含む
+#include "Object3d.hlsli" 
 
 cbuffer MaterialCB : register(b0)
 {
     float4 gMaterialColor;
     int gEnableLighting;
-    float3 padding; // アライメント用
+    float3 padding; 
     float4x4 uvTransform;
 };
 

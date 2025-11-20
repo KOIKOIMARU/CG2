@@ -14,6 +14,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include <d3dx12.h>
+#include <filesystem>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -536,70 +537,92 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     const std::wstring& filePath,
     const wchar_t* profile)
 {
-    assert(dxcUtils_);
-    assert(dxcCompiler_);
+    HRESULT hr = S_OK;
 
-    // 1. HLSLファイルを読み込む
-    Microsoft::WRL::ComPtr<IDxcBlobEncoding> sourceBlob;
-    HRESULT hr = dxcUtils_->LoadFile(filePath.c_str(), nullptr, &sourceBlob);
-    assert(SUCCEEDED(hr));
+    // ============================
+    // 1) ファイルパス → 絶対パス
+    // ============================
+    std::filesystem::path absPath = std::filesystem::absolute(filePath);
 
-    // 2. DXC に渡すバッファ情報
-    DxcBuffer sourceBuffer{};
-    sourceBuffer.Ptr = sourceBlob->GetBufferPointer();
-    sourceBuffer.Size = sourceBlob->GetBufferSize();
-    sourceBuffer.Encoding = DXC_CP_UTF8;   // UTF-8想定
-
-    // 3. コンパイル引数
-    std::vector<LPCWSTR> arguments;
-    arguments.push_back(filePath.c_str()); // ソース名（エラー表示用）
-
-    arguments.push_back(L"-E");
-    arguments.push_back(L"main");          // エントリポイント名
-
-    arguments.push_back(L"-T");
-    arguments.push_back(profile);          // "vs_6_0" とか "ps_6_0"
-
-#ifdef _DEBUG
-    arguments.push_back(L"-Zi");
-    arguments.push_back(L"-Qembed_debug");
-    arguments.push_back(L"-Od");
-#else
-    arguments.push_back(L"-O3");
-#endif
-
-    // 4. コンパイル実行
-    Microsoft::WRL::ComPtr<IDxcResult> result;
-    hr = dxcCompiler_->Compile(
-        &sourceBuffer,
-        arguments.data(),
-        static_cast<UINT>(arguments.size()),
-        dxcIncludeHandler_.Get(),
-        IID_PPV_ARGS(&result));
-    assert(SUCCEEDED(hr));
-
-    // 5. エラー＆警告メッセージを取得
-    Microsoft::WRL::ComPtr<IDxcBlobUtf8> errors;
-    hr = result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
-
-    // コンパイル結果のステータスを確認
-    HRESULT status = S_OK;
-    result->GetStatus(&status);
-
-    if (errors && errors->GetStringLength() > 0) {
-        // ワーニング／エラー問わずログに出す
-        Log(errors->GetStringPointer());
-    }
-
-    // コンパイル失敗のときだけ落とす
-    if (FAILED(status)) {
+    if (!std::filesystem::exists(absPath)) {
+        std::string msg =
+            "❌ Shader file not found:\n" +
+            absPath.string() +
+            "\nCurrentDir: " +
+            std::filesystem::current_path().string() +
+            "\n";
+        OutputDebugStringA(msg.c_str());
         assert(false);
+        return nullptr;
     }
 
-    // 6. コンパイル結果（バイナリ）を取得
-    Microsoft::WRL::ComPtr<IDxcBlob> shaderBlob;
-    hr = result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
-    assert(SUCCEEDED(hr));
+    // ============================
+    // 2) ファイル読み込み
+    // ============================
+    Microsoft::WRL::ComPtr<IDxcBlobEncoding> shaderSource = nullptr;
+    hr = dxcUtils_->LoadFile(absPath.c_str(), nullptr, &shaderSource);
+    if (FAILED(hr)) {
+        OutputDebugStringA("❌ LoadFile failed\n");
+        assert(false);
+        return nullptr;
+    }
+
+    DxcBuffer shaderBuffer{};
+    shaderBuffer.Ptr = shaderSource->GetBufferPointer();
+    shaderBuffer.Size = shaderSource->GetBufferSize();
+    shaderBuffer.Encoding = DXC_CP_UTF8;
+
+    // ============================
+    // 3) コンパイル引数の準備
+    // ============================
+    LPCWSTR args[] = {
+        absPath.c_str(),      // ファイル名
+        L"-E", L"main",       // エントリーポイント
+        L"-T", profile,       // ターゲット
+        L"-Zi",               // デバッグ情報
+        L"-Qembed_debug"      // デバッグ情報埋め込み
+    };
+
+    Microsoft::WRL::ComPtr<IDxcResult> result = nullptr;
+
+    hr = dxcCompiler_->Compile(
+        &shaderBuffer,
+        args,
+        _countof(args),
+        dxcIncludeHandler_.Get(),   // ← ここが超重要（修正済）
+        IID_PPV_ARGS(&result)
+    );
+
+    if (FAILED(hr)) {
+        OutputDebugStringA("❌ Shader compile request failed.\n");
+        assert(false);
+        return nullptr;
+    }
+
+    // ============================
+    // 4) エラーメッセージ取り出し
+    // ============================
+    Microsoft::WRL::ComPtr<IDxcBlobUtf8> errorBlob = nullptr;
+    result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errorBlob), nullptr);
+
+    if (errorBlob && errorBlob->GetStringLength() != 0) {
+        OutputDebugStringA("❌ Shader Compile Error:\n");
+        OutputDebugStringA(errorBlob->GetStringPointer());
+        assert(false);
+        return nullptr;
+    }
+
+    // ============================
+    // 5) 成功したバイナリの取得
+    // ============================
+    Microsoft::WRL::ComPtr<IDxcBlob> shaderBlob = nullptr;
+    result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
+
+    if (!shaderBlob) {
+        OutputDebugStringA("❌ DXC returned no shader blob.\n");
+        assert(false);
+        return nullptr;
+    }
 
     return shaderBlob;
 }
