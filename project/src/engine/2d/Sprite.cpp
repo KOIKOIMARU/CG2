@@ -18,6 +18,10 @@ void Sprite::Initialize(SpriteCommon* spriteCommon)
 
 void Sprite::Update()
 {
+    transform_.translate = { position_.x, position_.y, 0.0f };
+	transform_.rotate = { 0.0f, 0.0f, rotation_ };
+    transform_.scale = { size_.x, size_.y, 1.0f };
+
     Matrix4x4 world = MakeAffineMatrix(
         transform_.scale,
         transform_.rotate,
@@ -58,37 +62,40 @@ void Sprite::CreateVertexData()
     vertexResource_ = dxCommon->CreateBufferResource(sizeof(VertexData) * 4);
     indexResource_ = dxCommon->CreateBufferResource(sizeof(uint32_t) * 6);
 
+    // 頂点データ
     vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData_));
 
-    vertexData_[0].position = { 0.0f, 360.0f, 0.0f, 1.0f };
+    // 左下
+    vertexData_[0].position = { 0.0f, 1.0f, 0.0f, 1.0f };
     vertexData_[0].texcoord = { 0.0f, 1.0f };
+    vertexData_[0].normal = { 0.0f, 0.0f, -1.0f };
 
-    vertexData_[1].position = { 0.0f,   0.0f, 0.0f, 1.0f };
+    // 左上
+    vertexData_[1].position = { 0.0f, 0.0f, 0.0f, 1.0f };
     vertexData_[1].texcoord = { 0.0f, 0.0f };
+    vertexData_[1].normal = { 0.0f, 0.0f, -1.0f };
 
-    vertexData_[2].position = { 640.0f, 360.0f, 0.0f, 1.0f };
+    // 右下
+    vertexData_[2].position = { 1.0f, 1.0f, 0.0f, 1.0f };
     vertexData_[2].texcoord = { 1.0f, 1.0f };
+    vertexData_[2].normal = { 0.0f, 0.0f, -1.0f };
 
-    vertexData_[3].position = { 640.0f,   0.0f, 0.0f, 1.0f };
+    // 右上
+    vertexData_[3].position = { 1.0f, 0.0f, 0.0f, 1.0f };
     vertexData_[3].texcoord = { 1.0f, 0.0f };
-
-    for (int i = 0; i < 4; ++i) {
-        vertexData_[i].normal = { 0.0f, 0.0f, -1.0f };
-    }
+    vertexData_[3].normal = { 0.0f, 0.0f, -1.0f };
 
     vertexResource_->Unmap(0, nullptr);
     vertexData_ = nullptr;
 
+    // インデックス
     indexResource_->Map(0, nullptr, reinterpret_cast<void**>(&indexData_));
-    indexData_[0] = 0;
-    indexData_[1] = 1;
-    indexData_[2] = 2;
-    indexData_[3] = 1;
-    indexData_[4] = 3;
-    indexData_[5] = 2;
+    indexData_[0] = 0; indexData_[1] = 1; indexData_[2] = 2;
+    indexData_[3] = 1; indexData_[4] = 3; indexData_[5] = 2;
     indexResource_->Unmap(0, nullptr);
     indexData_ = nullptr;
 
+    // VB/IBビュー
     vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
     vertexBufferView_.SizeInBytes = sizeof(VertexData) * 4;
     vertexBufferView_.StrideInBytes = sizeof(VertexData);
@@ -97,6 +104,7 @@ void Sprite::CreateVertexData()
     indexBufferView_.SizeInBytes = sizeof(uint32_t) * 6;
     indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
 }
+
 
 void Sprite::CreateMaterialData()
 {

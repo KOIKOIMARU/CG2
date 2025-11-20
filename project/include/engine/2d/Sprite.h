@@ -13,7 +13,20 @@ public:
     void Update();
     void Draw();
 
+    // セッター
     void SetTexture(D3D12_GPU_DESCRIPTOR_HANDLE handle) { textureSrvHandle_ = handle; }
+
+    const Math::Vector2& GetPosition() const { return position_; }
+    void SetPosition(const Math::Vector2& position) { position_ = position; }
+
+    float GetRotation() const { return rotation_; }
+	void SetRotation(float rotation) { this->rotation_ = rotation; }
+
+    const Math::Vector4& GetColor() const { return materialData_->color; }
+    void SetColor(const Math::Vector4& color) { materialData_->color = color; }
+
+    const Math::Vector2& GetSize() const { return size_; }
+    void SetSize(const Math::Vector2& size) { size_ = size; }
 
 private:
     // 頂点データ
@@ -60,4 +73,8 @@ private:
     Math::Transform transform_{};   // 2D用 Transform
 
     D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle_{}; // t0
+
+    Math::Vector2 position_{ 0.0f, 0.0f };
+	float rotation_ = 0.0f;
+    Math::Vector2 size_{ 640.0f, 360.0f };
 };

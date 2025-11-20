@@ -1,4 +1,5 @@
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <d3dcompiler.h>
@@ -803,16 +804,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	input->Initialize(winApp);
 
 	SpriteCommon* spriteCommon = nullptr;
-	Sprite* sprite = nullptr;
 
 	// スプライト共通部の初期化
 	spriteCommon = new SpriteCommon;
 	spriteCommon->Initialize(dxCommon); // ★ 修正
-
-	// スプライトの初期化
-	sprite = new Sprite();
-	sprite->Initialize(spriteCommon);      // ★ SpriteCommon* を渡す
-
 
 	// 実際に生成
 	ComPtr<ID3D12PipelineState> graphicsPipelineState = nullptr;
@@ -909,39 +904,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	wvpDataB->WVP = MakeIdentity4x4();
 	wvpDataB->World = MakeIdentity4x4();
 
-
-	// Sprite用のマテリアルリソースを作成する。今回はcolor1つ分のサイズを用意する
-	ComPtr<ID3D12Resource> materialResourceSprite = dxCommon->CreateBufferResource(sizeof(Material));
-	Material* materialDataSprite = nullptr;
-	materialResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&materialDataSprite));
-
-	// UVTransformを単位行列で初期化する
-	*materialDataSprite = {
-		{1.0f, 1.0f, 1.0f, 1.0f}, // color
-		false,                   // enableLighting
-		{0.0f, 0.0f, 0.0f},      // padding
-		MakeIdentity4x4()        // uvTransform 
-	};
-
-
-	// Index用
-	ComPtr<ID3D12Resource> indexResourceSprite = dxCommon->CreateBufferResource(sizeof(uint32_t) * 6);
-	// view
-	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
-	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
-	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6; // インデックスの数
-	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;
-	// インデックスデータをマップして書き込む
-	uint32_t* indexDataSprite = nullptr;
-	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSprite));
-	// 使用例（6頂点分）
-	indexDataSprite[0] = 0; // 左下1
-	indexDataSprite[1] = 1; // 上1
-	indexDataSprite[2] = 2; // 右下1
-	indexDataSprite[3] = 1; // 左下2
-	indexDataSprite[4] = 3; // 上2
-	indexDataSprite[5] = 2; // 右下2
-
 	// 平行光源のバッファを作成し、CPU 側から書き込めるようにする
 	ComPtr<ID3D12Resource> directionalLightResource = dxCommon->CreateBufferResource(sizeof(DirectionalLight));
 	DirectionalLight* directionalLightData = nullptr;
@@ -987,6 +949,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ComPtr<ID3D12Resource> textureResource3 =
 		dxCommon->CreateTextureResource(metadata3);
 	dxCommon->UploadTextureData(textureResource3, mipImages3);
+
 
 	// metadataを基にSRVを作成する
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -1041,63 +1004,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	textureHandleMap[NormalizeTextureKey("checkerBoard.png")] = textureSrvHandleGPU3;
 	textureUploadBuffers.push_back(textureResource3);
 
-	// ★ スプライトに使うテクスチャを設定（ここでは uvChecker.png を貼る）
-	sprite->SetTexture(textureSrvHandleGPU);
+	std::vector<Sprite> sprites;
+	sprites.resize(1);
 
-	// Sprite用の頂点リソースを作る
-	ComPtr<ID3D12Resource> vertexResourceSprite = dxCommon->CreateBufferResource(sizeof(VertexData) * 4);
-
-	// 頂点バッファビューを作成
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
-	// リソースの先頭のアドレスから使う
-	vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
-	// 使用するリソースのサイズは頂点6つ分のサイズ
-	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 4;
-	// 1頂点あたりのサイズ
-	vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
-
-	// Spriteの頂点データを設定
-	VertexData* vertexDataSprite = nullptr;
-	assert(vertexResourceSprite); // 安全対策
-	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSprite));
-	// 頂点データ（左下, 左上, 右下, 右上）
-	vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f, 1.0f }; // 左下
-	vertexDataSprite[0].texcoord = { 0.0f, 1.0f };
-
-	vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f, 1.0f }; // 左上
-	vertexDataSprite[1].texcoord = { 0.0f, 0.0f };
-
-	vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f, 1.0f }; // 右下
-	vertexDataSprite[2].texcoord = { 1.0f, 1.0f };
-
-	vertexDataSprite[3].position = { 640.0f, 0.0f, 0.0f, 1.0f }; // 右上
-	vertexDataSprite[3].texcoord = { 1.0f, 0.0f };
-
-	// Sprite用の法線を設定（-Z方向）
-	for (int i = 0; i < 4; ++i) {
-		vertexDataSprite[i].normal = { 0.0f, 0.0f, -1.0f };
-	}
-
-
-	// TransformationMatrix 構造体を使う
-	ComPtr<ID3D12Resource> transformationMatrixResourceSprite = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
-	TransformationMatrix* transformationMatrixDataSprite = nullptr;
-	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
-	// 単位行列で初期化
-	transformationMatrixDataSprite->WVP = MakeIdentity4x4();
-	transformationMatrixDataSprite->World = MakeIdentity4x4();
-	// CPUで動かす用のTransformを作る
-	Transform transformSprite{
-		{1.0f, 1.0f, 1.0f},  // scale
-		  {0.0f, 0.0f, 0.0f},  // rotate
-		  {0.0f, 0.0f, 0.0f} // translate
-	};
-
-	Transform uvTransformSprite{
-	{1.0f, 1.0f, 1.0f},  // scale
-	{0.0f, 0.0f, 0.0f},  // rotate
-	{0.0f, 0.0f, 0.0f},  // translate
-	};
+	sprites[0].Initialize(spriteCommon);
+	sprites[0].SetTexture(textureSrvHandleGPU);
+	sprites[0].SetPosition({ 0,0 });
+	sprites[0].SetSize({ 640,360 });
 
 	// 音声データ読み込み
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
@@ -1157,12 +1070,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					ImGui::ColorEdit3("ColorB", &materialDataB->color.x);
 					ImGui::TreePop();
 				}
-			}
-			// UV変換（Sprite用）
-			if (ImGui::CollapsingHeader("Sprite UV")) {
-				ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
-				ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
-				ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
 			}
 		}
 		if (selectedModel == ModelType::MultiMaterial) {
@@ -1231,22 +1138,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		wvpDataB->World = worldMatrixB;
 
 
-		// Sprite用のWVPMを作る
-		Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
-		Matrix4x4 viewMatrixSprite = MakeIdentity4x4();
-		Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0.0f, 100.0f);
-		Matrix4x4 worldViewProjectionMatrixSprite = Multiply(worldMatrixSprite, Multiply(viewMatrixSprite, projectionMatrixSprite));
-
-		Matrix4x4 uvTransformMatrix = MakeScaleMatrix(uvTransformSprite.scale);
-		uvTransformMatrix = Multiply(uvTransformMatrix, MakeRotateZMatrix(uvTransformSprite.rotate.z));
-		uvTransformMatrix = Multiply(uvTransformMatrix, MakeTranslateMatrix(uvTransformSprite.translate));
-
 		materialDataA->uvTransform = MakeIdentity4x4();
-		materialDataSprite->uvTransform = uvTransformMatrix;
-
-		// TransformationMatrixに正しく代入
-		transformationMatrixDataSprite->WVP = worldViewProjectionMatrixSprite;
-		transformationMatrixDataSprite->World = worldMatrixSprite;
 
 		D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
 
@@ -1308,8 +1200,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			shouldReloadModel = false;
 		}
 
-		// …三角形や球の WVP 計算の後
-		sprite->Update();
+		for (auto& s : sprites) s.Update();
+
 
 		// ImGuiの描画
 		ImGui::Render();
@@ -1404,8 +1296,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 
 		// ===== スプライト描画 =====
-		spriteCommon->CommonDrawSetting(); // Sprite用 RootSig / PSO セット
-		sprite->Draw();
+		spriteCommon->CommonDrawSetting();
+		for (auto& s : sprites) s.Draw();
 
 		// ImGuiの描画
 		ImGui_ImplDX12_RenderDrawData(
@@ -1423,7 +1315,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 解放処理
 	xAudio2.Reset(); // XAudio2の解放
-	//SoundUnload(&soundData1); // 音声データの解放
 	CloseHandle(fenceEvent);
 	delete input;
 
