@@ -163,4 +163,7 @@ private:
 
     // 前フレームの基準時間
     std::chrono::steady_clock::time_point reference_;
+
+	// 最大SRV数
+    static const uint32_t kMaxSRVCount;
 };

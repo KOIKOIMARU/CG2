@@ -120,6 +120,7 @@
     <ClCompile Include="src\engine\base\Math.cpp">
       <Filter>src\engine\base</Filter>
     </ClCompile>
+    <ClCompile Include="TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -191,6 +192,7 @@
     <ClInclude Include="include\engine\base\Math.h">
       <Filter>include\engine\base</Filter>
     </ClInclude>
+    <ClInclude Include="TextureManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">

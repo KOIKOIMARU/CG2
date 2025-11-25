@@ -9,7 +9,6 @@
 #include <thread>   // sleep_for 用
 
 
-
 #include "imgui.h"
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
@@ -22,6 +21,7 @@
 using namespace Microsoft::WRL;
 using Logger::Log;
 
+const uint32_t DirectXCommon::kMaxSRVCount = 512;
 
 void DirectXCommon::Initialize(WinApp* winApp)
 {
@@ -373,7 +373,7 @@ void DirectXCommon::InitializeDescriptorHeaps()
     rtvHeap_ = CreateDescriptorHeap(
         D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);          // バックバッファ2枚分
     srvHeap_ = CreateDescriptorHeap(
-        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true); // テクスチャやCBV用
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, DirectXCommon::kMaxSRVCount, true); // テクスチャやCBV用
     dsvHeap_ = CreateDescriptorHeap(
         D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);          // 深度1枚
 }

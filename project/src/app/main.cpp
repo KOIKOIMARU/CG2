@@ -20,6 +20,7 @@
 #include "engine/2d/SpriteCommon.h"
 #include "engine/2d/Sprite.h"
 #include "engine/base/Math.h"
+#include "engine/3d/TextureManager.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -633,6 +634,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// DirectXの初期化
 	dxCommon = new DirectXCommon();
 	dxCommon->Initialize(winApp);
+
+	// ★ テクスチャマネージャの初期化（ここがスライドの「呼び出し」）
+	TextureManager::GetInstance()->Initialize();  // 引数なし版の場合
 
 	// ===== DirectXCommon から必要なものを引っ張ってくる =====
 	HRESULT hr = S_OK;
@@ -1364,9 +1368,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
 
+	TextureManager::GetInstance()->Finalize();
+
 	delete dxCommon;
-
-
 
 	return 0;
 }
