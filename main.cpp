@@ -150,6 +150,7 @@ enum class ModelType {
 	MultiMesh,
 	MultiMaterial,
 	Fence,
+	InstancingPlane
 };
 
 enum class LightingMode {
@@ -189,7 +190,9 @@ enum class BlendMode {
 	Count,
 };
 
-
+struct InstanceData {
+	Matrix4x4 world;
+};
 
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
@@ -1188,7 +1191,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ウィンドウの作成
 	HWND hwnd = CreateWindow(
 		wc.lpszClassName, // ウィンドウクラス名
-		L"CG3", // ウィンドウ名
+		L"LE2B_06_コイズミ_リョウ", // ウィンドウ名
 		WS_OVERLAPPEDWINDOW, // ウィンドウスタイル
 		CW_USEDEFAULT, // 表示X座標(Windowsに任せる
 		CW_USEDEFAULT, // 表示Y座標
@@ -1481,22 +1484,35 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	assert(SUCCEEDED(hr));
 
 	// InputLayout
-	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
-	inputElementDescs[0].SemanticName = "POSITION"; // セマンティクス名
-	inputElementDescs[0].SemanticIndex = 0; // セマンティクスのインデックス
-	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	inputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[1].SemanticName = "TEXCOORD"; // セマンティクス名
-	inputElementDescs[1].SemanticIndex = 0; // セマンティクスのインデックス
-	inputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;
-	inputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[2].SemanticName = "NORMAL"; // セマンティクス名
-	inputElementDescs[2].SemanticIndex = 0; // セマンティクスのインデックス
-	inputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;
-	inputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
+	D3D12_INPUT_ELEMENT_DESC inputElements[] = {
+		// Stream0（頂点データ）
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0,
+		  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 16,
+		  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24,
+		  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+
+		  // Stream1（インスタンス行列）
+		  { "INSTANCE", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0,
+			D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+
+		  { "INSTANCE", 1, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16,
+			D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+
+		  { "INSTANCE", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32,
+			D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+
+		  { "INSTANCE", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 48,
+			D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+	};
+
 	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
-	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
-	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
+	inputLayoutDesc.pInputElementDescs = inputElements;
+	inputLayoutDesc.NumElements = _countof(inputElements);
+
 
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -1603,6 +1619,59 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// モデルデータの読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
+
+	// 10個分の行列
+	static const int kInstanceCount = 10;
+	ComPtr<ID3D12Resource> instanceBuffer = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW instanceVBV{};
+
+	// 初期化
+	{
+		static const int WIDTH = 5;
+		static const int HEIGHT = 5;
+		static const int DEPTH = 4;
+		static const float SPACING = 1.2f;
+
+		static const int kInstanceCount = WIDTH * HEIGHT * DEPTH;
+
+		uint32_t bufferSize = sizeof(InstanceData) * kInstanceCount;
+		instanceBuffer = CreateBufferResource(device, bufferSize);
+
+		InstanceData* map = nullptr;
+		instanceBuffer->Map(0, nullptr, reinterpret_cast<void**>(&map));
+
+		int idx = 0;
+		for (int z = 0; z < DEPTH; z++) {
+			for (int y = 0; y < HEIGHT; y++) {
+				for (int x = 0; x < WIDTH; x++) {
+
+					float px = x * SPACING;
+					float py = y * SPACING;
+					float pz = z * SPACING;
+
+					// ★ 回転を追加（資料と同じ傾き）
+					float ry = 0.6f;     // ← ここが一番大事
+					float rx = 0.3f;     // ← 少し上に傾ける
+
+					Matrix4x4 world = MakeAffineMatrix(
+						{ 1.0f, 1.0f, 1.0f },
+						{ rx, ry, 0.0f },     // ★ 板を斜めに傾ける！
+						{ px, py, pz }
+					);
+
+					map[idx].world = world;
+					idx++;
+				}
+			}
+		}
+
+		instanceBuffer->Unmap(0, nullptr);
+
+		instanceVBV.BufferLocation = instanceBuffer->GetGPUVirtualAddress();
+		instanceVBV.SizeInBytes = bufferSize;
+		instanceVBV.StrideInBytes = sizeof(InstanceData);
+	}
+
 
 	// リソース作成
 	ComPtr<ID3D12Resource> vertexResource = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
@@ -1944,7 +2013,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
 
 	// モデルの種類を選択するための変数
-	ModelType selectedModel = ModelType::Plane; // 初期はPlane
+	ModelType selectedModel = ModelType::InstancingPlane;
 	bool shouldReloadModel = false;
 
 	LightingMode lightingMode = LightingMode::HalfLambert;
@@ -2008,7 +2077,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::SetItemDefaultFocus(); // ←追加！
 
 			// モデル切り替え
-			const char* modelItems[] = { "Plane","Sphere","UtahTeapot","StanfordBunny","MultiMesh","MultiMaterial","Fence" };
+			const char* modelItems[] = { "Plane","Sphere","UtahTeapot","StanfordBunny","MultiMesh","MultiMaterial","Fence","InstancingPlane"};
 			int currentItem = static_cast<int>(selectedModel);
 			if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
 				selectedModel = static_cast<ModelType>(currentItem);
@@ -2308,7 +2377,32 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-			}if (selectedModel == ModelType::MultiMesh
+			} else if (selectedModel == ModelType::InstancingPlane) {
+
+				// 板ポリ（plane.obj）を使用
+				commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+				D3D12_VERTEX_BUFFER_VIEW views[2] = {
+				vertexBufferView,  // stream 0
+				instanceVBV        // stream 1
+				};
+
+				commandList->IASetVertexBuffers(0, 2, views);
+
+
+				// マテリアル設定
+				commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+				commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+
+				// ★ インスタンス数ぶん描画（10個）
+				commandList->DrawInstanced(
+					static_cast<UINT>(modelData.vertices.size()),  // 1つの板ポリの頂点数
+					kInstanceCount,                                // ← ここが instancing
+					0, 0);
+			}
+			if (selectedModel == ModelType::MultiMesh
 				|| selectedModel == ModelType::MultiMaterial
 				|| selectedModel == ModelType::Fence) {                     // ★追加
 				for (const auto& mesh : meshRenderList) {
