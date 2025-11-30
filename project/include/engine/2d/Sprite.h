@@ -2,7 +2,7 @@
 #include <d3d12.h>
 #include <wrl.h>
 #include <cstdint>
-#include <string>          // ★ 追加！
+#include <string>
 
 #include "engine/base/Math.h"
 
@@ -10,20 +10,35 @@ class SpriteCommon;
 
 class Sprite {
 public:
-    // ★ 追加：ファイルパスで初期化
+    // ★ 画像ファイルパスで初期化
     void Initialize(SpriteCommon* spriteCommon, const std::string& filePath);
 
     void Update();
     void Draw();
-
-    // 今後は SetTexture を使わない（削除推奨）
-    // void SetTexture(D3D12_GPU_DESCRIPTOR_HANDLE handle);
 
     // セッター
     void SetPosition(const Math::Vector2& position) { position_ = position; }
     void SetRotation(float rotation) { rotation_ = rotation; }
     void SetSize(const Math::Vector2& size) { size_ = size; }
     void SetColor(const Math::Vector4& color) { materialData_->color = color; }
+
+    // -------- アンカーポイント --------
+    const Math::Vector2& GetAnchorPoint() const { return anchorPoint_; }
+    void SetAnchorPoint(const Math::Vector2& p) { anchorPoint_ = p; }
+
+    // -------- UVスケール / 移動 --------
+    void SetUVScale(const Math::Vector2& scale) { uvScale_ = scale; }
+    const Math::Vector2& GetUVScale() const { return uvScale_; }
+
+    void SetUVTranslate(const Math::Vector2& trans) { uvTranslate_ = trans; }
+    const Math::Vector2& GetUVTranslate() const { return uvTranslate_; }
+
+    // -------- フリップ --------
+    void SetFlipX(bool flag) { isFlipX_ = flag; }
+    void SetFlipY(bool flag) { isFlipY_ = flag; }
+
+    bool GetFlipX() const { return isFlipX_; }
+    bool GetFlipY() const { return isFlipY_; }
 
 private:
     struct VertexData {
@@ -48,6 +63,9 @@ private:
     void CreateMaterialData();
     void CreateTransformData();
 
+    // テクスチャサイズから切り出し範囲＆スプライトサイズを初期化
+    void AdjustTextureSize();
+
 private:
     SpriteCommon* spriteCommon_ = nullptr;
 
@@ -70,6 +88,20 @@ private:
     float rotation_ = 0.0f;
     Math::Vector2 size_{ 640.0f, 360.0f };
 
-    // ★ TextureManager 経由の GPUハンドルだけ残す
+    // ★ TextureManager の「テクスチャ番号」
+    uint32_t textureIndex_ = 0;
+
+    // ★ TextureManager 経由で取得した SRV ハンドル
     D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle_{};
+
+    // AnchorPoint（0～1）
+    Math::Vector2 anchorPoint_{ 0.0f, 0.0f };
+
+    // UV 切り出し（スケール / 平行移動）
+    Math::Vector2 uvScale_ = { 1.0f, 1.0f };
+    Math::Vector2 uvTranslate_ = { 0.0f, 0.0f };
+
+    // 反転フラグ
+    bool isFlipX_ = false;
+    bool isFlipY_ = false;
 };
