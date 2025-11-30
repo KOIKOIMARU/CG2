@@ -2,6 +2,7 @@
 #include <d3d12.h>
 #include <wrl.h>
 #include <cstdint>
+#include <string>          // ★ 追加！
 
 #include "engine/base/Math.h"
 
@@ -9,34 +10,28 @@ class SpriteCommon;
 
 class Sprite {
 public:
-    void Initialize(SpriteCommon* spriteCommon);
+    // ★ 追加：ファイルパスで初期化
+    void Initialize(SpriteCommon* spriteCommon, const std::string& filePath);
+
     void Update();
     void Draw();
 
+    // 今後は SetTexture を使わない（削除推奨）
+    // void SetTexture(D3D12_GPU_DESCRIPTOR_HANDLE handle);
+
     // セッター
-    void SetTexture(D3D12_GPU_DESCRIPTOR_HANDLE handle) { textureSrvHandle_ = handle; }
-
-    const Math::Vector2& GetPosition() const { return position_; }
     void SetPosition(const Math::Vector2& position) { position_ = position; }
-
-    float GetRotation() const { return rotation_; }
-	void SetRotation(float rotation) { this->rotation_ = rotation; }
-
-    const Math::Vector4& GetColor() const { return materialData_->color; }
+    void SetRotation(float rotation) { rotation_ = rotation; }
+    void SetSize(const Math::Vector2& size) { size_ = size; }
     void SetColor(const Math::Vector4& color) { materialData_->color = color; }
 
-    const Math::Vector2& GetSize() const { return size_; }
-    void SetSize(const Math::Vector2& size) { size_ = size; }
-
 private:
-    // 頂点データ
     struct VertexData {
         Math::Vector4 position;
         Math::Vector2 texcoord;
         Math::Vector3 normal;
     };
 
-    // マテリアルデータ
     struct Material {
         Math::Vector4  color;
         int32_t        enableLighting;
@@ -44,7 +39,6 @@ private:
         Math::Matrix4x4 uvTransform;
     };
 
-    // Transform用定数バッファ
     struct TransformData {
         Math::Matrix4x4 WVP;
         Math::Matrix4x4 World;
@@ -70,11 +64,12 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> transformResource_;
     TransformData* transformData_ = nullptr;
 
-    Math::Transform transform_{};   // 2D用 Transform
-
-    D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle_{}; // t0
+    Math::Transform transform_{};
 
     Math::Vector2 position_{ 0.0f, 0.0f };
-	float rotation_ = 0.0f;
+    float rotation_ = 0.0f;
     Math::Vector2 size_{ 640.0f, 360.0f };
+
+    // ★ TextureManager 経由の GPUハンドルだけ残す
+    D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle_{};
 };

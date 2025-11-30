@@ -138,6 +138,8 @@ struct MeshRenderData {
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
 
+std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
+
 // 3x3の行列式を計算
 static float Determinant3x3(float matrix[3][3]) {
 	return matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
@@ -636,7 +638,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	dxCommon->Initialize(winApp);
 
 	// ★ テクスチャマネージャの初期化（ここがスライドの「呼び出し」）
-	TextureManager::GetInstance()->Initialize();  // 引数なし版の場合
+	TextureManager::GetInstance()->Initialize(dxCommon->GetDevice(), dxCommon);
+
 
 	// ===== DirectXCommon から必要なものを引っ張ってくる =====
 	HRESULT hr = S_OK;
@@ -944,90 +947,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		  {1.0f, 0.0f, 0.0f}   // translate
 	};
 
-	// Textureを呼んで転送する
-	DirectX::ScratchImage mipImages = DirectXCommon::LoadTexture("resources/uvChecker.png");
-	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource =
-		dxCommon->CreateTextureResource(metadata);
-	assert(textureResource);
-	dxCommon->UploadTextureData(textureResource, mipImages);
+	// --- テクスチャ読み込み ---
+	TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
+	TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
+	TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
 
+	// ★ それぞれの GPU ハンドルを取っておく
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleUvChecker =
+		TextureManager::GetInstance()->GetTextureHandle("resources/uvChecker.png");
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleMonsterBall =
+		TextureManager::GetInstance()->GetTextureHandle("resources/monsterBall.png");
+	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleCheckerBoard =
+		TextureManager::GetInstance()->GetTextureHandle("resources/checkerBoard.png");
 
-	// 2枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages2 = DirectXCommon::LoadTexture("resources/monsterBall.png");
-	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource2 =
-		dxCommon->CreateTextureResource(metadata2);
-	dxCommon->UploadTextureData(textureResource2, mipImages2);
-
-	// 3枚目Textureを呼んで転送する
-	DirectX::ScratchImage mipImages3 = DirectXCommon::LoadTexture("resources/checkerBoard.png");
-	const DirectX::TexMetadata& metadata3 = mipImages3.GetMetadata();
-	ComPtr<ID3D12Resource> textureResource3 =
-		dxCommon->CreateTextureResource(metadata3);
-	dxCommon->UploadTextureData(textureResource3, mipImages3);
-
-
-	// metadataを基にSRVを作成する
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-	srvDesc.Format = metadata.format; // フォーマット
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // コンポーネントマッピング
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
-	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels); // mipレベルの数
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2{};
-	srvDesc2.Format = metadata2.format; // フォーマット
-	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING; // コンポーネントマッピング
-	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
-	srvDesc2.Texture2D.MipLevels = UINT(metadata2.mipLevels); // mipレベルの数
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc3{};
-	srvDesc3.Format = metadata3.format;
-	srvDesc3.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc3.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc3.Texture2D.MipLevels = UINT(metadata3.mipLevels);
-
-	//SRVを作成するDescriptorHeapの先頭を取得する
-	UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU =
-		dxCommon->GetSRVCPUDescriptorHandle(1);   // 1番目のSRV
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU =
-		dxCommon->GetSRVGPUDescriptorHandle(1);
-	// テクスチャのSRVを作成する
-	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
-
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = dxCommon->GetSRVCPUDescriptorHandle(2);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = dxCommon->GetSRVGPUDescriptorHandle(2);
-	// テクスチャのSRVを作成する
-	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
-
-	// SRVの作成（3番目のスロット＝3番目のインデックス）
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU3 = dxCommon->GetSRVCPUDescriptorHandle(3);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU3 = dxCommon->GetSRVGPUDescriptorHandle(3);
-	device->CreateShaderResourceView(textureResource3.Get(), &srvDesc3, textureSrvHandleCPU3);
-
-	std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
-	std::vector<ComPtr<ID3D12Resource>> textureUploadBuffers; // アップロードバッファ保持用
-
-	// uvChecker.png のSRV作成後に登録
-	textureHandleMap[NormalizeTextureKey("uvChecker.png")] = textureSrvHandleGPU;
-	textureUploadBuffers.push_back(textureResource);
-
-	// monsterBall.png のSRV作成後に登録
-	textureHandleMap[NormalizeTextureKey("monsterBall.png")] = textureSrvHandleGPU2;
-	textureUploadBuffers.push_back(textureResource2);
-
-	// マップに登録（キーは .mtl に記載されてるファイル名に一致させる）
-	textureHandleMap[NormalizeTextureKey("checkerBoard.png")] = textureSrvHandleGPU3;
-	textureUploadBuffers.push_back(textureResource3);
-
+	// --- Sprite 初期化 ---
 	std::vector<Sprite> sprites;
 	sprites.resize(1);
 
-	sprites[0].Initialize(spriteCommon);
-	sprites[0].SetTexture(textureSrvHandleGPU);
-	sprites[0].SetPosition({ 0,0 });
-	sprites[0].SetSize({ 640,360 });
+	// ★ ファイルパスを渡して初期化（内部で TextureManager を使う）
+	sprites[0].Initialize(spriteCommon, "resources/uvChecker.png");
+	sprites[0].SetPosition({ 0, 0 });
+	sprites[0].SetSize({ 640, 360 });
+
 
 	// 音声データ読み込み
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
@@ -1180,7 +1121,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		materialDataA->uvTransform = MakeIdentity4x4();
 
-		D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleGPU;
+		D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleUvChecker;
 
 		if ((selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) && shouldReloadModel) {
 			const char* fileName = GetModelFileName(selectedModel);
@@ -1220,6 +1161,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				materialResources[matName] = resource;
 				materialDataList[matName] = data;
 			}
+
+			// ★ テクスチャハンドルも更新
+			textureHandleMap.clear();
+
+			for (auto& [matName, mat] : multiModel.materials) {
+				if (!mat.textureFilePath.empty()) {
+					// 正規化したキー（ファイル名のみ・小文字）を作る
+					std::string key = NormalizeTextureKey(mat.textureFilePath);
+
+					// 読み込んで GPU ハンドル取得
+					TextureManager::GetInstance()->LoadTexture(mat.textureFilePath);
+					textureHandleMap[key] =
+						TextureManager::GetInstance()->GetTextureHandle(mat.textureFilePath);
+				}
+			}
+
 
 			shouldReloadModel = false;
 		} else if (shouldReloadModel) {
@@ -1289,7 +1246,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
 			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU3);
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleCheckerBoard);
 			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 		} else if (selectedModel == ModelType::StanfordBunny) {
@@ -1297,7 +1254,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
 			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
+			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleUvChecker);
 			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 		}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
@@ -1309,7 +1266,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					texKey = NormalizeTextureKey(it->second.textureFilePath);
 				}
 
-				D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleGPU;
+				D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleUvChecker;
 				if (textureHandleMap.count(texKey)) {
 					texHandle = textureHandleMap[texKey];
 				} else {

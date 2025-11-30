@@ -1,20 +1,25 @@
 #include "engine/2d/Sprite.h"
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/DirectXCommon.h"
+#include "engine/3d/TextureManager.h"
 #include <cassert>
 
-using Microsoft::WRL::ComPtr;
 using namespace Math;
 
-void Sprite::Initialize(SpriteCommon* spriteCommon)
+void Sprite::Initialize(SpriteCommon* spriteCommon, const std::string& filePath)
 {
     assert(spriteCommon);
     spriteCommon_ = spriteCommon;
+
+    // テクスチャは TextureManager 経由
+    textureSrvHandle_ =
+        TextureManager::GetInstance()->GetTextureHandle(filePath);
 
     CreateVertexData();
     CreateMaterialData();
     CreateTransformData();
 }
+
 
 void Sprite::Update()
 {

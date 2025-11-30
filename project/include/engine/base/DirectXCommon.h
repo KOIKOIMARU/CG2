@@ -75,6 +75,9 @@ public:
 	// テクスチャ読み込み（static／外から使う便利版）
     static DirectX::ScratchImage LoadTexture(const std::string& filePath);
 
+    // 最大SRV数
+    static const uint32_t kMaxSRVCount;
+
 private:
     // --- ここから「Initialize」専用の内部関数たち ---
 
@@ -164,6 +167,5 @@ private:
     // 前フレームの基準時間
     std::chrono::steady_clock::time_point reference_;
 
-	// 最大SRV数
-    static const uint32_t kMaxSRVCount;
+
 };

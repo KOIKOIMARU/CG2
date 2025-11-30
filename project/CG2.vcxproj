@@ -169,7 +169,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\base\WinApp.cpp" />
     <ClCompile Include="src\engine\io\Input.cpp" />
     <ClCompile Include="src\engine\base\StringUtility.cpp" />
-    <ClCompile Include="TextureManager.cpp" />
+    <ClCompile Include="src\engine\3d\TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -219,7 +219,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\base\StringUtility.h" />
     <ClInclude Include="include\engine\2d\Sprite.h" />
     <ClInclude Include="include\engine\2d\SpriteCommon.h" />
-    <ClInclude Include="TextureManager.h" />
+    <ClInclude Include="include\engine\3d\TextureManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
