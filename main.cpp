@@ -107,6 +107,15 @@ struct GPUDirectionalLight {
 };
 static_assert(sizeof(GPUDirectionalLight) == 48, "DirLightCB size mismatch");
 
+struct Lightning {
+	bool active;
+	float time;
+	float life;
+
+	std::vector<Vector3> points; // ← 稲妻を構成する点のリスト
+};
+// 稲妻エフェクト用
+std::vector<Lightning> gLightningList;
 
 struct MaterialData {
 	std::string textureFilePath;
@@ -122,8 +131,45 @@ struct Player {
 	Vector3 vel{ 0,0,0 };
 	Vector3 scale{ 1,1,1 };
 	Vector3 rot{ 0,0,0 };
+	float hp = 100.0f;
+	float maxHp = 100.0f;
+
+	bool facingRight = true;
+
+	// 地上関連
 	bool onGround = false;
+
+	// 二段ジャンプ
+	bool canDoubleJump = false;
+
+	// 壁関連
+	bool onWallLeft = false;
+	bool onWallRight = false;
+	float wallSlideSpeed = -3.0f; // ゆっくり落ちる速度
+	float wallKickLock = 0.0f;
+
+	// 無敵時間
+	bool invincible = false;
+	float invincibleTime = 0.0f;
+	float invincibleDuration = 1.0f; // 1秒無敵
+	float blinkTimer = 0.0f;
+
+	// ノックバック
+	float knockbackPower = 8.0f;
+	float knockbackUp = 5.0f;
+
+	// 空中ダッシュ
+	bool isDashing = false;
+	bool canAirDash = true;
+	float dashSpeed = 18.0f;   // ← ★ 距離アップ
+	float dashTime = 0.18f;    // ← ★ 時間延長
+	float dashTimer = 0.0f;
+
+	float charge = 0.0f;          // チャージ量（0〜1）
+	float maxChargeTime = 1.0f;   // ここまで溜めると最大
+	bool isCharging = false;      // Z押しっぱ？
 } gPlayer;
+
 
 enum class GameState { Title, Playing, Clear, GameOver };
 static GameState gState = GameState::Title;
@@ -141,14 +187,78 @@ struct Enemy {
 	bool alive = true;
 } gEnemy;
 
+struct Boss {
+	Vector3 pos{ 10,1,0 };
+	Vector3 vel{ 0,0,0 };
+
+	float sizeX = 1.8f;
+	float sizeY = 1.8f;
+
+	float hp = 120.0f;
+	float maxHp = 120.0f;
+	bool  alive = true;
+
+	float walkSpeed = 1.5f;  // そのままでOK
+	float dashSpeed = 3.0f;  // OK
+
+	// ★ 距離設定をタイル単位に合わせる
+	float attackRange = 2.0f;   // 2マス以内で近接攻撃
+	float dashRange = 15.0f;  // 15マス以内でダッシュ開始候補
+	float keepDistance = 6.0f;   // 6マス以内には近づきすぎとみなして止まる
+
+	float attackCooldown = 5.0f;
+	float dashInstantSpeed = 0.0f;
+
+
+	enum class State {
+		Idle,
+		Approach,
+		Attack,
+		DashPrep,
+		Dash
+	} state = State::Idle;
+
+	bool facingRight = true;
+} gBoss;
+
+
+
 struct Bullet {
 	Vector3 pos{};
 	Vector3 vel{};
 	float   life = 2.0f; // 秒
+	float damage = 5.0f;
 	Vector3 size{ 0.3f, 0.3f, 1.0f };
 	bool alive = false;
 };
 static std::vector<Bullet> gBullets;
+
+struct ChargeEffect {
+	bool active = false;
+	float timer = 0.0f;
+	float scale = 0.5f; // 基本スケール
+	float lastSparkTime = 0.0f;
+};
+ChargeEffect gChargeFx;
+
+struct Spark {
+	float time;      // 生存時間
+	float life;      // 最大寿命
+	Vector3 p0;      // 開始点
+	Vector3 p1;      // 終了点
+	bool active;
+};
+
+std::vector<Spark> gSparks;
+
+
+struct HitEffect {
+	Vector3 pos;
+	float life = 0.2f;  // 0.2秒で消える
+	bool alive = true;
+};
+std::vector<HitEffect> gHitEffects;
+
 
 // プレイヤーの見た目/当たり判定サイズ（plane を矩形として使う）
 static Vector3 kPlayerSize{ 1.0f, 1.6f, 1.0f };
@@ -156,17 +266,58 @@ static Vector3 kPlayerSize{ 1.0f, 1.6f, 1.0f };
 // ===== タイルマップ（見た目用） =====
 static constexpr float TILE = 1.0f;
 static const int MAP_W = 20;
-static const int MAP_H = 8;
+static const int MAP_H = 12;
+
 static int gMap[MAP_H][MAP_W] = {
+
+	// ======= 天井 =======
+	{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+
+	// ======= 空間 =======
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+
+	// ======= 上段足場 =======
+	{1,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1},
+
+	// ======= 空間 =======
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+
+	// ======= 中段足場 =======
+	{1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1},
+
+	// ======= 空間 =======
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
 	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-	{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-	{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, // 一番下の床
+
+	// ======= 床 =======
+	{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
 };
+
+
+// ==== タイル衝突判定用ヘルパー ====
+
+// マップインデックスから「当たり判定アリかどうか」を返す
+inline bool IsSolidTileByIndex(int mapX, int mapY) {
+	// マップ外は「壁扱い」にしておく（外に出ないようにしたい場合）
+	if (mapX < 0 || mapX >= MAP_W || mapY < 0 || mapY >= MAP_H) {
+		return true;
+	}
+	return gMap[mapY][mapX] == 1;
+}
+
+// ワールド座標 (wx, wy) が含まれるタイルが当たり判定アリかどうか
+inline bool IsSolidAtWorld(float wx, float wy) {
+	int tileX = static_cast<int>(std::floor(wx / TILE));
+	int tileYWorld = static_cast<int>(std::floor(wy / TILE)); // 下からのタイル番号
+	int mapY = MAP_H - 1 - tileYWorld; // gMap のインデックスに変換
+
+	return IsSolidTileByIndex(tileX, mapY);
+}
+
 
 // 前方宣言（gMaterialTemplate で使うため）
 Matrix4x4 MakeIdentity4x4();
@@ -847,16 +998,69 @@ static Matrix4x4 MakeLookAtMatrixLH(const Vector3& eye, const Vector3& target, c
 }
 
 void ResetGame() {
-	gPlayer.pos = { 1.0f, 1.0f, 0.0f };   // ← y=1.0
+	// -----------------------
+	// プレイヤー初期化
+	// -----------------------
+	gPlayer.pos = { 1.0f, 1.0f, 0.0f };
 	gPlayer.vel = { 0,0,0 };
 	gPlayer.onGround = true;
+	gPlayer.canDoubleJump = true;
+	gPlayer.canAirDash = true;
+	gPlayer.isCharging = false;
+	gPlayer.charge = 0.0f;
+	gPlayer.facingRight = true;
 
-	gEnemy.pos = { 8.0f, 1.0f, 0.0f };    // ← y=1.0
-	gEnemy.size = { 1.2f, 1.2f, 1.0f };
-	gEnemy.alive = true;
+	// ★ HP とダメージ関連をリセット
+	gPlayer.hp = gPlayer.maxHp;
+	gPlayer.invincible = false;
+	gPlayer.invincibleTime = 0.0f;
 
+	// ノックバック値が固定ならそのまま
+	// gPlayer.knockbackPower = 6.0f; など
+	// gPlayer.knockbackUp = 6.0f;
+
+	// ★ 壁ジャンプや状態も安全のため初期化
+	gPlayer.onWallLeft = false;
+	gPlayer.onWallRight = false;
+	gPlayer.wallKickLock = 0.0f;
+	gPlayer.isDashing = false;
+	gPlayer.dashTimer = 0.0f;
+
+	// -----------------------
+	// ボス初期化（最重要）
+	// -----------------------
+	gBoss.pos = { 10.0f, 1.0f, 0.0f };  // マップに合う位置へ
+	gBoss.vel = { 0,0,0 };
+
+	gBoss.hp = gBoss.maxHp;
+	gBoss.alive = true;
+
+	gBoss.state = Boss::State::Idle;
+	gBoss.attackCooldown = 5.0f;
+	gBoss.facingRight = true;
+
+	// -----------------------
+	// 弾リセット
+	// -----------------------
 	gBullets.clear();
+	// -----------------------
+// チャージエフェクト初期化
+// -----------------------
+	gChargeFx.active = false;
+	gChargeFx.timer = 0.0f;
+	gChargeFx.lastSparkTime = 0.0f;
+
+	// 稲妻エフェクト
+	gLightningList.clear();
+
+	// （使っているなら）通常スパーク
+	gSparks.clear();
+
+	// プレイヤーの点滅状態
+	gPlayer.blinkTimer = 0.0f;
+
 }
+
 
 
 // ===== 矩形描画（plane.objを矩形として使う） =====
@@ -994,7 +1198,7 @@ void DrawTileMapWithModel(
 				Vector3 pos{ x * TILE + TILE * 0.5f,
 							 yWorld * TILE + TILE * 0.5f,
 							 0.0f };
-				Vector3 scale{ TILE, TILE, 0.2f };
+				Vector3 scale{ TILE, TILE, 1.0f };
 				Vector3 rot{ 0,0,0 };
 				DrawModel(cmd, blockModel, materialCB, mat, transformCB, wvp,
 					view, proj, pos, scale, rot,
@@ -1004,6 +1208,135 @@ void DrawTileMapWithModel(
 	}
 }
 
+void UpdateBoss(Boss& B, const Player& P, float dt)
+{
+	float dx = P.pos.x - B.pos.x;
+	float dist = fabsf(dx);
+	B.facingRight = (dx > 0);
+
+	// ------------------------
+	// 状態遷移（あなたのコード）
+	// ------------------------
+	if (B.attackCooldown > 0) {
+		B.attackCooldown -= dt;
+	}
+
+	switch (B.state)
+	{
+	case Boss::State::Idle:
+		if (dist < 200.0f) {
+			B.state = Boss::State::Approach;
+		}
+		break;
+
+	case Boss::State::Approach:
+	{
+		// プレイヤー方向へ常に移動（距離に関係なく止まらない）
+		B.vel.x = (B.facingRight ? B.walkSpeed : -B.walkSpeed);
+
+		// 攻撃距離に入ったら攻撃
+		if (dist < B.attackRange && B.attackCooldown <= 0) {
+			B.state = Boss::State::Attack;
+			break;
+		}
+
+		// 突進距離に入ったらダッシュへ
+		if (dist < B.dashRange && B.attackCooldown <= 0) {
+			B.state = Boss::State::DashPrep;
+			break;
+		}
+
+		break;
+	}
+
+
+	case Boss::State::Attack:
+		B.vel.x = 0;
+		B.attackCooldown = 1.2f;
+		B.state = Boss::State::Idle;
+		break;
+
+	case Boss::State::DashPrep:
+	{
+		B.vel.x = 0;
+		B.attackCooldown = 0.1f;
+
+		float dx = P.pos.x - B.pos.x;
+
+		// ★ ダッシュ前に向きを確実に更新
+		B.facingRight = (dx > 0);
+
+		// ★ プレイヤーまで一瞬で届く速度
+		B.dashInstantSpeed = fabsf(dx) * 10.0f;
+
+		B.state = Boss::State::Dash;
+		break;
+	}
+
+	case Boss::State::Dash:
+		// ① 一瞬でプレイヤーに突進する速度をセット
+		B.vel.x = (B.facingRight ? B.dashInstantSpeed : -B.dashInstantSpeed);
+
+		// ② 衝突判定（攻撃距離に入ったら終了）
+		if (dist < B.attackRange)
+		{
+			B.attackCooldown = 5.0f;
+			B.state = Boss::State::Idle;
+			B.vel.x = 0;
+			break;
+		}
+
+		// ③ 通り過ぎたら終了
+		if (dist > B.dashRange * 2.0f)
+		{
+			B.vel.x = 0;
+			B.state = Boss::State::Idle;
+			break;
+		}
+
+		break;
+	}
+
+	// ------------------------
+	// ★ 重力を追加
+	// ------------------------
+	const float gravity = -22.0f;
+	B.vel.y += gravity * dt;
+
+	// ------------------------
+	// ★ 衝突（プレイヤーの簡易版）
+	// ------------------------
+	float newY = B.pos.y + B.vel.y * dt;
+
+	// 下方向だけの判定でOK（ボスはジャンプしない）
+	float bottom = newY;
+	int tileY = (int)floor(bottom / TILE);
+
+	float left = B.pos.x;
+	float right = B.pos.x + B.sizeX;
+
+	int tileXLeft = (int)floor(left / TILE);
+	int tileXRight = (int)floor(right / TILE);
+
+	bool grounded = false;
+
+	for (int tx = tileXLeft; tx <= tileXRight; ++tx) {
+		int mapY = MAP_H - 1 - tileY;
+		if (IsSolidTileByIndex(tx, mapY)) {
+			newY = (tileY + 1) * TILE;
+			B.vel.y = 0;
+			grounded = true;
+			break;
+		}
+	}
+
+	B.pos.y = newY;
+
+	// ------------------------
+	// X更新（あなたのコード）
+	// ------------------------
+	B.pos.x += B.vel.x * dt;
+}
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1356,7 +1689,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	// 裏面を表示する
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
+	rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
 	// 三角形の中を塗りつぶす
 	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
@@ -1446,6 +1779,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	GfxModel gModelEnemy = CreateGfxModel(device, "resources", "enemy.obj");
 	GfxModel gModelBullet = CreateGfxModel(device, "resources", "bullet.obj");
 	GfxModel gModelBlock = CreateGfxModel(device, "resources", "block.obj");
+	GfxModel gModelBG = CreateGfxModel(device, "resources", "plane.obj"); // ← 背景用
+	GfxModel gModelLine = CreateGfxModel(device, "resources", "line.obj"); // ← 背景用
+
 
 
 	// リソース作成
@@ -1496,7 +1832,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorRect.bottom = kClientHeight;
 
 	// --- これを WinMain の SRV ヒープ作成後あたりに追加 ---
-	enum TexSlot : UINT { kTexPlayer = 1, kTexEnemy = 2, kTexBullet = 3, kTexBlock = 4 };
+	enum TexSlot : UINT {
+		kTexPlayer = 1,
+		kTexEnemy = 2,
+		kTexBullet = 3,
+		kTexBlock = 4,
+		kTexSky = 5,  // ★追加
+	};
+
 
 	auto LoadTextureToSlot = [&](const char* path, UINT slot,
 		ComPtr<ID3D12Resource>& outTex,
@@ -1519,13 +1862,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		};
 
 	// --- これまで使っていた uvChecker は不要なら消してOK ---
-	ComPtr<ID3D12Resource> texPlayer, texEnemy, texBullet, texBlock;
-	D3D12_GPU_DESCRIPTOR_HANDLE hPlayer{}, hEnemy{}, hBullet{}, hBlock{};
+	ComPtr<ID3D12Resource> texPlayer, texEnemy, texBullet, texBlock,texSky;
+	D3D12_GPU_DESCRIPTOR_HANDLE hPlayer{}, hEnemy{}, hBullet{}, hBlock{}, hSky{};
 
 	LoadTextureToSlot("resources/player.png", kTexPlayer, texPlayer, hPlayer);
 	LoadTextureToSlot("resources/enemy.png", kTexEnemy, texEnemy, hEnemy);
 	LoadTextureToSlot("resources/bullet.png", kTexBullet, texBullet, hBullet);
 	LoadTextureToSlot("resources/block.png", kTexBlock, texBlock, hBlock);
+	LoadTextureToSlot("resources/skydome.png", kTexSky, texSky, hSky);
+
+	int kTexWhite = 10;
+	ComPtr<ID3D12Resource> texWhite;
+	D3D12_GPU_DESCRIPTOR_HANDLE hWhite;
+	LoadTextureToSlot("resources/white.png", kTexWhite, texWhite, hWhite);
+
 
 	// モデルの種類を選択するための変数
 
@@ -1622,6 +1972,44 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// --- 固定Δtも1回だけ ---
 			const float dt = 1.0f / 60.0f;
 
+			// グローバル変数に追加
+			Vector2 cameraCenter{ 0.0f, 0.0f }; // 初期値はプレイヤー開始位置など
+
+			// --- カメラ（2D直交投影：少し“引く”）---
+			Matrix4x4 viewMatrix{}, projectionMatrix{};
+			{
+				// プレイヤー位置を追う
+				Vector3 eye = {
+					gPlayer.pos.x - 6.0f,  // 少し左から横を見る
+					gPlayer.pos.y + 2.0f,  // 上方向はほんの少し
+					-15.0f                 // 斜め後方から
+				};
+
+				Vector3 target = {
+					gPlayer.pos.x,
+					gPlayer.pos.y + 1.0f,
+					0.0f
+				};
+
+				Vector3 up = { 0,1,0 };
+
+				viewMatrix = MakeLookAtMatrixLH(eye, target, up);
+
+				// 視野角とアスペクト比
+				float fov = 0.45f; // ちょうどよい広さ
+				float aspect = float(kClientWidth) / float(kClientHeight);
+
+				projectionMatrix = MakePerspectiveFovMatrix(
+					fov,
+					aspect,
+					0.1f,   // near
+					1000.0f // far
+				);
+			}
+
+
+
+
 			// 共通ショートカット：ESCでタイトルへ
 			if (Pressed(DIK_ESCAPE)) {
 				gState = GameState::Title;
@@ -1641,50 +2029,310 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					ImGui::Begin("TitleHelp", nullptr, flags);
 					ImGui::Text("[SPACE] Start");
 					ImGui::Text("[A][D] Move");
-					ImGui::Text("[SPACE] Jump");
-					ImGui::Text("[Z] Shoot");
+					ImGui::Text("[SPACE] Jump (Wall Jump / Double Jump)");
+					ImGui::Text("[LSHIFT] Air Dash");
+					ImGui::Text("[Z] Charge Shot");
 					ImGui::End();
 				}
 
 				break;
 
 			case GameState::Playing: {
-				const float runSpeed = 6.0f;
-				const float gravity = -20.0f;
-				const float jumpVel = 9.0f;
+				// 左上に操作説明を表示
+				ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_Always);
+				ImGui::SetNextWindowBgAlpha(0.0f); // 背景透明
+				ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
+					ImGuiWindowFlags_NoInputs |
+					ImGuiWindowFlags_AlwaysAutoResize;
+				ImGui::Begin("GameHelp", nullptr, flags);
+				ImGui::Text("[A][D] Move");
+				ImGui::Text("[SPACE] Jump (Wall Jump / Double Jump)");
+				ImGui::Text("[LSHIFT] Air Dash");
+				ImGui::Text("[Z] Charge Shot");
+				ImGui::End();
+				Player& P = gPlayer;
+				Boss& B = gBoss;
 
+				const float runSpeed = 6.0f;
+				const float gravity = -22.0f;
+				const float jumpVel = 10.0f;
+
+				// ------------------------
+				// 入力
+				// ------------------------
 				float moveX = 0.0f;
 				if (Down(DIK_LEFT) || Down(DIK_A)) moveX -= 1.0f;
 				if (Down(DIK_RIGHT) || Down(DIK_D)) moveX += 1.0f;
 
+				if (moveX != 0.0f)
+					P.facingRight = (moveX > 0);
 
-				gPlayer.vel.x = moveX * runSpeed;
-
-				bool jump = Pressed(DIK_SPACE);
-				gPlayer.vel.y += gravity * dt;
-				if (jump && gPlayer.onGround) { gPlayer.vel.y = jumpVel; gPlayer.onGround = false; }
-
-				// 位置更新 & 床当たり
-				gPlayer.pos.x += gPlayer.vel.x * dt;
-				gPlayer.pos.y += gPlayer.vel.y * dt;
-
-				const float groundY = 1.0f;               // 最下段タイルの上面
-				if (gPlayer.pos.y < groundY) {
-					gPlayer.pos.y = groundY;
-					gPlayer.vel.y = 0.0f;
-					gPlayer.onGround = true;
+				if (P.wallKickLock > 0.0f) {
+					P.wallKickLock -= dt;
 				}
-				ConstrainToZ0(gPlayer.pos);
 
 
-				// 弾発射
-				if (Pressed(DIK_Z)) {
-					Bullet b;
-					b.pos = { gPlayer.pos.x + kPlayerSize.x * 0.6f, gPlayer.pos.y + kPlayerSize.y * 0.5f, 0.0f };
-					b.vel = { 12.0f, 0.0f, 0.0f };
-					b.alive = true;
-					gBullets.push_back(b);
+				// ------------------------
+				// ダッシュ中は横入力を無視
+				// ------------------------
+				if (!P.isDashing && P.wallKickLock <= 0.0f) {
+					P.vel.x = moveX * runSpeed;
 				}
+
+
+				// ------------------------
+				// 重力
+				// ------------------------
+				P.vel.y += gravity * dt;
+
+				// ------------------------
+				// 衝突判定で書き換えるので壁フラグは初期化
+				// ------------------------
+				P.onWallLeft = false;
+				P.onWallRight = false;
+
+				// ========================
+				// X方向移動（ここはあなたの元コードと同じ）
+				// ========================
+
+
+				// 壁キック中は X衝突判定をスキップ
+				bool skipWallCollision = (P.wallKickLock > 0.0f);
+
+				float newX = P.pos.x + P.vel.x * dt;
+
+				if (!skipWallCollision) {
+					float bottom = P.pos.y + 0.1f;
+					float top = P.pos.y + kPlayerSize.y - 0.1f;
+
+					if (P.vel.x > 0.0f) {
+						float right = newX + kPlayerSize.x;
+						int tileX = (int)floor(right / TILE);
+						int tileYBottom = (int)floor(bottom / TILE);
+						int tileYTop = (int)floor(top / TILE);
+
+						for (int ty = tileYBottom; ty <= tileYTop; ++ty) {
+							int mapY = MAP_H - 1 - ty;
+							if (IsSolidTileByIndex(tileX, mapY)) {
+								newX = tileX * TILE - kPlayerSize.x;
+								P.vel.x = 0.0f;
+								P.onWallRight = true;
+								break;
+							}
+						}
+					} else if (P.vel.x < 0.0f) {
+						float left = newX;
+						int tileX = (int)floor(left / TILE);
+						int tileYBottom = (int)floor(bottom / TILE);
+						int tileYTop = (int)floor(top / TILE);
+
+						for (int ty = tileYBottom; ty <= tileYTop; ++ty) {
+							int mapY = MAP_H - 1 - ty;
+							if (IsSolidTileByIndex(tileX, mapY)) {
+								newX = (tileX + 1) * TILE;
+								P.vel.x = 0.0f;
+								P.onWallLeft = true;
+								break;
+							}
+						}
+					}
+				}
+
+				P.pos.x = newX;
+
+				// ========================
+				// Y方向移動（元コード + 改良）
+				// ========================
+
+				P.onGround = false;
+
+				float newY = P.pos.y + P.vel.y * dt;
+				{
+					float left = P.pos.x + 0.1f;
+					float right = P.pos.x + kPlayerSize.x - 0.1f;
+
+					// 上昇中
+					if (P.vel.y > 0.0f) {
+						float top = newY + kPlayerSize.y;
+						int tileY = (int)floor(top / TILE);
+						int tileXLeft = (int)floor(left / TILE);
+						int tileXRight = (int)floor(right / TILE);
+
+						for (int tx = tileXLeft; tx <= tileXRight; ++tx) {
+							int mapY = MAP_H - 1 - tileY;
+							if (IsSolidTileByIndex(tx, mapY)) {
+								newY = tileY * TILE - kPlayerSize.y;
+								P.vel.y = 0.0f;
+								break;
+							}
+						}
+					} else { // 落下中
+						float bottom = newY;
+						int tileY = (int)floor(bottom / TILE);
+						int tileXLeft = (int)floor(left / TILE);
+						int tileXRight = (int)floor(right / TILE);
+
+						for (int tx = tileXLeft; tx <= tileXRight; ++tx) {
+							int mapY = MAP_H - 1 - tileY;
+							if (IsSolidTileByIndex(tx, mapY)) {
+								newY = (tileY + 1) * TILE;
+								P.vel.y = 0.0f;
+								P.onGround = true;
+								break;
+							}
+						}
+					}
+				}
+
+				// ------------------------
+				// 着地した瞬間のリセット
+				// ------------------------
+				if (P.onGround) {
+					P.canDoubleJump = true;
+					P.canAirDash = true;
+				}
+
+				// ------------------------
+				// ★ 空中ダッシュ（飛距離アップ版）
+				// ------------------------
+				if (!P.onGround && !P.isDashing && P.canAirDash && Pressed(DIK_LSHIFT)) {
+					P.isDashing = true;
+					P.dashTimer = P.dashTime;
+
+					float dir = (moveX == 0 ? (P.facingRight ? 1 : -1) : moveX);
+					P.vel.x = dir * P.dashSpeed;
+					P.vel.y = 0.0f;
+
+					P.canAirDash = false;
+				}
+
+				if (P.isDashing) {
+					P.dashTimer -= dt;
+					if (P.dashTimer <= 0) {
+						P.isDashing = false;
+					}
+				}
+
+				// ------------------------
+				// ★ ジャンプ（通常 / 壁 / 二段）
+				// ------------------------
+				// 壁ジャンプ（反対方向固定）
+				if (Pressed(DIK_SPACE)) {
+
+					if (P.onGround) {
+						P.vel.y = jumpVel;
+						P.canDoubleJump = true;
+					} else if (P.onWallLeft) {
+						// 左壁 → 必ず右へ
+						P.vel.x = +14.0f;
+						P.vel.y = +12.0f;
+
+						P.facingRight = true;
+						P.canDoubleJump = true;
+
+						P.wallKickLock = 0.15f;  // 横移動封印
+						P.onWallLeft = P.onWallRight = false;
+					} else if (P.onWallRight) {
+						// 右壁 → 必ず左へ
+						P.vel.x = -14.0f;
+						P.vel.y = +12.0f;
+
+						P.facingRight = false;
+						P.canDoubleJump = true;
+
+						P.wallKickLock = 0.15f;  // 横移動封印
+						P.onWallLeft = P.onWallRight = false;
+					} else if (P.canDoubleJump) {
+						P.vel.y = jumpVel;
+						P.canDoubleJump = false;
+					}
+				}
+
+
+				// ------------------------
+				// ★ 壁スライド処理（ジャンプ後が正しい）
+				// ------------------------
+				if (!P.onGround && (P.onWallLeft || P.onWallRight)) {
+					if (P.vel.y < P.wallSlideSpeed) {
+						P.vel.y = P.wallSlideSpeed;
+					}
+				}
+
+				// ------------------------
+				P.pos.y = newY;
+				ConstrainToZ0(P.pos);
+
+
+				// ========================
+				// ★ チャージ処理（Z押しっぱ）
+				// ========================
+				if (Down(DIK_Z)) {
+
+					// ★ 押し始めた瞬間だけ初期化
+					if (!P.isCharging) {
+						gChargeFx.timer = 0.0f;
+						gChargeFx.lastSparkTime = 0.0f;
+						gLightningList.clear();          // ← 前の稲妻を消す
+					}
+
+					P.isCharging = true;
+
+					P.charge += dt / P.maxChargeTime;
+					if (P.charge > 1.0f) P.charge = 1.0f;
+
+					gChargeFx.active = true;
+					gChargeFx.timer += dt;
+					gChargeFx.scale = 0.3f + P.charge * 1.0f;
+
+				} else {
+					// Z離した瞬間：弾発射（ここは今までどおりでOK）
+					if (P.isCharging) {
+						gChargeFx.active = false;
+						gChargeFx.timer = 0.0f;
+
+						float front = (P.facingRight ? 1.0f : -1.0f);
+						float offset = 0.6f;
+
+						float cx = P.pos.x + kPlayerSize.x * 0.5f + front * offset;
+						float cy = P.pos.y + kPlayerSize.y * 0.5f;
+
+						float power = 0.4f + P.charge * 1.6f;
+						float speed = 14.0f + P.charge * 10.0f;
+						float damage = 3.0f + P.charge * 10.0f;
+
+						Bullet b;
+						b.size = { power, power };
+						b.pos = { cx - b.size.x * 0.5f, cy - b.size.y * 0.5f, 0.0f };
+						b.vel = { front * speed, 0.0f, 0.0f };
+						b.damage = damage;
+						b.life = 1.0f + P.charge * 0.8f;
+						b.alive = true;
+						gBullets.push_back(b);
+					}
+
+					P.isCharging = false;
+					P.charge = 0.0f;
+				}
+
+
+				if (gPlayer.invincible) {
+					gPlayer.invincibleTime -= dt;
+					if (gPlayer.invincibleTime <= 0) {
+						gPlayer.invincible = false;
+					}
+				}
+
+				if (gPlayer.invincible) {
+					gPlayer.invincibleTime -= dt;
+					if (gPlayer.invincibleTime <= 0) {
+						gPlayer.invincible = false;
+					}
+				}
+
+
+				UpdateBoss(gBoss, gPlayer, dt);
+
+
 
 				// 弾更新 & 敵ヒット
 				for (auto& b : gBullets) {
@@ -1695,22 +2343,52 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					if (b.life <= 0.0f) b.alive = false;
 
 					AABB aB{ b.pos.x, b.pos.y, b.size.x, b.size.y };
-					AABB aE{ gEnemy.pos.x, gEnemy.pos.y, gEnemy.size.x, gEnemy.size.y };
-					if (gEnemy.alive && Intersects(aB, aE)) {
-						gEnemy.alive = false;
-						gState = GameState::Clear;
+					AABB aBoss{ gBoss.pos.x, gBoss.pos.y, gBoss.sizeX, gBoss.sizeY };
+
+					if (gBoss.alive && Intersects(aB, aBoss)) {
+						gBoss.hp -= b.damage;
+						b.alive = false;
+
+						if (gBoss.hp <= 0) {
+							gBoss.alive = false;
+							gState = GameState::Clear;
+						}
+					}
+
+
+				}
+
+				if (gBoss.alive && !gPlayer.invincible) {
+					AABB aP{ gPlayer.pos.x, gPlayer.pos.y, kPlayerSize.x, kPlayerSize.y };
+					AABB aB{ gBoss.pos.x,   gBoss.pos.y,   gBoss.sizeX,   gBoss.sizeY };
+
+					if (Intersects(aP, aB)) {
+
+						// --- ダメージ ---
+						gPlayer.hp -= 20.0f;  // 好きな値に変更
+
+						// --- 無敵化 ---
+						gPlayer.invincible = true;
+						gPlayer.invincibleTime = gPlayer.invincibleDuration;
+						gPlayer.blinkTimer = gPlayer.invincibleDuration;
+
+						// --- ノックバック ---
+						if (gPlayer.pos.x < gBoss.pos.x) {
+							gPlayer.vel.x = -gPlayer.knockbackPower;
+						} else {
+							gPlayer.vel.x = +gPlayer.knockbackPower;
+						}
+						gPlayer.vel.y = gPlayer.knockbackUp;
+
+						// --- 死亡 ---
+						if (gPlayer.hp <= 0) {
+							gState = GameState::GameOver;
+						}
 					}
 				}
 
-				// プレイヤー vs 敵 → GameOver
-				if (gEnemy.alive) {
-					AABB aP{ gPlayer.pos.x, gPlayer.pos.y, kPlayerSize.x, kPlayerSize.y };
-					AABB aE{ gEnemy.pos.x,  gEnemy.pos.y,  gEnemy.size.x, gEnemy.size.y };
-					if (Intersects(aP, aE)) {
-						gState = GameState::GameOver;
-					}
-				}
 			} break;
+
 
 			case GameState::Clear:
 				if (Pressed(DIK_SPACE)) { gState = GameState::Title; }
@@ -1720,23 +2398,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				if (Pressed(DIK_SPACE)) { gState = GameState::Title; }
 				break;
 			}
-
-			// グローバル変数に追加
-			Vector2 cameraCenter{ 0.0f, 0.0f }; // 初期値はプレイヤー開始位置など
-
-			// --- カメラ（2D直交投影：少し“引く”）---
-			Matrix4x4 viewMatrix{}, projectionMatrix{};
-			{
-				// 固定の表示範囲（全体が見えるように調整）
-				float vw = 20.0f;   // 横方向に表示するワールド幅
-				float vh = 12.0f;   // 縦方向に表示するワールド高さ
-
-				// 原点(0,0)を左下、右上を(vw, vh)に設定
-				viewMatrix = MakeIdentity4x4();
-				projectionMatrix = MakeOrthographicMatrix(0.0f, vh, vw, 0.0f, 0.0f, 1.0f);
-			}
-
-
 
 
 			auto ShowCenterText = [&](const char* text) {
@@ -1757,8 +2418,32 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			if (gState == GameState::Clear)      ShowCenterText("GAME CLEAR");
 			if (gState == GameState::GameOver)   ShowCenterText("GAME OVER");
 
+			Matrix4x4 uiView = MakeIdentity4x4();
 
-			// --- ここから描画フェーズで viewMatrix / projectionMatrix を使う ---
+			// 画面ピクセル用の平行投影
+			Matrix4x4 uiProj = MakeOrthographicMatrix(
+				0.0f,                    // left
+				(float)kClientHeight,    // top
+				(float)kClientWidth,     // right
+				0.0f,                    // bottom
+				0.0f, 1.0f               // near, far
+			);
+
+			// ===========================
+			// ★ プレイヤーの点滅用スカラー
+			// ===========================
+			float playerBlink = 1.0f; // 通常はそのまま
+
+			if (gPlayer.invincible) {
+				float t = gPlayer.invincibleTime;
+
+				// 0.16秒周期で ON / OFF
+				if (fmod(t, 0.16f) < 0.08f) {
+					playerBlink = 3.0f;   // 明るく
+				} else {
+					playerBlink = 0.3f;   // 暗く
+				}
+			}
 
 
 			// ImGuiの描画
@@ -1816,6 +2501,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 			if (gState == GameState::Playing) {
+
+				Vector3 bgScale{ (float)kClientWidth, (float)kClientHeight, 1.0f };
+				Vector3 bgPos{
+					kClientWidth * 0.5f,
+					kClientHeight * 0.5f,
+					1.0f          // ちょっと奥め（深度的に後ろ）
+				};
+				Vector3 bgRot{ 0,0,0 };
+
+				DrawModel(
+					commandList.Get(),
+					gModelBG,                // ← plane.obj
+					nullptr, nullptr, nullptr, nullptr,
+					uiView, uiProj,          // ← 画面用の行列
+					bgPos, bgScale, bgRot,
+					{ 1,1,1,1 },               // 色は白（テクスチャそのまま）
+					hSky,                    // ← 背景テクスチャ
+					directionalLightResource.Get()
+				);
+
 				// --- タイル ---
 				DrawTileMapWithModel(commandList.Get(), gModelBlock,
 					nullptr, nullptr, nullptr, nullptr,
@@ -1829,26 +2534,172 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					Vector3 pos{ gPlayer.pos.x + kPlayerSize.x * 0.5f, gPlayer.pos.y + kPlayerSize.y * 0.5f, 0.0f };
 					Vector3 scale{ kPlayerSize.x, kPlayerSize.y, 0.6f };
 					Vector3 rot{ 0,0,0 };
-					DrawModel(commandList.Get(), gModelPlayer,
+
+					DrawModel(
+						commandList.Get(),
+						gModelPlayer,
 						nullptr, nullptr, nullptr, nullptr,
 						viewMatrix, projectionMatrix,
 						pos, scale, rot,
-						{ 1,1,1,1 }, hPlayer, directionalLightResource.Get());
+						{ playerBlink, playerBlink, playerBlink, 1.0f }, // ←ここだけ変更
+						hPlayer,
+						directionalLightResource.Get()
+					);
 				}
 
 
-				// --- 敵 ---
-				if (gEnemy.alive) {
-					Vector3 pos{ gEnemy.pos.x + gEnemy.size.x * 0.5f, gEnemy.pos.y + gEnemy.size.y * 0.5f, 0.0f };
-					Vector3 scale{ gEnemy.size.x, gEnemy.size.y, 0.6f };
+				if (gBoss.alive) {
+					Vector3 pos{
+						gBoss.pos.x + gBoss.sizeX * 0.5f,
+						gBoss.pos.y + gBoss.sizeY * 0.5f,
+						0.0f
+					};
+					Vector3 scale{ gBoss.sizeX, gBoss.sizeY, 0.7f };
 					Vector3 rot{ 0,0,0 };
+
 					DrawModel(commandList.Get(), gModelEnemy,
 						nullptr, nullptr, nullptr, nullptr,
 						viewMatrix, projectionMatrix,
 						pos, scale, rot,
 						{ 1,1,1,1 }, hEnemy, directionalLightResource.Get());
-
 				}
+
+				// ===============================
+// ★ チャージ中（Lightning生成部）
+// ===============================
+				// --- チャージ中の「帯電してる弾」エフェクト ---
+				if (gChargeFx.active)
+				{
+					float front = (gPlayer.facingRight ? 1.0f : -1.0f);
+					float offset = 0.6f;
+
+					// 弾の中心と同じ位置
+					float cx = gPlayer.pos.x + kPlayerSize.x * 0.5f + front * offset;
+					float cy = gPlayer.pos.y + kPlayerSize.y * 0.5f;
+
+					gChargeFx.timer += dt;
+
+					// 弾のコアの大きさ（チャージに比例）
+					float coreScale = 0.3f + gPlayer.charge * 1.3f;
+
+					// ===== 稲妻（弾の周りにバチバチ）を生成 =====
+					if (gChargeFx.timer - gChargeFx.lastSparkTime > 0.01f)
+					{
+						gChargeFx.lastSparkTime = gChargeFx.timer;
+
+						// 1回につき何本出すか（チャージで増える）
+						int boltCount = 4 + (int)(gPlayer.charge * 6.0f); // 4～10本くらい
+
+						for (int i = 0; i < boltCount; i++)
+						{
+							Lightning L;
+							L.active = true;
+							L.time = 0.0f;
+							L.life = 0.10f; // すぐ消える
+
+							L.points.clear();
+
+							// ランダムな向き（0～2π）
+							float angle = ((rand() % 100) / 100.0f) * 6.28318f; // 2π
+
+							// 弾の周りの半径（チャージでちょい増える）
+							float innerR = coreScale * 0.6f;
+							float boltLen = coreScale * (0.5f + ((rand() % 100) / 100.0f)); // 弾サイズに比例
+
+							// 始点：弾の表面付近
+							Vector3 p0{
+								cx + cosf(angle) * innerR,
+								cy + sinf(angle) * innerR,
+								0.0f
+							};
+
+							// 終点：少し外側
+							Vector3 p1{
+								cx + cosf(angle) * (innerR + boltLen),
+								cy + sinf(angle) * (innerR + boltLen),
+								0.0f
+							};
+
+							L.points.push_back(p0);
+							L.points.push_back(p1);
+
+							gLightningList.push_back(L);
+						}
+					}
+
+					// ===== 稲妻の描画 =====
+					for (auto& L : gLightningList)
+					{
+						if (!L.active) continue;
+
+						L.time += dt;
+						if (L.time > L.life) {
+							L.active = false;
+							continue;
+						}
+
+						float a = 1.0f - (L.time / L.life); // フェードアウト
+
+						if (L.points.size() < 2) continue;
+
+						Vector3 p0 = L.points[0];
+						Vector3 p1 = L.points[1];
+
+						Vector3 mid{
+							(p0.x + p1.x) * 0.5f,
+							(p0.y + p1.y) * 0.5f,
+							0.0f
+						};
+
+						float dx = p1.x - p0.x;
+						float dy = p1.y - p0.y;
+						float len = sqrtf(dx * dx + dy * dy);
+						float angle = atan2f(dy, dx);
+
+						// 細長い電撃：太さもチャージで微増
+						float thickness = 0.03f + gPlayer.charge * 0.10f;
+
+						DrawModel(
+							commandList.Get(),
+							gModelLine,  // 細い板モデル
+							nullptr, nullptr, nullptr, nullptr,
+							viewMatrix, projectionMatrix,
+							mid,
+							{ len, thickness, 0.2f },
+							{ 0,0,angle },
+			{
+				0.4f + gPlayer.charge * 0.6f, // 青白く
+				0.4f + gPlayer.charge * 0.6f,
+				1.0f,
+				a
+			},
+							hWhite,
+							directionalLightResource.Get()
+						);
+					}
+
+					// ===== 中心の「光る弾」本体描画 =====
+					Vector3 chargePos{ cx, cy, 0.0f };
+					Vector3 chargeScale{
+						coreScale,
+						coreScale,
+						0.3f
+					};
+
+					DrawModel(
+						commandList.Get(),
+						gModelBullet, // 弾モデル（板でもOK）
+						nullptr, nullptr, nullptr, nullptr,
+						viewMatrix, projectionMatrix,
+						chargePos,
+						chargeScale,
+						{ 0,0, gChargeFx.timer * 8.0f }, // くるくる回す
+						{ 0.3f + gPlayer.charge, 0.3f + gPlayer.charge, 1.0f, 1.0f },
+						hWhite,
+						directionalLightResource.Get()
+					);
+				}
+
 
 				// --- 弾 ---
 				for (auto& b : gBullets) if (b.alive) {
@@ -1862,6 +2713,136 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 						{ 1,1,1,1 }, hBullet, directionalLightResource.Get());
 
 				}
+
+				// ===============================
+				// ★ プレイヤー HP バー（左上）
+				// ===============================
+				{
+					// hpRate 計算
+					float hpRateP = gPlayer.hp / gPlayer.maxHp;
+					if (hpRateP < 0.0f) hpRateP = 0.0f;
+					if (hpRateP > 1.0f) hpRateP = 1.0f;
+
+					// サイズ
+					const float fullW = 200.0f;
+					const float fullH = 20.0f;
+
+					// 左上
+					const float marginX = 20.0f;
+					const float marginY = 20.0f;
+
+					float centerX = marginX + fullW * 0.5f;
+					float centerY = marginY + fullH * 0.5f;
+
+					//------------------------
+					// ① 背景（黒）
+					//------------------------
+					{
+						Vector3 scale{ fullW, fullH, 1.0f };
+						Vector3 pos{ centerX, centerY, 0.0f };
+						DrawModel(
+							commandList.Get(),
+							gModelBlock,
+							nullptr, nullptr, nullptr, nullptr,
+							uiView, uiProj,
+							pos, scale, { 0,0,0 },
+							{ 0.0f, 0.0f, 0.0f, 1.0f },   // 黒
+							hWhite,
+							directionalLightResource.Get()
+						);
+					}
+
+					//------------------------
+					// ② 本体（緑）
+					//------------------------
+					{
+						float w = fullW * hpRateP;
+
+						Vector3 scale{ w, fullH, 1.0f };
+						Vector3 pos{
+							marginX + w * 0.5f,
+							centerY,
+							0.0f
+						};
+
+						DrawModel(
+							commandList.Get(),
+							gModelBlock,
+							nullptr, nullptr, nullptr, nullptr,
+							uiView, uiProj,
+							pos, scale, { 0,0,0 },
+							{ 0.2f, 1.0f, 0.2f, 1.0f },   // 緑
+							hWhite,
+							directionalLightResource.Get()
+						);
+					}
+				}
+
+				if (gBoss.alive)
+				{
+					// hpRate 計算
+					float hpRate = gBoss.hp / gBoss.maxHp;
+					if (hpRate < 0.0f) hpRate = 0.0f;
+					if (hpRate > 1.0f) hpRate = 1.0f;
+
+					// サイズ
+					const float fullW = 250.0f;
+					const float fullH = 20.0f;
+
+					// 右下に配置
+					const float marginX = 20.0f;
+					const float marginY = 20.0f;
+
+					// 中心座標
+					float centerX = (float)kClientWidth - (marginX + fullW * 0.5f);
+					float centerY = (float)kClientHeight - (marginY + fullH * 0.5f);
+
+					//------------------------
+					// ① 背景（黒）
+					//------------------------
+					{
+						Vector3 scale{ fullW, fullH, 1.0f };
+						Vector3 pos{ centerX, centerY, 0.0f };
+
+						DrawModel(
+							commandList.Get(),
+							gModelBlock,
+							nullptr, nullptr, nullptr, nullptr,
+							uiView, uiProj,
+							pos, scale, { 0,0,0 },
+							{ 0.0f, 0.0f, 0.0f, 1.0f },   // 黒
+							hWhite,
+							directionalLightResource.Get()
+						);
+					}
+
+					//------------------------
+					// ② 本体（赤）
+					//------------------------
+					{
+						float w = fullW * hpRate;
+
+						Vector3 scale{ w, fullH, 1.0f };
+						Vector3 pos{
+							centerX - (fullW - w) * 0.5f,
+							centerY,
+							0.0f
+						};
+
+						DrawModel(
+							commandList.Get(),
+							gModelBlock,
+							nullptr, nullptr, nullptr, nullptr,
+							uiView, uiProj,
+							pos, scale, { 0,0,0 },
+							{ 1.0f, 0.2f, 0.2f, 1.0f },   // 赤
+							hWhite,
+							directionalLightResource.Get()
+						);
+					}
+				}
+
+
 			}
 
 
