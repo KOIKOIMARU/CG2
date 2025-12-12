@@ -24,6 +24,7 @@
 #include "externals/imgui/imgui_impl_dx12.h"
 #include "externals/imgui/imgui_impl_win32.h"
 #include "externals/DirectXTex/DirectXTex.h"
+#include <random>
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 #pragma comment(lib, "d3d12.lib")
@@ -192,7 +193,24 @@ enum class BlendMode {
 
 struct InstanceData {
 	Matrix4x4 world;
+	Vector4 color;   // ← 追加
 };
+
+struct Particle {
+	Vector3 position;
+	Vector3 velocity;
+	Vector3 rotation;
+	Vector4 color;
+	float life;
+	float currentLife;
+
+};
+
+
+Particle particles[10];
+std::random_device rd;
+std::mt19937 randomEngine(rd());
+
 
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
@@ -383,6 +401,21 @@ Matrix4x4 MakeOrthographicMatrix(float left, float top, float right, float botto
 	result.m[3][3] = 1.0f;
 
 	return result;
+}
+
+Vector3 operator*(const Vector3& v, float s) {
+	return { v.x * s, v.y * s, v.z * s };
+}
+
+Vector3 operator+(const Vector3& a, const Vector3& b) {
+	return { a.x + b.x, a.y + b.y, a.z + b.z };
+}
+
+Vector3& operator+=(Vector3& a, const Vector3& b) {
+	a.x += b.x;
+	a.y += b.y;
+	a.z += b.z;
+	return a;
 }
 
 
@@ -1156,6 +1189,24 @@ static D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode) {
 	return desc;
 }
 
+Particle MakeNewParticle(std::mt19937& randomEngine)
+{
+	Particle p{};
+	std::uniform_real_distribution<float> distVel(-1.0f, 1.0f);
+	std::uniform_real_distribution<float> distCol(0.0f, 1.0f);
+
+	p.position = { 0.0f, 0.0f, 0.0f };
+	p.velocity = { distVel(randomEngine), distVel(randomEngine), 0.0f };
+
+	p.rotation = { 0.0f, 0.0f, 0.0f };   // ★追加
+
+	p.color = { distCol(randomEngine), distCol(randomEngine), distCol(randomEngine), 1.0f };
+
+	p.life = 2.0f;
+	p.currentLife = 0.0f;               // ★追加
+	return p;
+}
+
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1847,8 +1898,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		  {1.0f, 0.0f, 0.0f}   // translate
 	};
 
+	for (int i = 0; i < 10; i++) {
+		particles[i] = MakeNewParticle(randomEngine);
+	}
+
+
+
 	// Textureを呼んで転送する
-	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
+	DirectX::ScratchImage mipImages = LoadTexture("resources/circle.png");
 	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
 	ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
 	assert(textureResource);
@@ -1907,7 +1964,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	std::vector<ComPtr<ID3D12Resource>> textureUploadBuffers; // アップロードバッファ保持用
 
 	// uvChecker.png のSRV作成後に登録
-	textureHandleMap[NormalizeTextureKey("uvChecker.png")] = textureSrvHandleGPU;
+	textureHandleMap[NormalizeTextureKey("circle.png")] = textureSrvHandleGPU;
 	textureUploadBuffers.push_back(textureResource);
 
 	// monsterBall.png のSRV作成後に登録
@@ -2008,6 +2065,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	{0.0f, 0.0f, 0.0f},  // rotate
 	{0.0f, 0.0f, 0.0f},  // translate
 	};
+
+	bool useBillboard = false;
+
 
 	// 音声データ読み込み
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
@@ -2141,6 +2201,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
+			ImGui::Checkbox("Use Billboard", &useBillboard);
+
 
 			// 光の設定
 			if (ImGui::CollapsingHeader("Light")) {
@@ -2170,11 +2232,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				SoundPlayWave(xAudio2.Get(), soundData1);
 			}
 
+			float dt = 1.0f / 60.0f;
+
+
 			// WVP行列の計算
 			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
 			Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 			Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+
+			Matrix4x4 billboardMatrix = cameraMatrix;
+
+			// 平行移動を消す（超重要）
+			billboardMatrix.m[3][0] = 0.0f;
+			billboardMatrix.m[3][1] = 0.0f;
+			billboardMatrix.m[3][2] = 0.0f;
+
 
 			// 三角形A
 			Matrix4x4 worldMatrixA = MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
@@ -2272,6 +2345,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 				shouldReloadModel = false;
 			}
+			
+			if (selectedModel == ModelType::InstancingPlane) {
+				for (int i = 0; i < kInstanceCount; i++) {
+
+					particles[i].position += particles[i].velocity * dt;
+					particles[i].currentLife += dt;
+
+					float alpha = 1.0f - (particles[i].currentLife / particles[i].life);
+					particles[i].color.w = alpha;
+
+					if (particles[i].currentLife >= particles[i].life) {
+						particles[i] = MakeNewParticle(randomEngine);
+					}
+				}
+
+			}
+
 
 			// ImGuiの描画
 			ImGui::Render();
@@ -2378,6 +2468,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 				commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 			} else if (selectedModel == ModelType::InstancingPlane) {
+
+				InstanceData* map = nullptr;
+				instanceBuffer->Map(0, nullptr, reinterpret_cast<void**>(&map));
+
+				for (int i = 0; i < kInstanceCount; i++) {
+
+					Matrix4x4 S = MakeScaleMatrix({ 0.3f, 0.3f, 0.3f });
+					Matrix4x4 T = MakeTranslateMatrix(particles[i].position);
+
+					Matrix4x4 R = MakeIdentity4x4();
+
+					if (useBillboard) {
+						R = billboardMatrix;   // カメラ回転
+					}
+
+					map[i].world = Multiply(S, Multiply(R, T));
+					map[i].color = particles[i].color;
+				}
+
+
+				instanceBuffer->Unmap(0, nullptr);
 
 				// 板ポリ（plane.obj）を使用
 				commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
