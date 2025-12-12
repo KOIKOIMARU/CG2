@@ -191,6 +191,14 @@ enum class BlendMode {
 	Count,
 };
 
+enum class ParticleColorMode {
+	Manual,   // GUI操作
+	Auto      // ライフで自動変化
+};
+
+static ParticleColorMode particleColorMode = ParticleColorMode::Auto;
+
+
 struct InstanceData {
 	Matrix4x4 world;
 	Vector4 color;   // ← 追加
@@ -210,6 +218,14 @@ struct Particle {
 Particle particles[10];
 std::random_device rd;
 std::mt19937 randomEngine(rd());
+
+struct Emitter {
+	Vector3 position;   // 発生位置
+	int count;          // 1回に出す数
+	float frequency;    // 発生間隔（秒）
+	float timer;        // 経過時間
+	bool active;        // ON/OFF
+};
 
 
 // 単位行列の作成
@@ -1189,24 +1205,45 @@ static D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode) {
 	return desc;
 }
 
-Particle MakeNewParticle(std::mt19937& randomEngine)
-{
+Particle MakeNewParticle(
+	std::mt19937& randomEngine,
+	const Vector3& emitterPos
+) {
 	Particle p{};
+
+	std::uniform_real_distribution<float> distPos(-0.5f, 0.5f);
 	std::uniform_real_distribution<float> distVel(-1.0f, 1.0f);
-	std::uniform_real_distribution<float> distCol(0.0f, 1.0f);
 
-	p.position = { 0.0f, 0.0f, 0.0f };
-	p.velocity = { distVel(randomEngine), distVel(randomEngine), 0.0f };
+	// 発生位置 = Emitter位置 + ランダムオフセット
+	p.position = {
+		emitterPos.x + distPos(randomEngine),
+		emitterPos.y + distPos(randomEngine),
+		emitterPos.z
+	};
 
-	p.rotation = { 0.0f, 0.0f, 0.0f };   // ★追加
-
-	p.color = { distCol(randomEngine), distCol(randomEngine), distCol(randomEngine), 1.0f };
+	p.velocity = {
+		distVel(randomEngine),
+		distVel(randomEngine),
+		0.0f
+	};
 
 	p.life = 2.0f;
-	p.currentLife = 0.0f;               // ★追加
+	p.currentLife = 0.0f;
+
 	return p;
 }
 
+
+void Emit(
+	Emitter& emitter,
+	std::vector<Particle>& particles,
+	std::mt19937& randomEngine
+) {
+	for (int i = 0; i < emitter.count; i++) {
+		Particle p = MakeNewParticle(randomEngine, emitter.position);
+		particles.push_back(p);
+	}
+}
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -1898,10 +1935,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		  {1.0f, 0.0f, 0.0f}   // translate
 	};
 
-	for (int i = 0; i < 10; i++) {
-		particles[i] = MakeNewParticle(randomEngine);
+
+
+	static Emitter emitter{};
+	static bool emitterInitialized = false;
+	if (!emitterInitialized) {
+		emitter.position = { 0.0f, 0.0f, 0.0f };
+		emitter.count = 3;          // 1回に出す数
+		emitter.frequency = 0.05f;  // 0.05秒ごと
+		emitter.timer = 0.0f;
+		emitter.active = true;
+		emitterInitialized = true;
 	}
 
+	for (int i = 0; i < 10; i++) {
+		particles[i] = MakeNewParticle(randomEngine, emitter.position);
+
+	}
 
 
 	// Textureを呼んで転送する
@@ -2067,6 +2117,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	};
 
 	bool useBillboard = false;
+	static bool useEmitter = false;
 
 
 	// 音声データ読み込み
@@ -2192,6 +2243,46 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				}
 			}
 
+			if (ImGui::CollapsingHeader("Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+				ImGui::Checkbox("Active", &emitter.active);
+
+				ImGui::DragFloat3(
+					"Position",
+					&emitter.position.x,
+					0.01f,
+					-10.0f,
+					10.0f
+				);
+
+				ImGui::SliderInt(
+					"Count",
+					&emitter.count,
+					1,
+					50
+				);
+
+				ImGui::DragFloat(
+					"Frequency",
+					&emitter.frequency,
+					0.01f,
+					0.01f,
+					1.0f
+				);
+
+				ImGui::Text("Timer: %.2f", emitter.timer);
+			}
+
+
+			if (ImGui::CollapsingHeader("Particle")) {
+				const char* items[] = { "Manual", "Auto" };
+				int mode = (int)particleColorMode;
+				if (ImGui::Combo("Color Mode", &mode, items, IM_ARRAYSIZE(items))) {
+					particleColorMode = (ParticleColorMode)mode;
+				}
+			}
+
+
 			static BlendMode uiBlend = BlendMode::Normal;
 			if (ImGui::CollapsingHeader("Blend")) {
 				const char* items[] = { "None","Normal","Add","Subtract","Multiply","Screen" };
@@ -2202,6 +2293,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 			ImGui::Checkbox("Use Billboard", &useBillboard);
+			ImGui::Checkbox("Use Emitter (Auto Spawn)", &useEmitter);
 
 
 			// 光の設定
@@ -2233,6 +2325,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			}
 
 			float dt = 1.0f / 60.0f;
+
+			// ===== Emitter 更新（Auto Spawn）=====
+			if (selectedModel == ModelType::InstancingPlane && useEmitter && emitter.active) {
+
+				emitter.timer += dt;
+
+				while (emitter.timer >= emitter.frequency) {
+					emitter.timer -= emitter.frequency;
+
+					// 発生（particlesが配列なら「空き探し」で詰める）
+					for (int n = 0; n < emitter.count; n++) {
+
+						// いちばん寿命が尽きてる（=使ってない）枠を探して再利用
+						int idx = -1;
+						for (int i = 0; i < kInstanceCount; i++) {
+							if (particles[i].currentLife >= particles[i].life) { // 死んでる枠
+								idx = i;
+								break;
+							}
+						}
+
+						// 空きが無いなら諦める（最大数制限）
+						if (idx < 0) { break; }
+
+						Particle p = MakeNewParticle(randomEngine, emitter.position);
+						particles[idx] = p;
+
+					}
+				}
+			}
 
 
 			// WVP行列の計算
@@ -2352,14 +2474,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 					particles[i].position += particles[i].velocity * dt;
 					particles[i].currentLife += dt;
 
-					float alpha = 1.0f - (particles[i].currentLife / particles[i].life);
-					particles[i].color.w = alpha;
+					if (particleColorMode == ParticleColorMode::Auto) {
+						float t = particles[i].currentLife / particles[i].life;
+						t = std::clamp(t, 0.0f, 1.0f);
+
+						particles[i].color.w = 1.0f - t;   // αフェード
+					}
+					// Manual のときは何もしない（ImGuiの値が生きる）
 
 					if (particles[i].currentLife >= particles[i].life) {
-						particles[i] = MakeNewParticle(randomEngine);
+						particles[i] = MakeNewParticle(randomEngine, emitter.position);
 					}
-				}
 
+				}
 			}
 
 
