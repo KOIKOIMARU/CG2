@@ -69,6 +69,12 @@ struct VertexData {
 	Vector3 normal;   // 法線ベクトル
 };
 
+struct AABB {
+	Vector3 min;
+	Vector3 max;
+};
+
+
 struct Material {
 	Vector4 color;
 	int32_t lightingMode;
@@ -225,6 +231,16 @@ struct Emitter {
 	float frequency;    // 発生間隔（秒）
 	float timer;        // 経過時間
 	bool active;        // ON/OFF
+};
+
+struct AccelerationField {
+	Vector3 acceleration; // 加速度（風・重力など）
+	AABB area;             // 効果範囲
+};
+
+AccelerationField accelerationField{
+	{0.0f, -9.8f, 0.0f},   // acceleration
+	{{-1,-1,-1}, {1,1,1}} // area
 };
 
 
@@ -1244,6 +1260,14 @@ void Emit(
 		particles.push_back(p);
 	}
 }
+
+bool IsCollision(const AABB& aabb, const Vector3& p) {
+	return
+		p.x >= aabb.min.x && p.x <= aabb.max.x &&
+		p.y >= aabb.min.y && p.y <= aabb.max.y &&
+		p.z >= aabb.min.z && p.z <= aabb.max.z;
+}
+
 
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -2273,6 +2297,31 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				ImGui::Text("Timer: %.2f", emitter.timer);
 			}
 
+			ImGui::Begin("Acceleration Field");
+
+			static bool fieldEnabled = true;
+			ImGui::Checkbox("Enable Field", &fieldEnabled);
+
+			ImGui::DragFloat3(
+				"Acceleration",
+				&accelerationField.acceleration.x,
+				0.1f
+			);
+
+			ImGui::DragFloat3(
+				"Area Min",
+				&accelerationField.area.min.x,
+				0.1f
+			);
+
+			ImGui::DragFloat3(
+				"Area Max",
+				&accelerationField.area.max.x,
+				0.1f
+			);
+
+			ImGui::End();
+
 
 			if (ImGui::CollapsingHeader("Particle")) {
 				const char* items[] = { "Manual", "Auto" };
@@ -2470,6 +2519,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			
 			if (selectedModel == ModelType::InstancingPlane) {
 				for (int i = 0; i < kInstanceCount; i++) {
+
+					if (fieldEnabled &&
+						IsCollision(accelerationField.area, particles[i].position)) {
+
+						particles[i].velocity += accelerationField.acceleration * dt;
+					}
+
 
 					particles[i].position += particles[i].velocity * dt;
 					particles[i].currentLife += dt;
