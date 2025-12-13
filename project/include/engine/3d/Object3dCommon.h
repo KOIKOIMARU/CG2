@@ -13,6 +13,8 @@ public:
 
     DirectXCommon* GetDxCommon() const { return dxCommon_; } // 資料の getter
 
+    void CommonDrawSetting();
+
 private:
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
