@@ -39,41 +39,7 @@ using StringUtility::ConvertString;
 using namespace Math;
 using namespace DirectX;
 
-struct VertexData {
-	Vector4 position; // 頂点の位置
-	Vector2 texcoord; // テクスチャ座標
-	Vector3 normal;   // 法線ベクトル
-};
 
-struct Material {
-	Vector4 color;
-	int32_t lightingMode;
-	float padding[3]; // 16バイトアライメント維持
-	Matrix4x4 uvTransform;
-	std::string textureFilePath; // ← これを追加！
-};
-
-
-struct TransformationMatrix {
-	Matrix4x4 WVP;
-	Matrix4x4 World;
-};
-
-struct DirectionalLight {
-	Vector4 color;
-	Vector3 direction;
-	float intensity;
-	Vector3 padding; // ← float3 paddingで16バイト境界に揃える
-};
-
-struct MaterialData {
-	std::string textureFilePath;
-};
-
-struct ModelData {
-	std::vector<VertexData> vertices; // 頂点データ
-	MaterialData material; // マテリアルデータ
-};
 
 // チャンクヘッダ
 struct ChunkHeader {
@@ -142,43 +108,6 @@ std::vector<MeshRenderData> meshRenderList;
 
 std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
 
-// 3x3の行列式を計算
-static float Determinant3x3(float matrix[3][3]) {
-	return matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
-		matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
-		matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
-}
-
-// 4x4行列の余因子を計算
-static float Minor(const Matrix4x4& m, int row, int col) {
-	float sub[3][3];
-	int sub_i = 0;
-	for (int i = 0; i < 4; ++i) {
-		if (i == row) continue;
-		int sub_j = 0;
-		for (int j = 0; j < 4; ++j) {
-			if (j == col) continue;
-			sub[sub_i][sub_j] = m.m[i][j];
-			sub_j++;
-		}
-		sub_i++;
-	}
-
-	// 3x3行列の行列式を計算
-	return Determinant3x3(sub);
-}
-
-// 4x4行列の逆行列を計算
-Matrix4x4 Inverse(const Matrix4x4& m)
-{
-	XMMATRIX xm = XMLoadFloat4x4(reinterpret_cast<const XMFLOAT4X4*>(&m));
-	XMMATRIX inv = XMMatrixInverse(nullptr, xm);
-
-	Matrix4x4 result;
-	XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&result), inv);
-	return result;
-}
-
 // 関数の作成
 
 // 球メッシュ生成
@@ -240,268 +169,146 @@ void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	v.normal = Normalize(p);
 }
 
-MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename) {
-	MaterialData materialData;
-	std::string line; // ファイルから読んだ1行を格納するもの
-	std::ifstream file(directoryPath + "/" + filename); // ファイルを開く
-	assert(file.is_open()); // ファイルが開けなかったらエラー
-	while (std::getline(file, line)) {
-		std::string identifier;
-		std::istringstream s(line);
-		s >> identifier;
-
-		// identifierに応じた処理
-		if (identifier == "map_Kd") {
-			std::string textureFilename;
-			s >> textureFilename;
-			// 連結してファイルパスにする
-			materialData.textureFilePath = directoryPath + "/" + textureFilename;
-		}
-	}
-	return materialData;
-}
-
-std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
-    const std::string& directoryPath,
-    const std::string& filename)
-{
-    std::unordered_map<std::string, Material> materials;
-    std::ifstream file(directoryPath + "/" + filename);
-    assert(file.is_open());
-
-    std::string line;
-    std::string currentMaterialName;
-    Material currentMaterial{};
-
-    while (std::getline(file, line)) {
-        std::istringstream s(line);
-        std::string identifier;
-        s >> identifier;
-
-        if (identifier == "newmtl") {
-            // 直前のマテリアルを保存
-            if (!currentMaterialName.empty()) {
-                materials[currentMaterialName] = currentMaterial;
-            }
-
-            // 新しいマテリアル名
-            s >> currentMaterialName;
-            currentMaterial = Material(); // 初期化
-            currentMaterial.color = { 1.0f, 1.0f, 1.0f, 1.0f };
-            currentMaterial.lightingMode = 1; // Lambertなど
-            currentMaterial.uvTransform = MakeIdentity4x4();
-        }
-        else if (identifier == "Kd") {
-            // 拡散反射色
-            s >> currentMaterial.color.x >> currentMaterial.color.y >> currentMaterial.color.z;
-            currentMaterial.color.w = 1.0f;
-        }
-        else if (identifier == "map_Kd") {
-            std::string textureFilename;
-            s >> textureFilename;
-            currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
-        }
-    }
-
-    // 最後のマテリアルを保存
-    if (!currentMaterialName.empty()) {
-        materials[currentMaterialName] = currentMaterial;
-    }
-
-    return materials;
-}
+//std::unordered_map<std::string, Material> LoadMaterialTemplateMulti(
+//    const std::string& directoryPath,
+//    const std::string& filename)
+//{
+//    std::unordered_map<std::string, Material> materials;
+//    std::ifstream file(directoryPath + "/" + filename);
+//    assert(file.is_open());
+//
+//    std::string line;
+//    std::string currentMaterialName;
+//    Material currentMaterial{};
+//
+//    while (std::getline(file, line)) {
+//        std::istringstream s(line);
+//        std::string identifier;
+//        s >> identifier;
+//
+//        if (identifier == "newmtl") {
+//            // 直前のマテリアルを保存
+//            if (!currentMaterialName.empty()) {
+//                materials[currentMaterialName] = currentMaterial;
+//            }
+//
+//            // 新しいマテリアル名
+//            s >> currentMaterialName;
+//            currentMaterial = Material(); // 初期化
+//            currentMaterial.color = { 1.0f, 1.0f, 1.0f, 1.0f };
+//            currentMaterial.lightingMode = 1; // Lambertなど
+//            currentMaterial.uvTransform = MakeIdentity4x4();
+//        }
+//        else if (identifier == "Kd") {
+//            // 拡散反射色
+//            s >> currentMaterial.color.x >> currentMaterial.color.y >> currentMaterial.color.z;
+//            currentMaterial.color.w = 1.0f;
+//        }
+//        else if (identifier == "map_Kd") {
+//            std::string textureFilename;
+//            s >> textureFilename;
+//            currentMaterial.textureFilePath = directoryPath + "/" + textureFilename;
+//        }
+//    }
+//
+//    // 最後のマテリアルを保存
+//    if (!currentMaterialName.empty()) {
+//        materials[currentMaterialName] = currentMaterial;
+//    }
+//
+//    return materials;
+//}
 
 
 
-ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename) {
-	ModelData modelData;
-
-	std::vector<Vector4> positions;
-	std::vector<Vector2> texcoords;
-	std::vector<Vector3> normals;
-
-	std::ifstream file(directoryPath + "/" + filename);
-	assert(file.is_open());
-
-	std::string line;
-
-	while (std::getline(file, line)) {
-		std::istringstream s(line);
-		std::string id;
-		s >> id;
-
-		if (id == "v") {
-			Vector4 p{};
-			s >> p.x >> p.y >> p.z;
-			p.w = 1.0f;
-
-			// 右手系 → 左手系（Z反転）
-			p.z *= -1.0f;
-			positions.push_back(p);
-
-		} else if (id == "vt") {
-			Vector2 uv{};
-			s >> uv.x >> uv.y;
-			// DirectX 用に V 反転
-			uv.y = 1.0f - uv.y;
-			texcoords.push_back(uv);
-
-		} else if (id == "vn") {
-			Vector3 n{};
-			s >> n.x >> n.y >> n.z;
-			// 法線も Z 反転
-			n.z *= -1.0f;
-			normals.push_back(n);
-
-		} else if (id == "f") {
-			// f v/t/n  or v//n or v/t のどれでもOKにする
-			VertexData tri[3]{};
-
-			for (int i = 0; i < 3; ++i) {
-				std::string vStr;
-				s >> vStr;
-				if (vStr.empty()) continue;
-
-				int idxV = 0, idxT = 0, idxN = 0;
-
-				std::istringstream vs(vStr);
-				std::string token;
-
-				// v
-				if (std::getline(vs, token, '/') && !token.empty()) {
-					idxV = std::stoi(token);
-				}
-				// t（無い場合は空文字）
-				if (std::getline(vs, token, '/') && !token.empty()) {
-					idxT = std::stoi(token);
-				}
-				// n（無い場合は空文字）
-				if (std::getline(vs, token, '/') && !token.empty()) {
-					idxN = std::stoi(token);
-				}
-
-				// 安全に参照
-				Vector4 pos{ 0,0,0,1 };
-				if (idxV > 0 && idxV <= (int)positions.size()) {
-					pos = positions[idxV - 1];
-				}
-
-				Vector2 uv{ 0.0f, 0.0f };
-				if (idxT > 0 && idxT <= (int)texcoords.size()) {
-					uv = texcoords[idxT - 1];
-				}
-
-				Vector3 nor{ 0.0f, 1.0f, 0.0f };
-				if (idxN > 0 && idxN <= (int)normals.size()) {
-					nor = normals[idxN - 1];
-				}
-
-				tri[i] = { pos, uv, nor };
-			}
-
-			// 左手系なので順番そのままでOK（OBJは通常CCW）
-			modelData.vertices.push_back(tri[0]);
-			modelData.vertices.push_back(tri[1]);
-			modelData.vertices.push_back(tri[2]);
-
-		} else if (id == "mtllib") {
-			std::string mtl;
-			s >> mtl;
-			modelData.material = LoadMaterialTemplate(directoryPath, mtl);
-		}
-	}
-
-	return modelData;
-}
-
-MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::string& filename) {
-	MultiModelData modelData;
-
-	std::vector<Vector4> positions;
-	std::vector<Vector2> texcoords;
-	std::vector<Vector3> normals;
-
-	std::ifstream file(directoryPath + "/" + filename);
-	assert(file.is_open());
-
-	std::string line;
-	std::string currentMeshName = "default";
-	std::string currentMaterialName = "default"; // 現在のマテリアル名
-	Mesh currentMesh;
-
-	while (std::getline(file, line)) {
-		std::istringstream s(line);
-		std::string identifier;
-		s >> identifier;
-
-		if (identifier == "v") {
-			Vector4 pos; s >> pos.x >> pos.y >> pos.z;
-			pos.z *= -1.0f;
-			pos.w = 1.0f;
-			positions.push_back(pos);
-		} else if (identifier == "vt") {
-			Vector2 uv; s >> uv.x >> uv.y;
-			texcoords.push_back(uv);
-		} else if (identifier == "vn") {
-			Vector3 n; s >> n.x >> n.y >> n.z;
-			n.z *= -1.0f;
-			normals.push_back(n);
-		} else if (identifier == "f") {
-			VertexData tri[3];
-			for (int i = 0; i < 3; ++i) {
-				std::string vtx;
-				s >> vtx;
-				std::istringstream vs(vtx);
-				uint32_t idx[3] = {};
-				for (int j = 0; j < 3; ++j) {
-					std::string val;
-					std::getline(vs, val, '/');
-					idx[j] = std::stoi(val);
-				}
-				tri[i] = {
-					positions[idx[0] - 1],
-					{ texcoords[idx[1] - 1].x, 1.0f - texcoords[idx[1] - 1].y },
-					normals[idx[2] - 1]
-				};
-			}
-			currentMesh.vertices.push_back(tri[2]);
-			currentMesh.vertices.push_back(tri[1]);
-			currentMesh.vertices.push_back(tri[0]);
-		} else if (identifier == "g" || identifier == "o") {
-			if (!currentMesh.vertices.empty()) {
-				currentMesh.name = currentMeshName;
-				currentMesh.materialName = currentMaterialName; // 使用中のマテリアル名を記録
-				modelData.meshes.push_back(currentMesh);
-				currentMesh = Mesh(); // 次のMeshへ
-			}
-			s >> currentMeshName;
-		} else if (identifier == "mtllib") {
-			std::string mtl;
-			s >> mtl;
-			modelData.materials = LoadMaterialTemplateMulti(directoryPath, mtl); // マテリアル複数対応版
-		} else if (identifier == "usemtl") {
-			// 現在のマテリアル名を更新
-			s >> currentMaterialName;
-
-			// もし現メッシュに頂点があれば、いったん保存してマテリアル名を更新
-			if (!currentMesh.vertices.empty()) {
-				currentMesh.name = currentMeshName;
-				currentMesh.materialName = currentMaterialName;
-				modelData.meshes.push_back(currentMesh);
-				currentMesh = Mesh(); // 次のメッシュへ切り替え
-			}
-		}
-
-	}
-
-	if (!currentMesh.vertices.empty()) {
-		currentMesh.name = currentMeshName;
-		currentMesh.materialName = currentMaterialName;
-		modelData.meshes.push_back(currentMesh);
-	}
-
-	return modelData;
-}
+//MultiModelData LoadObjFileMulti(const std::string& directoryPath, const std::string& filename) {
+//	MultiModelData modelData;
+//
+//	std::vector<Vector4> positions;
+//	std::vector<Vector2> texcoords;
+//	std::vector<Vector3> normals;
+//
+//	std::ifstream file(directoryPath + "/" + filename);
+//	assert(file.is_open());
+//
+//	std::string line;
+//	std::string currentMeshName = "default";
+//	std::string currentMaterialName = "default"; // 現在のマテリアル名
+//	Mesh currentMesh;
+//
+//	while (std::getline(file, line)) {
+//		std::istringstream s(line);
+//		std::string identifier;
+//		s >> identifier;
+//
+//		if (identifier == "v") {
+//			Vector4 pos; s >> pos.x >> pos.y >> pos.z;
+//			pos.z *= -1.0f;
+//			pos.w = 1.0f;
+//			positions.push_back(pos);
+//		} else if (identifier == "vt") {
+//			Vector2 uv; s >> uv.x >> uv.y;
+//			texcoords.push_back(uv);
+//		} else if (identifier == "vn") {
+//			Vector3 n; s >> n.x >> n.y >> n.z;
+//			n.z *= -1.0f;
+//			normals.push_back(n);
+//		} else if (identifier == "f") {
+//			VertexData tri[3];
+//			for (int i = 0; i < 3; ++i) {
+//				std::string vtx;
+//				s >> vtx;
+//				std::istringstream vs(vtx);
+//				uint32_t idx[3] = {};
+//				for (int j = 0; j < 3; ++j) {
+//					std::string val;
+//					std::getline(vs, val, '/');
+//					idx[j] = std::stoi(val);
+//				}
+//				tri[i] = {
+//					positions[idx[0] - 1],
+//					{ texcoords[idx[1] - 1].x, 1.0f - texcoords[idx[1] - 1].y },
+//					normals[idx[2] - 1]
+//				};
+//			}
+//			currentMesh.vertices.push_back(tri[2]);
+//			currentMesh.vertices.push_back(tri[1]);
+//			currentMesh.vertices.push_back(tri[0]);
+//		} else if (identifier == "g" || identifier == "o") {
+//			if (!currentMesh.vertices.empty()) {
+//				currentMesh.name = currentMeshName;
+//				currentMesh.materialName = currentMaterialName; // 使用中のマテリアル名を記録
+//				modelData.meshes.push_back(currentMesh);
+//				currentMesh = Mesh(); // 次のMeshへ
+//			}
+//			s >> currentMeshName;
+//		} else if (identifier == "mtllib") {
+//			std::string mtl;
+//			s >> mtl;
+//			modelData.materials = LoadMaterialTemplateMulti(directoryPath, mtl); // マテリアル複数対応版
+//		} else if (identifier == "usemtl") {
+//			// 現在のマテリアル名を更新
+//			s >> currentMaterialName;
+//
+//			// もし現メッシュに頂点があれば、いったん保存してマテリアル名を更新
+//			if (!currentMesh.vertices.empty()) {
+//				currentMesh.name = currentMeshName;
+//				currentMesh.materialName = currentMaterialName;
+//				modelData.meshes.push_back(currentMesh);
+//				currentMesh = Mesh(); // 次のメッシュへ切り替え
+//			}
+//		}
+//
+//	}
+//
+//	if (!currentMesh.vertices.empty()) {
+//		currentMesh.name = currentMeshName;
+//		currentMesh.materialName = currentMaterialName;
+//		modelData.meshes.push_back(currentMesh);
+//	}
+//
+//	return modelData;
+//}
 
 
 // 音声データの読み込み
@@ -701,13 +508,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	spriteCommon = new SpriteCommon;
 	spriteCommon->Initialize(dxCommon); // ★ 修正
 
-	// モデルデータの読み込み
-	ModelData modelData = LoadObjFile("resources", "plane.obj");
-
-	// リソース作成
-	ComPtr<ID3D12Resource> vertexResource =
-		dxCommon->CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
-
 
 	// リソース作成
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
@@ -741,78 +541,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indexBufferViewSphere.SizeInBytes = UINT(sizeof(uint32_t) * sphereIndices.size());
 	indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
 
-
-	// 頂点バッファビューを作成
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView{};
-	// リソースの先頭のアドレスから使う
-	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();
-	// 使用するリソースサイズは頂点3つ分のサイズ
-	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
-	// 1つの頂点のサイズ
-	vertexBufferView.StrideInBytes = sizeof(VertexData);
-
-
-	// 頂点リソースにデータを書き込む
-	VertexData* vertexData = nullptr;
-	// 書き込むためのアドレスを取得
-	vertexResource->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
-	std::memcpy(vertexData, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
-	vertexResource->Unmap(0, nullptr); // 書き込み完了したのでアンマップ
-
-	// GPU上のマテリアルリソース一覧（マテリアル名で識別）
-	std::unordered_map<std::string, ComPtr<ID3D12Resource>> materialResources;
-
-	// CPU側のマテリアルポインタ一覧（ImGuiで編集用）
-	std::unordered_map<std::string, Material*> materialDataList;
-
-	// A マテリアル（32バイト必要）
-	ComPtr<ID3D12Resource> materialResourceA = dxCommon->CreateBufferResource(sizeof(Material));
-	Material* materialDataA = nullptr;
-	materialResourceA->Map(0, nullptr, reinterpret_cast<void**>(&materialDataA));
-	*materialDataA = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
-
-	// A WVP（128バイト必要）
-	ComPtr<ID3D12Resource> wvpResourceA = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
-	TransformationMatrix* wvpDataA = nullptr;
-	wvpResourceA->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataA));
-	wvpDataA->WVP = MakeIdentity4x4();
-	wvpDataA->World = MakeIdentity4x4();
-
-	// B マテリアル
-	ComPtr<ID3D12Resource> materialResourceB = dxCommon->CreateBufferResource(sizeof(Material));
-	Material* materialDataB = nullptr;
-	materialResourceB->Map(0, nullptr, reinterpret_cast<void**>(&materialDataB));
-	*materialDataB = { {1.0f, 1.0f, 1.0f, 1.0f},1 }; // Lighting有効
-
-	// B WVP
-	ComPtr<ID3D12Resource> wvpResourceB = dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
-	TransformationMatrix* wvpDataB = nullptr;
-	wvpResourceB->Map(0, nullptr, reinterpret_cast<void**>(&wvpDataB));
-	wvpDataB->WVP = MakeIdentity4x4();
-	wvpDataB->World = MakeIdentity4x4();
-
-	// 平行光源のバッファを作成し、CPU 側から書き込めるようにする
-	ComPtr<ID3D12Resource> directionalLightResource = dxCommon->CreateBufferResource(sizeof(DirectionalLight));
-	DirectionalLight* directionalLightData = nullptr;
-	directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
-
-	// 初期データ設定
-	directionalLightData->color = { 1.0f, 1.0f, 1.0f };
-	Vector3 dir = Normalize({ -1.0f, -1.0f, 0.0f });
-	directionalLightData->direction = { dir.x, dir.y, dir.z };
-	directionalLightData->intensity = 3.0f;
-
-	// Transform変数を作る
-	static Transform transformA = {
-		  {0.5f, 0.5f, 0.5f},  // scale
-		  {0.0f, 0.0f, 0.0f},  // rotate
-		  {0.0f, 0.0f, 0.0f}   // translate
-	};
-	static Transform transformB = {
-		  {0.5f, 0.5f, 0.5f},  // scale
-		  {0.0f, 0.0f, 0.0f},  // rotate
-		  {1.0f, 0.0f, 0.0f}   // translate
-	};
 
 	// --- テクスチャ読み込み ---
 	TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
@@ -864,71 +592,71 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		ImGui::SetItemDefaultFocus(); // ←追加！
 		
-		// モデル切り替え
-		const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
-		int currentItem = static_cast<int>(selectedModel);
-		if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
-			selectedModel = static_cast<ModelType>(currentItem);
-			shouldReloadModel = true; // フラグを立てる
-		}
+		//// モデル切り替え
+		//const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
+		//int currentItem = static_cast<int>(selectedModel);
+		//if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
+		//	selectedModel = static_cast<ModelType>(currentItem);
+		//	shouldReloadModel = true; // フラグを立てる
+		//}
 
-		// モデルAのTransform
-		if (ImGui::CollapsingHeader("Object A", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
-			ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
-			ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
-			// Material
-			if (ImGui::TreeNode("Material")) {
-				ImGui::ColorEdit3("Color", &materialDataA->color.x);
-				ImGui::TreePop();
-			}
-		}
-		if (selectedModel == ModelType::Plane) {
-			if (ImGui::CollapsingHeader("Object B", ImGuiTreeNodeFlags_DefaultOpen)) {
-				ImGui::DragFloat3("Translate##B", &transformB.translate.x, 0.01f, -2.0f, 2.0f);
-				ImGui::DragFloat3("Rotate##B", &transformB.rotate.x, 0.01f, -6.0f, 6.0f);
-				ImGui::DragFloat3("Scale##B", &transformB.scale.x, 0.01f, 0.0f, 4.0f);
+		//// モデルAのTransform
+		//if (ImGui::CollapsingHeader("Object A", ImGuiTreeNodeFlags_DefaultOpen)) {
+		//	ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
+		//	ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
+		//	ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
+		//	// Material
+		//	if (ImGui::TreeNode("Material")) {
+		//		ImGui::ColorEdit3("Color", &materialDataA->color.x);
+		//		ImGui::TreePop();
+		//	}
+		//}
+		//if (selectedModel == ModelType::Plane) {
+		//	if (ImGui::CollapsingHeader("Object B", ImGuiTreeNodeFlags_DefaultOpen)) {
+		//		ImGui::DragFloat3("Translate##B", &transformB.translate.x, 0.01f, -2.0f, 2.0f);
+		//		ImGui::DragFloat3("Rotate##B", &transformB.rotate.x, 0.01f, -6.0f, 6.0f);
+		//		ImGui::DragFloat3("Scale##B", &transformB.scale.x, 0.01f, 0.0f, 4.0f);
 
-				if (ImGui::TreeNode("MaterialB")) {
-					ImGui::ColorEdit3("ColorB", &materialDataB->color.x);
-					ImGui::TreePop();
-				}
-			}
-		}
-		if (selectedModel == ModelType::MultiMaterial) {
-			if (ImGui::CollapsingHeader("MultiMaterial", ImGuiTreeNodeFlags_DefaultOpen)) {
-				int i = 0;
-				for (auto& [name, matData] : materialDataList) {
-					if (ImGui::TreeNode((name + "##" + std::to_string(i)).c_str())) {
-						ImGui::DragFloat2(("UV Translate##" + name).c_str(), &matData->uvTransform.m[3][0], 0.01f, -10.0f, 10.0f);
-						ImGui::DragFloat2(("UV Scale##" + name).c_str(), &matData->uvTransform.m[0][0], 0.01f, -10.0f, 10.0f);
-						ImGui::SliderAngle(("UV Rotate##" + name).c_str(), &matData->uvTransform.m[0][1]); // 任意（角度表現）
-						ImGui::ColorEdit3(("Color##" + name).c_str(), &matData->color.x);
-						int lighting = static_cast<int>(matData->lightingMode);
-						if (ImGui::Combo(("Lighting##" + name).c_str(), &lighting, "None\0Lambert\0HalfLambert\0")) {
-							matData->lightingMode = lighting;
-						}
-					}
-					++i;
-				}
-			}
-		}
+		//		if (ImGui::TreeNode("MaterialB")) {
+		//			ImGui::ColorEdit3("ColorB", &materialDataB->color.x);
+		//			ImGui::TreePop();
+		//		}
+		//	}
+		//}
+		//if (selectedModel == ModelType::MultiMaterial) {
+		//	if (ImGui::CollapsingHeader("MultiMaterial", ImGuiTreeNodeFlags_DefaultOpen)) {
+		//		int i = 0;
+		//		for (auto& [name, matData] : materialDataList) {
+		//			if (ImGui::TreeNode((name + "##" + std::to_string(i)).c_str())) {
+		//				ImGui::DragFloat2(("UV Translate##" + name).c_str(), &matData->uvTransform.m[3][0], 0.01f, -10.0f, 10.0f);
+		//				ImGui::DragFloat2(("UV Scale##" + name).c_str(), &matData->uvTransform.m[0][0], 0.01f, -10.0f, 10.0f);
+		//				ImGui::SliderAngle(("UV Rotate##" + name).c_str(), &matData->uvTransform.m[0][1]); // 任意（角度表現）
+		//				ImGui::ColorEdit3(("Color##" + name).c_str(), &matData->color.x);
+		//				int lighting = static_cast<int>(matData->lightingMode);
+		//				if (ImGui::Combo(("Lighting##" + name).c_str(), &lighting, "None\0Lambert\0HalfLambert\0")) {
+		//					matData->lightingMode = lighting;
+		//				}
+		//			}
+		//			++i;
+		//		}
+		//	}
+		//}
 
-		// 光の設定
-		if (ImGui::CollapsingHeader("Light")) {
-			const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
-			int currentLighting = static_cast<int>(lightingMode);
-			if (ImGui::Combo("Lighting Mode", &currentLighting, lightingItems, IM_ARRAYSIZE(lightingItems))) {
-				lightingMode = static_cast<LightingMode>(currentLighting);
-			}
-			static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
-			if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
-				Vector3 normDir = Normalize(lightDirEdit);
-				directionalLightData->direction = { normDir.x, normDir.y, normDir.z };
-			}
-			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
-			ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
-		}
+		//// 光の設定
+		//if (ImGui::CollapsingHeader("Light")) {
+		//	const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
+		//	int currentLighting = static_cast<int>(lightingMode);
+		//	if (ImGui::Combo("Lighting Mode", &currentLighting, lightingItems, IM_ARRAYSIZE(lightingItems))) {
+		//		lightingMode = static_cast<LightingMode>(currentLighting);
+		//	}
+		//	static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
+		//	if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
+		//		Vector3 normDir = Normalize(lightDirEdit);
+		//		directionalLightData->direction = { normDir.x, normDir.y, normDir.z };
+		//	}
+		//	ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
+		//	ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
+		//}
 
 		ImGui::End();
 
@@ -940,129 +668,84 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			SoundPlayWave(xAudio2.Get(), soundData1);
 		}
 
-
-		// WVP行列の計算
-		Transform cameraTransform = {
-			{ 1.0f, 1.0f, 1.0f },   // scale
-			{ 0.0f, 0.0f, 0.0f },   // rotate
-			{ 0.0f, 0.0f, -5.0f }   // translate（カメラ位置）
-		};
-
-		// カメラ行列 → View行列
-		Matrix4x4 cameraMatrix = MakeAffineMatrix(
-			cameraTransform.scale,
-			cameraTransform.rotate,
-			cameraTransform.translate);
-		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-
-		// 射影行列
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(
-			0.45f,
-			float(WinApp::kClientWidth) / float(WinApp::kClientHeight),
-			0.1f,
-			100.0f);
-
-		// View と Projection を先に掛けておく
-		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-
-		// -------- 三角形A --------
-		Matrix4x4 worldMatrixA =
-			MakeAffineMatrix(transformA.scale, transformA.rotate, transformA.translate);
-
-		Matrix4x4 worldViewProjectionMatrixA =
-			Multiply(worldMatrixA, viewProjectionMatrix);
-
-		wvpDataA->WVP = Transpose(worldViewProjectionMatrixA);
-		wvpDataA->World = Transpose(worldMatrixA);
-
-		// -------- 三角形B（Sphere 用など）---------
-		Matrix4x4 worldMatrixB =
-			MakeAffineMatrix(transformB.scale, transformB.rotate, transformB.translate);
-
-		Matrix4x4 worldViewProjectionMatrixB =
-			Multiply(worldMatrixB, viewProjectionMatrix);
-
-		wvpDataB->WVP = worldViewProjectionMatrixB;
-		wvpDataB->World = worldMatrixB;
-
-
-		materialDataA->uvTransform = MakeIdentity4x4();
+		// 更新
+		object3d->Update();
 
 		D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleUvChecker;
 
-		if ((selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) && shouldReloadModel) {
-			const char* fileName = GetModelFileName(selectedModel);
-			multiModel = LoadObjFileMulti("resources", fileName);
+		//if ((selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) && shouldReloadModel) {
+		//	const char* fileName = GetModelFileName(selectedModel);
+		//	multiModel = LoadObjFileMulti("resources", fileName);
 
-			meshRenderList.clear();
-			for (const auto& mesh : multiModel.meshes) {
-				MeshRenderData renderData;
-				renderData.vertexCount = mesh.vertices.size();
-				renderData.name = mesh.name;
-				renderData.materialName = mesh.materialName;
+		//	meshRenderList.clear();
+		//	for (const auto& mesh : multiModel.meshes) {
+		//		MeshRenderData renderData;
+		//		renderData.vertexCount = mesh.vertices.size();
+		//		renderData.name = mesh.name;
+		//		renderData.materialName = mesh.materialName;
 
-				renderData.vertexResource = dxCommon->CreateBufferResource( sizeof(VertexData) * mesh.vertices.size());
-				void* vtxPtr = nullptr;
-				renderData.vertexResource->Map(0, nullptr, &vtxPtr);
-				memcpy(vtxPtr, mesh.vertices.data(), sizeof(VertexData) * mesh.vertices.size());
-				renderData.vertexResource->Unmap(0, nullptr);
+		//		renderData.vertexResource = dxCommon->CreateBufferResource( sizeof(VertexData) * mesh.vertices.size());
+		//		void* vtxPtr = nullptr;
+		//		renderData.vertexResource->Map(0, nullptr, &vtxPtr);
+		//		memcpy(vtxPtr, mesh.vertices.data(), sizeof(VertexData) * mesh.vertices.size());
+		//		renderData.vertexResource->Unmap(0, nullptr);
 
-				renderData.vbView.BufferLocation = renderData.vertexResource->GetGPUVirtualAddress();
-				renderData.vbView.SizeInBytes = UINT(sizeof(VertexData) * mesh.vertices.size());
-				renderData.vbView.StrideInBytes = sizeof(VertexData);
+		//		renderData.vbView.BufferLocation = renderData.vertexResource->GetGPUVirtualAddress();
+		//		renderData.vbView.SizeInBytes = UINT(sizeof(VertexData) * mesh.vertices.size());
+		//		renderData.vbView.StrideInBytes = sizeof(VertexData);
 
-				meshRenderList.push_back(renderData);
-			}
+		//		meshRenderList.push_back(renderData);
+		//	}
 
-			// ✅ マルチマテリアル初期化（ここを追加）
-			materialResources.clear();
-			materialDataList.clear();
+		//	// ✅ マルチマテリアル初期化（ここを追加）
+		//	materialResources.clear();
+		//	materialDataList.clear();
 
-			for (auto& [matName, mat] : multiModel.materials) {
-				ComPtr<ID3D12Resource> resource = dxCommon->CreateBufferResource( sizeof(Material));
-				Material* data = nullptr;
-				resource->Map(0, nullptr, reinterpret_cast<void**>(&data));
-				*data = mat;
-				data->lightingMode = static_cast<int32_t>(lightingMode);
+		//	for (auto& [matName, mat] : multiModel.materials) {
+		//		ComPtr<ID3D12Resource> resource = dxCommon->CreateBufferResource( sizeof(Material));
+		//		Material* data = nullptr;
+		//		resource->Map(0, nullptr, reinterpret_cast<void**>(&data));
+		//		*data = mat;
+		//		data->lightingMode = static_cast<int32_t>(lightingMode);
 
-				materialResources[matName] = resource;
-				materialDataList[matName] = data;
-			}
+		//		materialResources[matName] = resource;
+		//		materialDataList[matName] = data;
+		//	}
 
-			// ★ テクスチャハンドルも更新
-			textureHandleMap.clear();
+		//	// ★ テクスチャハンドルも更新
+		//	textureHandleMap.clear();
 
-			for (auto& [matName, mat] : multiModel.materials) {
-				if (!mat.textureFilePath.empty()) {
-					// 正規化したキー（ファイル名のみ・小文字）を作る
-					std::string key = NormalizeTextureKey(mat.textureFilePath);
+		//	for (auto& [matName, mat] : multiModel.materials) {
+		//		if (!mat.textureFilePath.empty()) {
+		//			// 正規化したキー（ファイル名のみ・小文字）を作る
+		//			std::string key = NormalizeTextureKey(mat.textureFilePath);
 
-					// 読み込んで GPU ハンドル取得
-					TextureManager::GetInstance()->LoadTexture(mat.textureFilePath);
-					textureHandleMap[key] =
-						TextureManager::GetInstance()->GetTextureHandle(mat.textureFilePath);
-				}
-			}
+		//			// 読み込んで GPU ハンドル取得
+		//			TextureManager::GetInstance()->LoadTexture(mat.textureFilePath);
+		//			textureHandleMap[key] =
+		//				TextureManager::GetInstance()->GetTextureHandle(mat.textureFilePath);
+		//		}
+		//	}
 
 
-			shouldReloadModel = false;
-		} else if (shouldReloadModel) {
-			// 通常モデル（Plane, Sphereなど）
-			const char* fileName = GetModelFileName(selectedModel);
-			modelData = LoadObjFile("resources", fileName);
+		//	shouldReloadModel = false;
+		//} else if (shouldReloadModel) {
+		//	// 通常モデル（Plane, Sphereなど）
+		//	const char* fileName = GetModelFileName(selectedModel);
+		//	modelData = LoadObjFile("resources", fileName);
 
-			vertexResource = dxCommon->CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
-			void* vertexPtr = nullptr;
-			vertexResource->Map(0, nullptr, &vertexPtr);
-			memcpy(vertexPtr, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
-			vertexResource->Unmap(0, nullptr);
+		//	vertexResource = dxCommon->CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
+		//	void* vertexPtr = nullptr;
+		//	vertexResource->Map(0, nullptr, &vertexPtr);
+		//	memcpy(vertexPtr, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
+		//	vertexResource->Unmap(0, nullptr);
 
-			vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();
-			vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
-			vertexBufferView.StrideInBytes = sizeof(VertexData);
+		//	vertexBufferView.BufferLocation = vertexResource->GetGPUVirtualAddress();
+		//	vertexBufferView.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
+		//	vertexBufferView.StrideInBytes = sizeof(VertexData);
 
-			shouldReloadModel = false;
-		}
+		//	shouldReloadModel = false;
+		//}
 
 		for (auto& s : sprites) s.Update();
 
@@ -1074,84 +757,86 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		object3dCommon->CommonDrawSetting();
 
-		// 球の描画
-		if (selectedModel == ModelType::Plane) {
-			// Plane
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		object3d->Draw();
 
-			// Sphere
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
-			commandList->IASetIndexBuffer(&indexBufferViewSphere);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+		//// 球の描画
+		//if (selectedModel == ModelType::Plane) {
+		//	// Plane
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
 
-		} else if (selectedModel == ModelType::Sphere) {
-			// Sphereモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
-			commandList->IASetIndexBuffer(&indexBufferViewSphere);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
-		} else if (selectedModel == ModelType::UtahTeapot) {
-			// Teapotモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleCheckerBoard);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-		} else if (selectedModel == ModelType::StanfordBunny) {
-			// Stanford Bunnyモデルを描画
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleUvChecker);
-			commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-			commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
-		}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
-			for (const auto& mesh : meshRenderList) {
-				// テクスチャキーを取得
-				std::string texKey = "none";
-				auto it = multiModel.materials.find(mesh.materialName);
-				if (it != multiModel.materials.end()) {
-					texKey = NormalizeTextureKey(it->second.textureFilePath);
-				}
+		//	// Sphere
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+		//	commandList->IASetIndexBuffer(&indexBufferViewSphere);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
 
-				D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleUvChecker;
-				if (textureHandleMap.count(texKey)) {
-					texHandle = textureHandleMap[texKey];
-				} else {
-					Log("❌ textureHandleMapに " + texKey + " が存在しない");
-				}
+		//} else if (selectedModel == ModelType::Sphere) {
+		//	// Sphereモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
+		//	commandList->IASetIndexBuffer(&indexBufferViewSphere);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, selectedTextureHandle);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
+		//} else if (selectedModel == ModelType::UtahTeapot) {
+		//	// Teapotモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleCheckerBoard);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		//} else if (selectedModel == ModelType::StanfordBunny) {
+		//	// Stanford Bunnyモデルを描画
+		//	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		//	commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleUvChecker);
+		//	commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//	commandList->DrawInstanced(static_cast<UINT>(modelData.vertices.size()), 1, 0, 0);
+		//}if (selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) {
+		//	for (const auto& mesh : meshRenderList) {
+		//		// テクスチャキーを取得
+		//		std::string texKey = "none";
+		//		auto it = multiModel.materials.find(mesh.materialName);
+		//		if (it != multiModel.materials.end()) {
+		//			texKey = NormalizeTextureKey(it->second.textureFilePath);
+		//		}
 
-				// 描画
-				commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
+		//		D3D12_GPU_DESCRIPTOR_HANDLE texHandle = textureSrvHandleUvChecker;
+		//		if (textureHandleMap.count(texKey)) {
+		//			texHandle = textureHandleMap[texKey];
+		//		} else {
+		//			Log("❌ textureHandleMapに " + texKey + " が存在しない");
+		//		}
 
-				// ImGuiで操作されたマテリアルバッファを使う
-				auto matResourceIt = materialResources.find(mesh.materialName);
-				if (matResourceIt != materialResources.end()) {
-					commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
-				} else {
-					commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
-				}
+		//		// 描画
+		//		commandList->IASetVertexBuffers(0, 1, &mesh.vbView);
 
-				commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
-				commandList->SetGraphicsRootDescriptorTable(2, texHandle);
-				commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+		//		// ImGuiで操作されたマテリアルバッファを使う
+		//		auto matResourceIt = materialResources.find(mesh.materialName);
+		//		if (matResourceIt != materialResources.end()) {
+		//			commandList->SetGraphicsRootConstantBufferView(0, matResourceIt->second->GetGPUVirtualAddress());
+		//		} else {
+		//			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress());
+		//		}
 
-				commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
-			}
-		}
+		//		commandList->SetGraphicsRootConstantBufferView(1, wvpResourceA->GetGPUVirtualAddress());
+		//		commandList->SetGraphicsRootDescriptorTable(2, texHandle);
+		//		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+
+		//		commandList->DrawInstanced(static_cast<UINT>(mesh.vertexCount), 1, 0, 0);
+		//	}
+		//}
 
 		// ===== スプライト描画 =====
 		spriteCommon->CommonDrawSetting();

@@ -183,4 +183,7 @@ namespace Math {
         return result;
     }
 
+    // 4x4行列の逆行列
+    Matrix4x4 Inverse(const Matrix4x4& m);
+
 } // namespace Math
