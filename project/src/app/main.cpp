@@ -25,6 +25,7 @@
 #include "engine/3d/Object3d.h"
 #include "engine/3d/ModelCommon.h"
 #include "engine/3d/Model.h"
+#include "engine/3d/ModelManager.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -455,19 +456,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Object3dCommon* object3dCommon = new Object3dCommon();
 	object3dCommon->Initialize(dxCommon);
 
+
+	ModelManager::GetInstance()->Initialize(dxCommon);
+	ModelManager::GetInstance()->LoadModel("plane.obj");
+
 	Object3d* object3d = new Object3d();
 	object3d->Initialize(object3dCommon);
+	object3d->SetModel("plane.obj");
 
-	// ★ モデル共通部（追加）
-	ModelCommon* modelCommon = new ModelCommon();
-	modelCommon->Initialize(dxCommon);
 
-	// ★ Model 作成（追加）
-	Model* model = new Model();
-	model->Initialize(modelCommon, "resources", "plane.obj");
-
-	// ★ Object3d にセット
-	object3d->SetModel(model);
 
 	// ===== DirectXCommon から必要なものを引っ張ってくる =====
 	HRESULT hr = S_OK;
@@ -873,8 +870,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	delete object3d;          // シーン依存
 	delete object3dCommon;    // 基盤システム
 	delete input;
-	delete model;
-	delete modelCommon;
+	ModelManager::GetInstance()->Finalize();
 
 	// windowsAPIの終了
 	winApp->Finalize();

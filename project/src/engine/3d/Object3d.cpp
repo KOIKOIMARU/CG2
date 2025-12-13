@@ -7,7 +7,9 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/3d/Object3dCommon.h"
 #include "engine/3d/Object3d.h"
-#include "engine/3d/Model.h"
+#include "engine/3d/Model.h"]
+#include "engine/3d/ModelManager.h"
+
 
 
 void Object3d::Initialize(Object3dCommon* object3dCommon)
@@ -143,4 +145,9 @@ Vector3 Object3d::GetRotate() const {
 
 Vector3 Object3d::GetTranslate() const {
     return transform_.translate;
+}
+
+void Object3d::SetModel(const std::string& filePath)
+{
+    model_ = ModelManager::GetInstance()->FindModel(filePath);
 }

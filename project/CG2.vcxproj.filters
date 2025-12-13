@@ -135,6 +135,9 @@
     <ClCompile Include="src\engine\3d\Model.cpp">
       <Filter>src\engine\3d</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\3d\ModelManager.cpp">
+      <Filter>src\engine\3d</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -219,6 +222,9 @@
       <Filter>include\engine\3d</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\3d\Model.h">
+      <Filter>include\engine\3d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\3d\ModelManager.h">
       <Filter>include\engine\3d</Filter>
     </ClInclude>
   </ItemGroup>

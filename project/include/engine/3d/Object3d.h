@@ -40,6 +40,8 @@ public:
     Vector3 GetRotate() const;
     Vector3 GetTranslate() const;
 
+    void SetModel(const std::string& filePath);
+
 
 private:
     void CreateTransformationMatrix();

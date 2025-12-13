@@ -148,6 +148,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\3d\ModelManager.cpp" />
     <ClCompile Include="src\engine\3d\Model.cpp" />
     <ClCompile Include="src\engine\3d\ModelCommon.cpp" />
     <ClCompile Include="src\engine\3d\Object3d.cpp" />
@@ -223,6 +224,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\Object3dCommon.h" />
     <ClInclude Include="include\engine\3d\Model.h" />
     <ClInclude Include="include\engine\3d\ModelCommon.h" />
+    <ClInclude Include="include\engine\3d\ModelManager.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />
     <ClInclude Include="include\engine\2d\Sprite.h" />
