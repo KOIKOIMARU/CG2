@@ -21,6 +21,8 @@
 #include "engine/2d/Sprite.h"
 #include "engine/base/Math.h"
 #include "engine/3d/TextureManager.h"
+#include "engine/3d/Object3dCommon.h"
+#include "engine/3d/Object3d.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -640,6 +642,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ★ テクスチャマネージャの初期化（ここがスライドの「呼び出し」）
 	TextureManager::GetInstance()->Initialize(dxCommon->GetDevice(), dxCommon);
 
+	// 3Dオブジェクト共通部
+	Object3dCommon* object3dCommon = nullptr;
+	object3dCommon = new Object3dCommon();
+	object3dCommon->Initialize();
+
 
 	// ===== DirectXCommon から必要なものを引っ張ってくる =====
 	HRESULT hr = S_OK;
@@ -836,6 +843,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// モデルデータの読み込み
 	ModelData modelData = LoadObjFile("resources", "plane.obj");
+
+	// 3Dオブジェクト生成
+	Object3d* object3d = nullptr;
+	object3d = new Object3d();
+	object3d->Initialize();
 
 	// リソース作成
 	ComPtr<ID3D12Resource> vertexResource =
@@ -1313,6 +1325,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 解放処理
 	xAudio2.Reset(); // XAudio2の解放
 	CloseHandle(fenceEvent);
+	delete object3d;          // シーン依存
+	delete object3dCommon;    // 基盤システム
 	delete input;
 
 	// windowsAPIの終了
