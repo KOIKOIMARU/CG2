@@ -1,6 +1,4 @@
 #pragma once
-#include <string>
-#include <vector>
 #include <wrl.h>
 #include <d3d12.h>
 
@@ -9,29 +7,8 @@
 using Microsoft::WRL::ComPtr;
 using namespace Math;
 
-struct VertexData {
-    Vector4 position;
-    Vector2 texcoord;
-    Vector3 normal;
-};
-
-struct MaterialData {
-    std::string textureFilePath;
-    uint32_t textureIndex = 0; // ★追加
-};
-
-struct ModelData {
-    std::vector<VertexData> vertices;
-    MaterialData material;
-};
-
-struct Material {
-    Vector4 color;
-    int32_t lightingMode;
-    float padding[3];
-    Matrix4x4 uvTransform;
-};
-
+class Object3dCommon;
+class Model;
 
 struct TransformationMatrix {
     Matrix4x4 WVP;
@@ -42,12 +19,8 @@ struct DirectionalLight {
     Vector4 color;
     Vector3 direction;
     float intensity;
-    Vector3 padding; // ← float3 paddingで16バイト境界に揃える
+    Vector3 padding;
 };
-
-
-
-class Object3dCommon;
 
 class Object3d {
 public:
@@ -55,40 +28,33 @@ public:
     void Update();
     void Draw();
 
-    static MaterialData LoadMaterialTemplate(
-        const std::string& directoryPath,
-        const std::string& filename);
+    void SetModel(Model* model) { model_ = model; }
 
-    static ModelData LoadObjFile(
-        const std::string& directoryPath,
-        const std::string& filename);
+    // setter
+    void SetScale(const Vector3& scale);
+    void SetRotate(const Vector3& rotate);
+    void SetTranslate(const Vector3& translate);
+
+    // getter
+    Vector3 GetScale() const;
+    Vector3 GetRotate() const;
+    Vector3 GetTranslate() const;
+
 
 private:
-    void CreateVertexBuffer(); // ★資料にあるやつ
-
-    void CreateMaterial();
-
     void CreateTransformationMatrix();
-
     void CreateDirectionalLight();
 
 private:
     Object3dCommon* object3dCommon_ = nullptr;
+    Model* model_ = nullptr;
 
-    ModelData modelData_;
-
-    ComPtr<ID3D12Resource> vertexResource_;
-    D3D12_VERTEX_BUFFER_VIEW vertexBufferView_{};
-
-    ComPtr<ID3D12Resource> materialResource_;
-    Material* materialData_ = nullptr;
+    Transform transform_;
+    Transform cameraTransform_;
 
     ComPtr<ID3D12Resource> transformationMatrixResource_;
     TransformationMatrix* transformationMatrixData_ = nullptr;
 
     ComPtr<ID3D12Resource> directionalLightResource_;
     DirectionalLight* directionalLightData_ = nullptr;
-
-    Transform transform_;
-    Transform cameraTransform_;
 };

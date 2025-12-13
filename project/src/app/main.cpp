@@ -23,6 +23,8 @@
 #include "engine/3d/TextureManager.h"
 #include "engine/3d/Object3dCommon.h"
 #include "engine/3d/Object3d.h"
+#include "engine/3d/ModelCommon.h"
+#include "engine/3d/Model.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -456,7 +458,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Object3d* object3d = new Object3d();
 	object3d->Initialize(object3dCommon);
 
+	// ★ モデル共通部（追加）
+	ModelCommon* modelCommon = new ModelCommon();
+	modelCommon->Initialize(dxCommon);
 
+	// ★ Model 作成（追加）
+	Model* model = new Model();
+	model->Initialize(modelCommon, "resources", "plane.obj");
+
+	// ★ Object3d にセット
+	object3d->SetModel(model);
 
 	// ===== DirectXCommon から必要なものを引っ張ってくる =====
 	HRESULT hr = S_OK;
@@ -862,6 +873,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	delete object3d;          // シーン依存
 	delete object3dCommon;    // 基盤システム
 	delete input;
+	delete model;
+	delete modelCommon;
 
 	// windowsAPIの終了
 	winApp->Finalize();
