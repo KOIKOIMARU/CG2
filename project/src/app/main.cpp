@@ -643,9 +643,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	TextureManager::GetInstance()->Initialize(dxCommon->GetDevice(), dxCommon);
 
 	// 3Dオブジェクト共通部
-	Object3dCommon* object3dCommon = nullptr;
-	object3dCommon = new Object3dCommon();
-	object3dCommon->Initialize();
+	Object3dCommon* object3dCommon = new Object3dCommon();
+	object3dCommon->Initialize(dxCommon);
+
 
 
 	// ===== DirectXCommon から必要なものを引っ張ってくる =====
