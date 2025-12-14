@@ -7,8 +7,9 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/3d/Object3dCommon.h"
 #include "engine/3d/Object3d.h"
-#include "engine/3d/Model.h"]
+#include "engine/3d/Model.h"
 #include "engine/3d/ModelManager.h"
+#include "engine/3d/Camera.h"
 
 
 
@@ -16,6 +17,8 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
 {
     assert(object3dCommon);
     object3dCommon_ = object3dCommon;
+
+    camera_ = object3dCommon_->GetDefaultCamera();
 
     CreateTransformationMatrix();
     CreateDirectionalLight();
@@ -26,47 +29,36 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
         {0.0f, 0.0f, 0.0f}
     };
 
-    cameraTransform_ = {
-        {1.0f, 1.0f, 1.0f},
-        {0.3f, 0.0f, 0.0f},
-        {0.0f, 4.0f, -10.0f}
-    };
 }
 
 
 void Object3d::Update() {
-    // World行列
+    // ワールド行列
     Matrix4x4 worldMatrix = MakeAffineMatrix(
         transform_.scale,
         transform_.rotate,
         transform_.translate
     );
 
-    // Camera行列 → View行列
-    Matrix4x4 cameraMatrix = MakeAffineMatrix(
-        cameraTransform_.scale,
-        cameraTransform_.rotate,
-        cameraTransform_.translate
-    );
-    Matrix4x4 viewMatrix = Inverse(cameraMatrix);
+    Matrix4x4 worldViewProjectionMatrix;
 
-    // Projection行列
-    Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(
-        0.45f,
-        float(WinApp::kClientWidth) / float(WinApp::kClientHeight),
-        0.1f,
-        100.0f
-    );
+    if (camera_) {
+        const Matrix4x4& viewProjection =
+            camera_->GetViewProjectionMatrix();
+        worldViewProjectionMatrix =
+            Multiply(worldMatrix, viewProjection);
+    } else {
+        // カメラが無くても一応描画可能
+        worldViewProjectionMatrix = worldMatrix;
+    }
 
-    Matrix4x4 viewProjectionMatrix =
-        Multiply(viewMatrix, projectionMatrix);
-
-    // CBへ書き込み
     transformationMatrixData_->WVP =
-        Transpose(Multiply(worldMatrix, viewProjectionMatrix));
+        Transpose(worldViewProjectionMatrix);
     transformationMatrixData_->World =
         Transpose(worldMatrix);
 }
+
+
 
 void Object3d::Draw()
 {

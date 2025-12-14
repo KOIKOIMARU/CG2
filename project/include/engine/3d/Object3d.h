@@ -9,6 +9,7 @@ using namespace Math;
 
 class Object3dCommon;
 class Model;
+class Camera;
 
 struct TransformationMatrix {
     Matrix4x4 WVP;
@@ -42,6 +43,8 @@ public:
 
     void SetModel(const std::string& filePath);
 
+    void SetCamera(Camera* camera) { this->camera_ = camera; }
+
 
 private:
     void CreateTransformationMatrix();
@@ -52,7 +55,7 @@ private:
     Model* model_ = nullptr;
 
     Transform transform_;
-    Transform cameraTransform_;
+    Camera* camera_ = nullptr;
 
     ComPtr<ID3D12Resource> transformationMatrixResource_;
     TransformationMatrix* transformationMatrixData_ = nullptr;

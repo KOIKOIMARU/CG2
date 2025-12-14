@@ -26,6 +26,7 @@
 #include "engine/3d/ModelCommon.h"
 #include "engine/3d/Model.h"
 #include "engine/3d/ModelManager.h"
+#include "engine/3d/Camera.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -456,6 +457,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Object3dCommon* object3dCommon = new Object3dCommon();
 	object3dCommon->Initialize(dxCommon);
 
+	// ===== カメラ生成 =====
+	Camera* camera = new Camera();
+	camera->SetRotate({ 0.3f, 0.0f, 0.0f });
+	camera->SetTranslate({ 0.0f, 1.0f, -5.0f });
+
+	// ★ デフォルトカメラに設定（資料どおり）
+	object3dCommon->SetDefaultCamera(camera);
+
 
 	ModelManager::GetInstance()->Initialize(dxCommon);
 	ModelManager::GetInstance()->LoadModel("plane.obj");
@@ -677,6 +686,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 
 		// 更新
+		camera->Update();
+
 		object3d->Update();
 
 		D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleUvChecker;
@@ -870,6 +881,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	delete object3d;          // シーン依存
 	delete object3dCommon;    // 基盤システム
 	delete input;
+	delete camera;
+
 	ModelManager::GetInstance()->Finalize();
 
 	// windowsAPIの終了

@@ -148,6 +148,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\3d\Camera.cpp" />
     <ClCompile Include="src\engine\3d\ModelManager.cpp" />
     <ClCompile Include="src\engine\3d\Model.cpp" />
     <ClCompile Include="src\engine\3d\ModelCommon.cpp" />
@@ -205,6 +206,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\engine\3d\Camera.h" />
     <ClInclude Include="include\engine\base\D3DResourceLeakChecker.h" />
     <ClInclude Include="include\engine\base\DirectXCommon.h" />
     <ClInclude Include="externals\imgui\imconfig.h" />

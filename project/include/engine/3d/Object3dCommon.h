@@ -3,6 +3,7 @@
 #include <d3d12.h>
 
 class DirectXCommon;
+class Camera;
 
 class Object3dCommon {
 public:
@@ -15,6 +16,14 @@ public:
 
     void CommonDrawSetting();
 
+    void SetDefaultCamera(Camera* camera) {
+        defaultCamera_ = camera;
+    }
+
+    Camera* GetDefaultCamera() const {
+        return defaultCamera_;
+    }
+
 private:
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
@@ -24,4 +33,6 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+
+    Camera* defaultCamera_ = nullptr;
 };
