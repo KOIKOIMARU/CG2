@@ -667,9 +667,10 @@ DirectXCommon::CreateTextureResource(const DirectX::TexMetadata& metadata)
 
     // 利用するヒープの設定
     D3D12_HEAP_PROPERTIES heapProperties{};
-    heapProperties.Type = D3D12_HEAP_TYPE_CUSTOM;
-    heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
-    heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
 
     // Resource の生成
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
@@ -808,28 +809,24 @@ void DirectXCommon::InitializeFixFPS() {
 
 void DirectXCommon::UpdateFixFPS() {
 
-    // 1/60秒の時間（約16666マイクロ秒）
     const std::chrono::microseconds kMinTime(uint64_t(1000000.0f / 60.0f));
-
-    // 1/60秒よりわずかに短いチェック用（65fps相当）
     const std::chrono::microseconds kMinCheckTime(uint64_t(1000000.0f / 65.0f));
 
-    // 現在時間
     auto now = std::chrono::steady_clock::now();
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(now - reference_);
 
-    // 前回からの経過時間
-    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - reference_);
+    // ★ ここが追加（秒に変換）
+    deltaTime_ = elapsed.count() / 1000000.0f;
 
-    // 1/60秒経っていない場合 → 1マイクロ秒ずつ寝る
     if (elapsed < kMinTime) {
         while (std::chrono::steady_clock::now() - reference_ < kMinTime) {
-            // 1マイクロ秒寝る
             std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
+
+        // ★ FPS固定時は deltaTime を 1/60 に揃える
+        deltaTime_ = 1.0f / 60.0f;
     }
 
-    // 現在時間を次回用に記録
     reference_ = std::chrono::steady_clock::now();
 }
-
-

@@ -110,8 +110,8 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
 
     // ===== PSO =====
     {
-        auto vs = dxCommon_->CompileShader(L"resources/shaders/Particle.VS.hlsl", L"vs_6_0");
-        auto ps = dxCommon_->CompileShader(L"resources/shaders/Particle.PS.hlsl", L"ps_6_0");
+        auto vs = dxCommon_->CompileShader(L"shaders/Particle.VS.hlsl", L"vs_6_0");
+        auto ps = dxCommon_->CompileShader(L"shaders/Particle.PS.hlsl", L"ps_6_0");
 
         D3D12_INPUT_ELEMENT_DESC inputLayout[] =
         {
@@ -135,7 +135,7 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
         psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM; // dxCommonと合わせる
+        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // dxCommonと合わせる
         psoDesc.SampleDesc.Count = 1;
         psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
@@ -212,55 +212,29 @@ void ParticleManager::Update(
 
 void ParticleManager::Draw()
 {
-    ID3D12GraphicsCommandList* commandList =
-        dxCommon_->GetCommandList();
+    auto* cl = dxCommon_->GetCommandList();
 
-    // ① ルートシグネチャ
-    commandList->SetGraphicsRootSignature(
-        rootSignature_.Get()
-    );
 
-    // ② PSO
-    commandList->SetPipelineState(
-        pipelineState_.Get()
-    );
 
-    // ③ プリミティブトポロジー
-    commandList->IASetPrimitiveTopology(
-        D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
-    );
+    cl->SetGraphicsRootSignature(rootSignature_.Get());
+    cl->SetPipelineState(pipelineState_.Get());
+    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cl->IASetVertexBuffers(0, 1, &vbView_);
 
-    // ④ VBV（板ポリ1枚）
-    commandList->IASetVertexBuffers(
-        0, 1, &vbView_
-    );
+    // ★ 必ず初期化
+    if (!particleGroups_.empty()) {
+        auto& g = particleGroups_.begin()->second;
+        srvManager_->SetGraphicsRootDescriptorTable(0, g.textureSrvIndex);
+        srvManager_->SetGraphicsRootDescriptorTable(1, g.instanceSrvIndex);
+    }
 
-    // ⑤ グループごとに描画
     for (auto& [name, group] : particleGroups_) {
+        if (group.instanceCount == 0) continue;
 
-        if (group.instanceCount == 0) {
-            continue;
-        }
+        srvManager_->SetGraphicsRootDescriptorTable(0, group.textureSrvIndex);
+        srvManager_->SetGraphicsRootDescriptorTable(1, group.instanceSrvIndex);
 
-        // ⑥ テクスチャ SRV
-        srvManager_->SetGraphicsRootDescriptorTable(
-            0, // RootParameterIndex（例）
-            group.textureSrvIndex
-        );
-
-        // ⑦ インスタンシング SRV
-        srvManager_->SetGraphicsRootDescriptorTable(
-            1, // RootParameterIndex（例）
-            group.instanceSrvIndex
-        );
-
-        // ⑧ DrawCall（Instancing）
-        commandList->DrawInstanced(
-            6,                     // 板ポリの頂点数（2三角形）
-            group.instanceCount,   // インスタンス数
-            0,
-            0
-        );
+        cl->DrawInstanced(6, group.instanceCount, 0, 0);
     }
 }
 

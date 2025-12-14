@@ -28,6 +28,8 @@
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Camera.h"
 #include "engine/base/SrvManager.h"
+#include "engine/3d/ParticleManager.h"
+#include "engine/3d/ParticleEmitter.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -590,6 +592,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	sprites[0].SetPosition({ 0, 0 });
 	sprites[0].SetSize({ 640, 360 });
 
+	ParticleManager::GetInstance()->Initialize(dxCommon, srvManager);
+
+	ParticleManager::GetInstance()->CreateParticleGroup(
+		"test",
+		"resources/circle.png" // ← 実在するテクスチャ
+	);
+
+
+	// エミッタ生成
+	ParticleEmitter emitter(
+		"test",                 // グループ名
+		{ 0.0f, 2.0f, 0.0f },      // 位置
+		0.1f,                   // 発生間隔
+		5                        // 1回の発生数
+	);
+
+
 
 	// 音声データ読み込み
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
@@ -695,9 +714,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 
 		// 更新
+		float deltaTime = dxCommon->GetDeltaTime(); // or 自前計算
+
 		camera->Update();
 
 		object3d->Update();
+
+		emitter.Update(deltaTime);
+
+		ParticleManager::GetInstance()->Update(
+			camera->GetViewMatrix(),
+			camera->GetProjectionMatrix()
+		);
+
 
 		//D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleUvChecker;
 
@@ -785,9 +814,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		srvManager->PreDraw();
 
+		ParticleManager::GetInstance()->Draw();
+
+
 		object3dCommon->CommonDrawSetting();
 
 		object3d->Draw();
+
 
 
 		// ===== スプライト描画 =====
@@ -897,6 +930,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	delete camera;
 	ModelManager::GetInstance()->Finalize();
 	TextureManager::GetInstance()->Destroy();
+	ParticleManager::GetInstance()->Finalize();
+
 
 	delete srvManager;
 	delete dxCommon;

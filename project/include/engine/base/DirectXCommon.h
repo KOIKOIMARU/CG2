@@ -76,6 +76,8 @@ public:
         UINT numDescriptors,
         bool shaderVisible);
 
+    float GetDeltaTime() const { return deltaTime_; }
+
 
 private:
     // --- ここから「Initialize」専用の内部関数たち ---
@@ -160,5 +162,5 @@ private:
 
     UINT currentBackBufferIndex_ = 0;
 
-
+    float deltaTime_ = 1.0f / 60.0f;
 };
