@@ -6,12 +6,13 @@
 class Model;
 class ModelCommon;
 class DirectXCommon;
+class SrvManager;
 
 class ModelManager {
 public:
     static ModelManager* GetInstance();
 
-    void Initialize(DirectXCommon* dxCommon);
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
     void Finalize();
 
     // モデル読み込み

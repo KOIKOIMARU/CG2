@@ -4,10 +4,14 @@
 
 class DirectXCommon;
 class Camera;
+class SrvManager;
 
 class Object3dCommon {
 public:
-    void Initialize(DirectXCommon* dxCommon);
+    void Initialize(
+        DirectXCommon* dxCommon,
+        SrvManager* srvManager
+    );
 
     ID3D12RootSignature* GetRootSignature() const { return rootSignature_.Get(); }
     ID3D12PipelineState* GetPipelineState() const { return pipelineState_.Get(); }
@@ -30,6 +34,8 @@ private:
 
 private:
     DirectXCommon* dxCommon_ = nullptr; // 借り物。絶対 delete しない
+    SrvManager* srvManager_ = nullptr;
+
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;

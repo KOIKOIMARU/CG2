@@ -2,6 +2,7 @@
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/3d/TextureManager.h"
+#include "engine/base/SrvManager.h"
 #include <cassert>
 
 using namespace Math;
@@ -11,44 +12,55 @@ void Sprite::Initialize(SpriteCommon* spriteCommon, const std::string& filePath)
     assert(spriteCommon);
     spriteCommon_ = spriteCommon;
 
+    // ★ これを必ず最初に
+    textureFilePath_ = filePath;
+
     // 1) 必ず読み込む
-    TextureManager::GetInstance()->LoadTexture(filePath);
-
-    // 2) インデックスを取得
-    textureIndex_ = TextureManager::GetInstance()->GetTextureIndexByFilePath(filePath);
-
-    // 3) SRVハンドルを取得
-    textureSrvHandle_ = TextureManager::GetInstance()->GetSrvHandleGPU(textureIndex_);
+    TextureManager::GetInstance()->LoadTexture(textureFilePath_);
 
     CreateVertexData();
     CreateMaterialData();
     CreateTransformData();
 
-    // 4) メタデータからスプライトサイズを決める（スライド）
     AdjustTextureSize();
 }
 
+
 void Sprite::Update()
 {
-    // アンカーポイント反映
+    // ===== 頂点バッファを Map =====
+    vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData_));
+
     float left = 0.0f - anchorPoint_.x;
     float right = 1.0f - anchorPoint_.x;
     float top = 0.0f - anchorPoint_.y;
     float bottom = 1.0f - anchorPoint_.y;
+
+    vertexData_[0].position = { left,  bottom, 0.0f, 1.0f };
+    vertexData_[1].position = { left,  top,    0.0f, 1.0f };
+    vertexData_[2].position = { right, bottom, 0.0f, 1.0f };
+    vertexData_[3].position = { right, top,    0.0f, 1.0f };
+
+    // UV
+    float u0 = 0.0f, v0 = 0.0f;
+    float u1 = 1.0f, v1 = 1.0f;
+    if (isFlipX_) std::swap(u0, u1);
+    if (isFlipY_) std::swap(v0, v1);
+
+    vertexData_[0].texcoord = { u0, v1 };
+    vertexData_[1].texcoord = { u0, v0 };
+    vertexData_[2].texcoord = { u1, v1 };
+    vertexData_[3].texcoord = { u1, v0 };
+
+    // ===== Unmap =====
+    vertexResource_->Unmap(0, nullptr);
+    vertexData_ = nullptr;
 
     // UV 変換行列（T → S の順）
     Matrix4x4 uvScale = MakeScaleMatrix({ uvScale_.x, uvScale_.y, 1.0f });
     Matrix4x4 uvTrans = MakeTranslateMatrix({ uvTranslate_.x, uvTranslate_.y, 0.0f });
     materialData_->uvTransform = Multiply(uvScale, uvTrans);
 
-    // 頂点ポジション
-    vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData_));
-    vertexData_[0].position = { left,  bottom, 0.0f, 1.0f }; // 左下
-    vertexData_[1].position = { left,  top,    0.0f, 1.0f }; // 左上
-    vertexData_[2].position = { right, bottom, 0.0f, 1.0f }; // 右下
-    vertexData_[3].position = { right, top,    0.0f, 1.0f }; // 右上
-    vertexResource_->Unmap(0, nullptr);
-    vertexData_ = nullptr;
 
     // 変換行列
     transform_.translate = { position_.x, position_.y, 0.0f };
@@ -72,30 +84,8 @@ void Sprite::Update()
 
     Matrix4x4 wvp = Multiply(world, screenMatrix);
 
-    transformResource_->Map(0, nullptr, reinterpret_cast<void**>(&transformData_));
     transformData_->World = Transpose(world);
     transformData_->WVP = Transpose(wvp);
-    transformResource_->Unmap(0, nullptr);
-    transformData_ = nullptr;
-
-    // --- UV 元値 ---
-    float u0 = 0.0f;
-    float v0 = 0.0f;
-    float u1 = 1.0f;
-    float v1 = 1.0f;
-
-    // 左右／上下反転
-    if (isFlipX_) std::swap(u0, u1);
-    if (isFlipY_) std::swap(v0, v1);
-
-    // 反映
-    vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData_));
-    vertexData_[0].texcoord = { u0, v1 }; // 左下
-    vertexData_[1].texcoord = { u0, v0 }; // 左上
-    vertexData_[2].texcoord = { u1, v1 }; // 右下
-    vertexData_[3].texcoord = { u1, v0 }; // 右上
-    vertexResource_->Unmap(0, nullptr);
-    vertexData_ = nullptr;
 }
 void Sprite::Draw()
 {
@@ -110,9 +100,14 @@ void Sprite::Draw()
     commandList->SetGraphicsRootConstantBufferView(
         1, transformResource_->GetGPUVirtualAddress());
 
-    if (textureSrvHandle_.ptr != 0) {
-        commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandle_);
-    }
+    auto srvManager = spriteCommon_->GetSrvManager();
+    srvManager->SetGraphicsRootDescriptorTable(
+        2,
+        TextureManager::GetInstance()->GetSrvIndex(textureFilePath_)
+    );
+
+
+
 
     commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 }
@@ -147,15 +142,11 @@ void Sprite::CreateVertexData()
     vertexData_[3].texcoord = { 1.0f, 0.0f };
     vertexData_[3].normal = { 0.0f, 0.0f, -1.0f };
 
-    vertexResource_->Unmap(0, nullptr);
-    vertexData_ = nullptr;
 
     // インデックス
     indexResource_->Map(0, nullptr, reinterpret_cast<void**>(&indexData_));
     indexData_[0] = 0; indexData_[1] = 1; indexData_[2] = 2;
     indexData_[3] = 1; indexData_[4] = 3; indexData_[5] = 2;
-    indexResource_->Unmap(0, nullptr);
-    indexData_ = nullptr;
 
     // VB/IBビュー
     vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
@@ -205,7 +196,8 @@ void Sprite::CreateTransformData()
 void Sprite::AdjustTextureSize()
 {
     const DirectX::TexMetadata& metadata =
-        TextureManager::GetInstance()->GetMetaData(textureIndex_);
+        TextureManager::GetInstance()->GetMetaData(textureFilePath_);
+
 
     Math::Vector2 textureSize;
     textureSize.x = static_cast<float>(metadata.width);

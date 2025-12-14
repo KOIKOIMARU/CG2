@@ -88,11 +88,9 @@ private:
     float rotation_ = 0.0f;
     Math::Vector2 size_{ 640.0f, 360.0f };
 
-    // ★ TextureManager の「テクスチャ番号」
-    uint32_t textureIndex_ = 0;
 
-    // ★ TextureManager 経由で取得した SRV ハンドル
-    D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle_{};
+    std::string textureFilePath_;
+
 
     // AnchorPoint（0～1）
     Math::Vector2 anchorPoint_{ 0.0f, 0.0f };

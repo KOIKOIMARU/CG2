@@ -1,18 +1,24 @@
 #include "engine/3d/Object3dCommon.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/Logger.h"
+#include "engine/base/SrvManager.h"
 #include <cassert>
 
 using Microsoft::WRL::ComPtr;
 using Logger::Log;
 
-void Object3dCommon::Initialize(DirectXCommon* dxCommon) {
-    assert(dxCommon);
-    dxCommon_ = dxCommon;
+void Object3dCommon::Initialize(
+	DirectXCommon* dxCommon,
+	SrvManager* srvManager)
+{
+	assert(dxCommon);
+	assert(srvManager);
 
-    // 資料の順番：PSO作る前に RootSig
-    CreateRootSignature();
-    CreateGraphicsPipelineState();
+	dxCommon_ = dxCommon;
+	srvManager_ = srvManager;
+
+	CreateRootSignature();
+	CreateGraphicsPipelineState();
 }
 
 void Object3dCommon::CreateRootSignature() {
@@ -181,8 +187,14 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 }
 
 void Object3dCommon::CommonDrawSetting() {
-    auto* commandList = dxCommon_->GetCommandList();
-    commandList->SetGraphicsRootSignature(rootSignature_.Get());
-    commandList->SetPipelineState(pipelineState_.Get());
-    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	auto* commandList = dxCommon_->GetCommandList();
+
+	// ❌ 削除する
+	// ID3D12DescriptorHeap* heaps[] = { srvManager_->GetDescriptorHeap() };
+	// commandList->SetDescriptorHeaps(1, heaps);
+
+	commandList->SetGraphicsRootSignature(rootSignature_.Get());
+	commandList->SetPipelineState(pipelineState_.Get());
+	commandList->IASetPrimitiveTopology(
+		D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

@@ -27,6 +27,7 @@
 #include "engine/3d/Model.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Camera.h"
+#include "engine/base/SrvManager.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -109,8 +110,6 @@ struct MeshRenderData {
 };
 MultiModelData multiModel;
 std::vector<MeshRenderData> meshRenderList;
-
-std::unordered_map<std::string, D3D12_GPU_DESCRIPTOR_HANDLE> textureHandleMap;
 
 // 関数の作成
 
@@ -434,7 +433,6 @@ auto NormalizeTextureKey = [](const std::string& path) -> std::string {
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-	D3DResourceLeakChecker leakcheck;
 
 	// ポインタ
 	WinApp* winApp = nullptr;
@@ -450,12 +448,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	dxCommon = new DirectXCommon();
 	dxCommon->Initialize(winApp);
 
+	SrvManager* srvManager = new SrvManager();
+	srvManager->Initialize(dxCommon);
+
 	// ★ テクスチャマネージャの初期化（ここがスライドの「呼び出し」）
-	TextureManager::GetInstance()->Initialize(dxCommon->GetDevice(), dxCommon);
+	TextureManager::GetInstance()->Initialize(dxCommon, srvManager);
+
 
 	// 3Dオブジェクト共通部
 	Object3dCommon* object3dCommon = new Object3dCommon();
-	object3dCommon->Initialize(dxCommon);
+	object3dCommon->Initialize(dxCommon, srvManager);
+
+
+	// ===== Model 共通部 =====
+	ModelCommon* modelCommon = new ModelCommon();
+	modelCommon->Initialize(dxCommon, srvManager);
+
 
 	// ===== カメラ生成 =====
 	Camera* camera = new Camera();
@@ -466,7 +474,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	object3dCommon->SetDefaultCamera(camera);
 
 
-	ModelManager::GetInstance()->Initialize(dxCommon);
+	ModelManager::GetInstance()->Initialize(dxCommon,srvManager);
 	ModelManager::GetInstance()->LoadModel("plane.obj");
 
 	Object3d* object3d = new Object3d();
@@ -482,9 +490,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12CommandQueue* commandQueue = dxCommon->GetCommandQueue();
 	ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
 
-	ID3D12DescriptorHeap* srvDescriptorHeap = dxCommon->GetSRVHeap();
-	UINT descriptorSizeSRV = dxCommon->GetSRVDescriptorSize();
-
 	ID3D12DescriptorHeap* rtvDescriptorHeap = dxCommon->GetRTVHeap();
 	ID3D12DescriptorHeap* dsvDescriptorHeap = dxCommon->GetDSVHeap();
 
@@ -499,7 +504,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	IDxcCompiler3* dxcCompiler = dxCommon->GetDxcCompiler();
 	IDxcIncludeHandler* includeHandler = dxCommon->GetDxcIncludeHandler();
 
-	// SwapChain の情報（Imgui初期化用に BufferCount を取る）
+	// SwapChain の情報
 	DXGI_SWAP_CHAIN_DESC swapChainDesc{};
 	dxCommon->GetSwapChain()->GetDesc(&swapChainDesc);
 
@@ -522,8 +527,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	SpriteCommon* spriteCommon = nullptr;
 
 	// スプライト共通部の初期化
-	spriteCommon = new SpriteCommon;
-	spriteCommon->Initialize(dxCommon); // ★ 修正
+	spriteCommon = new SpriteCommon();
+	spriteCommon->Initialize(dxCommon, srvManager);
+
 
 
 	// リソース作成
@@ -565,12 +571,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
 
 	// ★ それぞれの GPU ハンドルを取っておく
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleUvChecker =
-		TextureManager::GetInstance()->GetTextureHandle("resources/uvChecker.png");
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleMonsterBall =
-		TextureManager::GetInstance()->GetTextureHandle("resources/monsterBall.png");
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleCheckerBoard =
-		TextureManager::GetInstance()->GetTextureHandle("resources/checkerBoard.png");
+	uint32_t texUvCheckerIndex =
+		TextureManager::GetInstance()->GetSrvIndex("resources/uvChecker.png");
+
+	uint32_t texMonsterBallIndex =
+		TextureManager::GetInstance()->GetSrvIndex("resources/monsterBall.png");
+
+	uint32_t texCheckerBoardIndex =
+		TextureManager::GetInstance()->GetSrvIndex("resources/checkerBoard.png");
+
 
 	// --- Sprite 初期化 ---
 	std::vector<Sprite> sprites;
@@ -598,84 +607,84 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			break;
 		}
 		// ゲームの処理
-		ImGui_ImplDX12_NewFrame();
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
+		//ImGui_ImplDX12_NewFrame();
+		//ImGui_ImplWin32_NewFrame();
+		//ImGui::NewFrame();
 
-		// ImGuiのウィンドウを作成
-		ImGui::ShowDemoWindow();
+		//// ImGuiのウィンドウを作成
+		//ImGui::ShowDemoWindow();
 
-		ImGui::Begin("Window");
+		//ImGui::Begin("Window");
 
-		ImGui::SetItemDefaultFocus(); // ←追加！
-		
-		//// モデル切り替え
-		//const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
-		//int currentItem = static_cast<int>(selectedModel);
-		//if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
-		//	selectedModel = static_cast<ModelType>(currentItem);
-		//	shouldReloadModel = true; // フラグを立てる
-		//}
+		//ImGui::SetItemDefaultFocus(); // ←追加！
+		//
+		////// モデル切り替え
+		////const char* modelItems[] = { "Plane", "Sphere", "UtahTeapot", "StanfordBunny", "MultiMesh", "MultiMaterial" };
+		////int currentItem = static_cast<int>(selectedModel);
+		////if (ImGui::Combo("Model", &currentItem, modelItems, IM_ARRAYSIZE(modelItems))) {
+		////	selectedModel = static_cast<ModelType>(currentItem);
+		////	shouldReloadModel = true; // フラグを立てる
+		////}
 
-		//// モデルAのTransform
-		//if (ImGui::CollapsingHeader("Object A", ImGuiTreeNodeFlags_DefaultOpen)) {
-		//	ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
-		//	ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
-		//	ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
-		//	// Material
-		//	if (ImGui::TreeNode("Material")) {
-		//		ImGui::ColorEdit3("Color", &materialDataA->color.x);
-		//		ImGui::TreePop();
-		//	}
-		//}
-		//if (selectedModel == ModelType::Plane) {
-		//	if (ImGui::CollapsingHeader("Object B", ImGuiTreeNodeFlags_DefaultOpen)) {
-		//		ImGui::DragFloat3("Translate##B", &transformB.translate.x, 0.01f, -2.0f, 2.0f);
-		//		ImGui::DragFloat3("Rotate##B", &transformB.rotate.x, 0.01f, -6.0f, 6.0f);
-		//		ImGui::DragFloat3("Scale##B", &transformB.scale.x, 0.01f, 0.0f, 4.0f);
+		////// モデルAのTransform
+		////if (ImGui::CollapsingHeader("Object A", ImGuiTreeNodeFlags_DefaultOpen)) {
+		////	ImGui::DragFloat3("Translate", &transformA.translate.x, 0.01f, -2.0f, 2.0f);
+		////	ImGui::DragFloat3("Rotate", &transformA.rotate.x, 0.01f, -6.0f, 6.0f);
+		////	ImGui::DragFloat3("Scale", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
+		////	// Material
+		////	if (ImGui::TreeNode("Material")) {
+		////		ImGui::ColorEdit3("Color", &materialDataA->color.x);
+		////		ImGui::TreePop();
+		////	}
+		////}
+		////if (selectedModel == ModelType::Plane) {
+		////	if (ImGui::CollapsingHeader("Object B", ImGuiTreeNodeFlags_DefaultOpen)) {
+		////		ImGui::DragFloat3("Translate##B", &transformB.translate.x, 0.01f, -2.0f, 2.0f);
+		////		ImGui::DragFloat3("Rotate##B", &transformB.rotate.x, 0.01f, -6.0f, 6.0f);
+		////		ImGui::DragFloat3("Scale##B", &transformB.scale.x, 0.01f, 0.0f, 4.0f);
 
-		//		if (ImGui::TreeNode("MaterialB")) {
-		//			ImGui::ColorEdit3("ColorB", &materialDataB->color.x);
-		//			ImGui::TreePop();
-		//		}
-		//	}
-		//}
-		//if (selectedModel == ModelType::MultiMaterial) {
-		//	if (ImGui::CollapsingHeader("MultiMaterial", ImGuiTreeNodeFlags_DefaultOpen)) {
-		//		int i = 0;
-		//		for (auto& [name, matData] : materialDataList) {
-		//			if (ImGui::TreeNode((name + "##" + std::to_string(i)).c_str())) {
-		//				ImGui::DragFloat2(("UV Translate##" + name).c_str(), &matData->uvTransform.m[3][0], 0.01f, -10.0f, 10.0f);
-		//				ImGui::DragFloat2(("UV Scale##" + name).c_str(), &matData->uvTransform.m[0][0], 0.01f, -10.0f, 10.0f);
-		//				ImGui::SliderAngle(("UV Rotate##" + name).c_str(), &matData->uvTransform.m[0][1]); // 任意（角度表現）
-		//				ImGui::ColorEdit3(("Color##" + name).c_str(), &matData->color.x);
-		//				int lighting = static_cast<int>(matData->lightingMode);
-		//				if (ImGui::Combo(("Lighting##" + name).c_str(), &lighting, "None\0Lambert\0HalfLambert\0")) {
-		//					matData->lightingMode = lighting;
-		//				}
-		//			}
-		//			++i;
-		//		}
-		//	}
-		//}
+		////		if (ImGui::TreeNode("MaterialB")) {
+		////			ImGui::ColorEdit3("ColorB", &materialDataB->color.x);
+		////			ImGui::TreePop();
+		////		}
+		////	}
+		////}
+		////if (selectedModel == ModelType::MultiMaterial) {
+		////	if (ImGui::CollapsingHeader("MultiMaterial", ImGuiTreeNodeFlags_DefaultOpen)) {
+		////		int i = 0;
+		////		for (auto& [name, matData] : materialDataList) {
+		////			if (ImGui::TreeNode((name + "##" + std::to_string(i)).c_str())) {
+		////				ImGui::DragFloat2(("UV Translate##" + name).c_str(), &matData->uvTransform.m[3][0], 0.01f, -10.0f, 10.0f);
+		////				ImGui::DragFloat2(("UV Scale##" + name).c_str(), &matData->uvTransform.m[0][0], 0.01f, -10.0f, 10.0f);
+		////				ImGui::SliderAngle(("UV Rotate##" + name).c_str(), &matData->uvTransform.m[0][1]); // 任意（角度表現）
+		////				ImGui::ColorEdit3(("Color##" + name).c_str(), &matData->color.x);
+		////				int lighting = static_cast<int>(matData->lightingMode);
+		////				if (ImGui::Combo(("Lighting##" + name).c_str(), &lighting, "None\0Lambert\0HalfLambert\0")) {
+		////					matData->lightingMode = lighting;
+		////				}
+		////			}
+		////			++i;
+		////		}
+		////	}
+		////}
 
-		//// 光の設定
-		//if (ImGui::CollapsingHeader("Light")) {
-		//	const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
-		//	int currentLighting = static_cast<int>(lightingMode);
-		//	if (ImGui::Combo("Lighting Mode", &currentLighting, lightingItems, IM_ARRAYSIZE(lightingItems))) {
-		//		lightingMode = static_cast<LightingMode>(currentLighting);
-		//	}
-		//	static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
-		//	if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
-		//		Vector3 normDir = Normalize(lightDirEdit);
-		//		directionalLightData->direction = { normDir.x, normDir.y, normDir.z };
-		//	}
-		//	ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
-		//	ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
-		//}
+		////// 光の設定
+		////if (ImGui::CollapsingHeader("Light")) {
+		////	const char* lightingItems[] = { "None", "Lambert", "HalfLambert" };
+		////	int currentLighting = static_cast<int>(lightingMode);
+		////	if (ImGui::Combo("Lighting Mode", &currentLighting, lightingItems, IM_ARRAYSIZE(lightingItems))) {
+		////		lightingMode = static_cast<LightingMode>(currentLighting);
+		////	}
+		////	static Vector3 lightDirEdit = { directionalLightData->direction.x, directionalLightData->direction.y, directionalLightData->direction.z };
+		////	if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
+		////		Vector3 normDir = Normalize(lightDirEdit);
+		////		directionalLightData->direction = { normDir.x, normDir.y, normDir.z };
+		////	}
+		////	ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
+		////	ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
+		////}
 
-		ImGui::End();
+		//ImGui::End();
 
 		// キーボード入力の更新
 		input->Update();
@@ -690,7 +699,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		object3d->Update();
 
-		D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleUvChecker;
+		//D3D12_GPU_DESCRIPTOR_HANDLE selectedTextureHandle = textureSrvHandleUvChecker;
 
 		//if ((selectedModel == ModelType::MultiMesh || selectedModel == ModelType::MultiMaterial) && shouldReloadModel) {
 		//	const char* fileName = GetModelFileName(selectedModel);
@@ -770,13 +779,20 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 		// ImGuiの描画
-		ImGui::Render();
+		//ImGui::Render();
 
 		dxCommon->PreDraw();
+
+		srvManager->PreDraw();
 
 		object3dCommon->CommonDrawSetting();
 
 		object3d->Draw();
+
+
+		// ===== スプライト描画 =====
+		spriteCommon->CommonDrawSetting();
+		for (auto& s : sprites) s.Draw();
 
 		//// 球の描画
 		//if (selectedModel == ModelType::Plane) {
@@ -857,15 +873,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		//	}
 		//}
 
-		// ===== スプライト描画 =====
-		spriteCommon->CommonDrawSetting();
-		for (auto& s : sprites) s.Draw();
 
-		// ImGuiの描画
-		ImGui_ImplDX12_RenderDrawData(
-			ImGui::GetDrawData(),
-			dxCommon->GetCommandList()
-		);
+		//// ImGuiの描画
+		//ImGui_ImplDX12_RenderDrawData(
+		//	ImGui::GetDrawData(),
+		//	dxCommon->GetCommandList()
+		//);
 
 
 		dxCommon->PostDraw();
@@ -882,22 +895,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	delete object3dCommon;    // 基盤システム
 	delete input;
 	delete camera;
-
 	ModelManager::GetInstance()->Finalize();
+	TextureManager::GetInstance()->Destroy();
+
+	delete srvManager;
+	delete dxCommon;
+
 
 	// windowsAPIの終了
 	winApp->Finalize();
 	// WindowsAPI解放
 	delete winApp;
+	
+	//// ImGuiの終了
+	//ImGui_ImplDX12_Shutdown();
+	//ImGui_ImplWin32_Shutdown();
+	//ImGui::DestroyContext();
 
-	// ImGuiの終了
-	ImGui_ImplDX12_Shutdown();
-	ImGui_ImplWin32_Shutdown();
-	ImGui::DestroyContext();
-
-	TextureManager::GetInstance()->Finalize();
-
-	delete dxCommon;
+#ifdef _DEBUG
+	D3DResourceLeakChecker leakChecker;
+#endif
 
 	return 0;
 }

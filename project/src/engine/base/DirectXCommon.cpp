@@ -21,8 +21,6 @@
 using namespace Microsoft::WRL;
 using Logger::Log;
 
-const uint32_t DirectXCommon::kMaxSRVCount = 512;
-
 void DirectXCommon::Initialize(WinApp* winApp)
 {
     // WinAppを覚えておく
@@ -57,7 +55,8 @@ void DirectXCommon::PreDraw() {
     assert(SUCCEEDED(hr));
 
     // バックバッファの番号取得
-    UINT bbIndex = swapChain_->GetCurrentBackBufferIndex();
+    currentBackBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
+    UINT bbIndex = currentBackBufferIndex_;
 
     // 2. TransitionBarrier PRESENT → RENDER_TARGET
     D3D12_RESOURCE_BARRIER barrier{};
@@ -94,10 +93,6 @@ void DirectXCommon::PreDraw() {
     // 5. ビューポート & シザー
     commandList_->RSSetViewports(1, &viewport_);
     commandList_->RSSetScissorRects(1, &scissorRect_);
-
-    // 6. SRV ヒープ設定
-    ID3D12DescriptorHeap* heaps[] = { srvHeap_.Get() };
-    commandList_->SetDescriptorHeaps(_countof(heaps), heaps);
 }
 
 
@@ -106,7 +101,8 @@ void DirectXCommon::PostDraw()
     HRESULT hr = S_OK;
 
     // バックバッファの番号取得
-    UINT bbIndex = swapChain_->GetCurrentBackBufferIndex();
+    UINT bbIndex = currentBackBufferIndex_; // ← 絶対に GetCurrentBackBufferIndex() を呼ばない
+
 
     // RenderTarget → Present へのリソースバリア
     D3D12_RESOURCE_BARRIER barrier{};
@@ -358,25 +354,30 @@ ComPtr<ID3D12DescriptorHeap> DirectXCommon::CreateDescriptorHeap(
 
 void DirectXCommon::InitializeDescriptorHeaps()
 {
-    assert(device_);
-
-    // 各ディスクリプタサイズを取得しておく
-    rtvDescriptorSize_ =
-        device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    srvDescriptorSize_ =
-        device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-    dsvDescriptorSize_ =
-        device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-
-    // ヒープを生成（個数は今まで main.cpp で使っていた数に合わせる）
-    // 足りなくなったら適宜増やしてOK
     rtvHeap_ = CreateDescriptorHeap(
-        D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);          // バックバッファ2枚分
-    srvHeap_ = CreateDescriptorHeap(
-        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, DirectXCommon::kMaxSRVCount, true); // テクスチャやCBV用
+        D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+        kBackBufferCount,
+        false
+    );
     dsvHeap_ = CreateDescriptorHeap(
-        D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);          // 深度1枚
+        D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+        1,
+        false
+    );
+
+    // ★★★ これが無かった ★★★
+    rtvDescriptorSize_ =
+        device_->GetDescriptorHandleIncrementSize(
+            D3D12_DESCRIPTOR_HEAP_TYPE_RTV
+        );
+
+    dsvDescriptorSize_ =
+        device_->GetDescriptorHandleIncrementSize(
+            D3D12_DESCRIPTOR_HEAP_TYPE_DSV
+        );
 }
+
+
 
 void DirectXCommon::InitializeRenderTargetView()
 {
@@ -428,18 +429,6 @@ D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetGPUDescriptorHandle(
         descriptorHeap->GetGPUDescriptorHandleForHeapStart();
     handle.ptr += static_cast<UINT64>(descriptorSize) * index;
     return handle;
-}
-
-D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetSRVCPUDescriptorHandle(uint32_t index)
-{
-    assert(srvHeap_);
-    return GetCPUDescriptorHandle(srvHeap_, srvDescriptorSize_, index);
-}
-
-D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetSRVGPUDescriptorHandle(uint32_t index)
-{
-    assert(srvHeap_);
-    return GetGPUDescriptorHandle(srvHeap_, srvDescriptorSize_, index);
 }
 
 void DirectXCommon::InitializeDepthStencilView()
@@ -517,20 +506,20 @@ void DirectXCommon::InitializeDXC()
 
 void DirectXCommon::InitializeImGui()
 {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
+    //IMGUI_CHECKVERSION();
+    //ImGui::CreateContext();
+    //ImGui::StyleColorsDark();
 
-    ImGui_ImplWin32_Init(winApp_->GetHwnd());
+    //ImGui_ImplWin32_Init(winApp_->GetHwnd());
 
-    ImGui_ImplDX12_Init(
-        device_.Get(),
-        kBackBufferCount,
-        // ★ ここも SRGB に揃える
-        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-        srvHeap_.Get(),
-        srvHeap_->GetCPUDescriptorHandleForHeapStart(),
-        srvHeap_->GetGPUDescriptorHandleForHeapStart());
+    //ImGui_ImplDX12_Init(
+    //    device_.Get(),
+    //    kBackBufferCount,
+    //    // ★ ここも SRGB に揃える
+    //    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+    //    srvHeap_.Get(),
+    //    srvHeap_->GetCPUDescriptorHandleForHeapStart(),
+    //    srvHeap_->GetGPUDescriptorHandleForHeapStart());
 }
 
 Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(

@@ -20,9 +20,6 @@ public:
     // 初期化（全部まとめ）
     void Initialize(WinApp* winApp);
 
-    // SRV専用の公開関数（外から使う便利版）
-    D3D12_CPU_DESCRIPTOR_HANDLE GetSRVCPUDescriptorHandle(uint32_t index);
-    D3D12_GPU_DESCRIPTOR_HANDLE GetSRVGPUDescriptorHandle(uint32_t index);
 
     // ゲッター
     ID3D12Device* GetDevice() const { return device_.Get(); }
@@ -32,11 +29,9 @@ public:
     IDXGISwapChain4* GetSwapChain() const { return swapChain_.Get(); }
 
     ID3D12DescriptorHeap* GetRTVHeap() const { return rtvHeap_.Get(); }
-    ID3D12DescriptorHeap* GetSRVHeap() const { return srvHeap_.Get(); }
     ID3D12DescriptorHeap* GetDSVHeap() const { return dsvHeap_.Get(); }
 
     UINT GetRTVDescriptorSize() const { return rtvDescriptorSize_; }
-    UINT GetSRVDescriptorSize() const { return srvDescriptorSize_; }
     UINT GetDSVDescriptorSize() const { return dsvDescriptorSize_; }
 
     const D3D12_VIEWPORT& GetViewport() const { return viewport_; }
@@ -75,8 +70,12 @@ public:
 	// テクスチャ読み込み（static／外から使う便利版）
     static DirectX::ScratchImage LoadTexture(const std::string& filePath);
 
-    // 最大SRV数
-    static const uint32_t kMaxSRVCount;
+    // デスクリプタヒープ生成関数（内部用）
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(
+        D3D12_DESCRIPTOR_HEAP_TYPE heapType,
+        UINT numDescriptors,
+        bool shaderVisible);
+
 
 private:
     // --- ここから「Initialize」専用の内部関数たち ---
@@ -94,12 +93,6 @@ private:
     void InitializeScissorRect();
     void InitializeDXC();
     void InitializeImGui();
-
-    // デスクリプタヒープ生成関数（内部用）
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(
-        D3D12_DESCRIPTOR_HEAP_TYPE heapType,
-        UINT numDescriptors,
-        bool shaderVisible);
 
     // 汎用ハンドル取得関数（static／内部用）
     static D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(
@@ -136,12 +129,10 @@ private:
 
     // 各種デスクリプタヒープ
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;
 
     // 各ヒープのインクリメントサイズ
     UINT rtvDescriptorSize_ = 0;
-    UINT srvDescriptorSize_ = 0;
     UINT dsvDescriptorSize_ = 0;
 
     // 同期（フェンス）
@@ -166,6 +157,8 @@ private:
 
     // 前フレームの基準時間
     std::chrono::steady_clock::time_point reference_;
+
+    UINT currentBackBufferIndex_ = 0;
 
 
 };

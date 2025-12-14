@@ -1,16 +1,16 @@
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/DirectXCommon.h"
+#include "engine/3d/TextureManager.h"
+#include "engine/base/SrvManager.h"
 #include "engine/base/Logger.h"
 #include <cassert>
 
 using Microsoft::WRL::ComPtr;
 
-void SpriteCommon::Initialize(DirectXCommon* dxCommon)
+void SpriteCommon::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
 {
-    assert(dxCommon);
     dxCommon_ = dxCommon;
-
-    // 共通部の初期化
+    srvManager_ = srvManager;
     CreateGraphicsPipelineState();
 }
 
@@ -162,17 +162,15 @@ void SpriteCommon::CreateGraphicsPipelineState()
     assert(SUCCEEDED(hr));
 }
 
-
 void SpriteCommon::CommonDrawSetting()
 {
     ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList();
 
-    // RootSignature をセット
+    // ❌ 削除
+    // ID3D12DescriptorHeap* heaps[] = { srvManager_->GetDescriptorHeap() };
+    // commandList->SetDescriptorHeaps(1, heaps);
+
     commandList->SetGraphicsRootSignature(rootSignature_.Get());
-
-    // PSO をセット（変数名の修正）
     commandList->SetPipelineState(pipelineState_.Get());
-
-    // プリミティブトポロジ（スプライトは三角形）
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

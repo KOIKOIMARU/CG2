@@ -7,8 +7,11 @@
 #include "engine/3d/ModelCommon.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/3d/TextureManager.h"
+#include "engine/base/SrvManager.h"
 
-void Model::Initialize(ModelCommon* modelCommon, const std::string& directoryPath, const std::string& filename)
+void Model::Initialize(ModelCommon* modelCommon,
+    const std::string& directoryPath,
+    const std::string& filename)
 {
     assert(modelCommon);
     modelCommon_ = modelCommon;
@@ -20,34 +23,43 @@ void Model::Initialize(ModelCommon* modelCommon, const std::string& directoryPat
     CreateVertexBuffer();
     CreateMaterial();
 
-    // テクスチャ読み込み → Index 取得
-    TextureManager::GetInstance()->LoadTexture(modelData_.material.textureFilePath);
-    modelData_.material.textureIndex =
-        TextureManager::GetInstance()->GetTextureIndexByFilePath(modelData_.material.textureFilePath);
+    // ★ テクスチャは「読み込むだけ」
+    TextureManager::GetInstance()->LoadTexture(
+        modelData_.material.textureFilePath
+    );
 }
+
 
 void Model::Draw()
 {
-    auto commandList = modelCommon_->GetDxCommon()->GetCommandList();
+    auto dxCommon = modelCommon_->GetDxCommon();
+    auto commandList = dxCommon->GetCommandList();
+    auto srvManager = modelCommon_->GetSrvManager();
 
     // VB
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
 
     // Material CBV
-    commandList->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
-
-    // Texture SRV
-    commandList->SetGraphicsRootDescriptorTable(
-        2,
-        TextureManager::GetInstance()->GetSrvHandleGPU(modelData_.material.textureIndex)
+    commandList->SetGraphicsRootConstantBufferView(
+        0,
+        materialResource_->GetGPUVirtualAddress()
     );
 
-    // Draw
+    // Texture SRV（★ index を使う）
+    srvManager->SetGraphicsRootDescriptorTable(
+        2,
+        TextureManager::GetInstance()->GetSrvIndex(
+            modelData_.material.textureFilePath
+        )
+    );
+
     commandList->DrawInstanced(
         static_cast<UINT>(modelData_.vertices.size()),
         1, 0, 0
     );
 }
+
+
 
 void Model::CreateVertexBuffer()
 {

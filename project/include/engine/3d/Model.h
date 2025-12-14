@@ -20,7 +20,6 @@ struct VertexData {
 
 struct MaterialData {
     std::string textureFilePath;
-    uint32_t textureIndex = 0;
 };
 
 struct ModelData {
@@ -45,7 +44,6 @@ public:
     // Object3d が必要になったら使う用（次段階用）
     const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }
     ID3D12Resource* GetMaterialResource() const { return materialResource_.Get(); }
-    uint32_t GetTextureIndex() const { return modelData_.material.textureIndex; }
     size_t GetVertexCount() const { return modelData_.vertices.size(); }
 
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
