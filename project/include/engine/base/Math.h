@@ -26,6 +26,26 @@ namespace Math {
         Vector3 translate;
     };
 
+    inline Math::Vector3 operator*(const Math::Vector3& v, float s)
+    {
+        return { v.x * s, v.y * s, v.z * s };
+    }
+
+    inline Math::Vector3 operator*(float s, const Math::Vector3& v)
+    {
+        return { v.x * s, v.y * s, v.z * s };
+    }
+
+    inline Math::Vector3& operator+=(Math::Vector3& a, const Math::Vector3& b)
+    {
+        a.x += b.x;
+        a.y += b.y;
+        a.z += b.z;
+        return a;
+    }
+
+
+
     inline Matrix4x4 MakeIdentity4x4() {
         Matrix4x4 result{};
         for (int i = 0; i < 4; ++i) {

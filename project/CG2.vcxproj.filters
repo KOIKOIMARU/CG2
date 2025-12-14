@@ -144,6 +144,15 @@
     <ClCompile Include="src\engine\base\SrvManager.cpp">
       <Filter>src\engine\base</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\3d\Particle.cpp">
+      <Filter>src\engine\3d</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\3d\ParticleManager.cpp">
+      <Filter>src\engine\3d</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\3d\ParticleEmitter.cpp">
+      <Filter>src\engine\3d</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -156,6 +165,12 @@
       <Filter>shaders</Filter>
     </FxCompile>
     <FxCompile Include="shaders\Object3D_NoUV.VS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="shaders\Particle.PS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="shaders\Particle.VS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
   </ItemGroup>
@@ -238,6 +253,15 @@
     </ClInclude>
     <ClInclude Include="include\engine\base\SrvManager.h">
       <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\3d\Particle.h">
+      <Filter>include\engine\3d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\3d\ParticleManager.h">
+      <Filter>include\engine\3d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\3d\ParticleEmitter.h">
+      <Filter>include\engine\3d</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
