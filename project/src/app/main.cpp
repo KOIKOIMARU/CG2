@@ -460,7 +460,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// ===== カメラ生成 =====
 	Camera* camera = new Camera();
 	camera->SetRotate({ 0.3f, 0.0f, 0.0f });
-	camera->SetTranslate({ 0.0f, 1.0f, -5.0f });
+	camera->SetTranslate({ 0.0f, 4.0f, -10.0f });
 
 	// ★ デフォルトカメラに設定（資料どおり）
 	object3dCommon->SetDefaultCamera(camera);
