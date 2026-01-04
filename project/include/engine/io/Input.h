@@ -16,19 +16,9 @@ public:
 	// 更新
 	void Update();
 
-	/// <summary>
-	/// キーの押下をチェック
-	/// </summary>
-	/// <param name="keyNumber"></param>
-	/// <returns>押されているか</returns>
-	bool PushKey(BYTE keyNumber);
+	bool PushKey(BYTE keyNumber) const;
+	bool TriggerKey(BYTE keyNumber) const;
 
-	/// <summary>
-	/// キーのトリガーをチェック
-	/// </summary>
-	/// <param name="keyNumber"></param>
-	/// <returns>トリガーか</returns>
-	bool TriggerKey(BYTE keyNumber);
 
 private:
 	// メンバ変数

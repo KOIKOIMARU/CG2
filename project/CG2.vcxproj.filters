@@ -64,6 +64,24 @@
     <Filter Include="resources">
       <UniqueIdentifier>{724b9669-b3ff-492b-b583-c902814b1e55}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\engine\scene\core">
+      <UniqueIdentifier>{85f066db-aa03-41e6-ab79-4708844af696}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\engine\scene\core">
+      <UniqueIdentifier>{23eed512-7f15-44bf-929c-7d196f562fbd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\engine\scene\world">
+      <UniqueIdentifier>{a3d60778-dfeb-4da8-9290-f79a89750766}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\engine\scene\entities">
+      <UniqueIdentifier>{e9ed27eb-a455-4812-9fc0-a942069ba499}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\engine\scene\world">
+      <UniqueIdentifier>{0dd964c7-bf4d-4095-a5d3-fbe2839683d7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\engine\scene\entities">
+      <UniqueIdentifier>{60f439af-6e97-49c2-8c3b-d01e869c19d1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="externals\imgui\imgui.cpp">
@@ -152,6 +170,33 @@
     </ClCompile>
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp">
       <Filter>src\engine\3d</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\core\GameScene.cpp">
+      <Filter>src\engine\scene\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\world\Stage.cpp">
+      <Filter>src\engine\scene\world</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\world\Collision.cpp">
+      <Filter>src\engine\scene\world</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\entities\Boss.cpp">
+      <Filter>src\engine\scene\entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\entities\Bullet.cpp">
+      <Filter>src\engine\scene\entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\entities\BossController.cpp">
+      <Filter>src\engine\scene\entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\entities\BulletManager.cpp">
+      <Filter>src\engine\scene\entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\entities\Player.cpp">
+      <Filter>src\engine\scene\entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\entities\PlayerController.cpp">
+      <Filter>src\engine\scene\entities</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -262,6 +307,33 @@
     </ClInclude>
     <ClInclude Include="include\engine\3d\ParticleEmitter.h">
       <Filter>include\engine\3d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\core\GameScene.h">
+      <Filter>include\engine\scene\core</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\entities\Boss.h">
+      <Filter>include\engine\scene\entities</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\entities\BossController.h">
+      <Filter>include\engine\scene\entities</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\entities\Bullet.h">
+      <Filter>include\engine\scene\entities</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\entities\BulletManager.h">
+      <Filter>include\engine\scene\entities</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\world\Collision.h">
+      <Filter>include\engine\scene\world</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\world\Stage.h">
+      <Filter>include\engine\scene\world</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\entities\PlayerController.h">
+      <Filter>include\engine\scene\entities</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\entities\Player.h">
+      <Filter>include\engine\scene\entities</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

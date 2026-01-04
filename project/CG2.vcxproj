@@ -148,6 +148,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\scene\entities\Boss.cpp" />
+    <ClCompile Include="src\engine\scene\entities\BossController.cpp" />
+    <ClCompile Include="src\engine\scene\entities\Bullet.cpp" />
+    <ClCompile Include="src\engine\scene\entities\BulletManager.cpp" />
+    <ClCompile Include="src\engine\scene\world\Collision.cpp" />
+    <ClCompile Include="src\engine\scene\core\GameScene.cpp" />
+    <ClCompile Include="src\engine\scene\entities\Player.cpp" />
+    <ClCompile Include="src\engine\scene\entities\PlayerController.cpp" />
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp" />
     <ClCompile Include="src\engine\3d\Particle.cpp" />
     <ClCompile Include="src\engine\3d\ParticleManager.cpp" />
@@ -180,6 +188,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\base\StringUtility.cpp" />
     <ClCompile Include="src\engine\3d\TextureManager.cpp" />
     <ClCompile Include="src\engine\base\SrvManager.cpp" />
+    <ClCompile Include="src\engine\scene\world\Stage.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Particle.PS.hlsl">
@@ -226,6 +235,12 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\engine\scene\entities\Boss.h" />
+    <ClInclude Include="include\engine\scene\entities\BossController.h" />
+    <ClInclude Include="include\engine\scene\entities\Bullet.h" />
+    <ClInclude Include="include\engine\scene\entities\BulletManager.h" />
+    <ClInclude Include="include\engine\scene\world\Collision.h" />
+    <ClInclude Include="include\engine\scene\core\GameScene.h" />
     <ClInclude Include="include\engine\3d\Camera.h" />
     <ClInclude Include="include\engine\base\D3DResourceLeakChecker.h" />
     <ClInclude Include="include\engine\base\DirectXCommon.h" />
@@ -250,12 +265,15 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\Particle.h" />
     <ClInclude Include="include\engine\3d\ParticleManager.h" />
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
+    <ClInclude Include="include\engine\scene\entities\Player.h" />
+    <ClInclude Include="include\engine\scene\entities\PlayerController.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />
     <ClInclude Include="include\engine\2d\Sprite.h" />
     <ClInclude Include="include\engine\2d\SpriteCommon.h" />
     <ClInclude Include="include\engine\3d\TextureManager.h" />
     <ClInclude Include="include\engine\base\SrvManager.h" />
+    <ClInclude Include="include\engine\scene\world\Stage.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

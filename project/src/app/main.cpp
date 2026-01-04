@@ -30,6 +30,7 @@
 #include "engine/base/SrvManager.h"
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/ParticleEmitter.h"
+#include "engine/scene/core/GameScene.h"   
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "imgui_impl_dx12.h"
@@ -286,6 +287,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	// 音声データ読み込み
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
 
+	GameScene gameScene;
+	gameScene.Initialize();
+
 	// ウィンドウのxボタンが押されるまでループ
 	while (true) {
 		// Windowsにメッセージが来てたら最優先で処理させる
@@ -308,13 +312,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		// キーボード入力の更新
 		input->Update();
 
-		// トリガー処理：スペースキーを押した瞬間だけ再生
-		if (input->TriggerKey(DIK_SPACE)) {
-			SoundPlayWave(xAudio2.Get(), soundData1);
-		}
+
 
 		// 更新
 		float deltaTime = dxCommon->GetDeltaTime(); // or 自前計算
+
+		gameScene.Update(*input, deltaTime);
 
 		camera->Update();
 
@@ -337,6 +340,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		dxCommon->PreDraw();
 
 		srvManager->PreDraw();
+
+		gameScene.Draw();
 
 		ParticleManager::GetInstance()->Draw();
 

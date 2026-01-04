@@ -1,0 +1,47 @@
+#pragma once
+#include "engine/base/Math.h"
+
+class Boss {
+public:
+    enum class State {
+        Idle,
+        Approach,
+        Attack,
+        DashPrep,
+        Dash
+    };
+
+public:
+    // 更新系
+    void Update(float dt);
+    void Damage(float dmg);
+
+    // Getter
+    bool IsAlive() const { return alive_; }
+    const Math::Vector3& GetPos() const { return pos_; }
+    float GetSizeX() const { return sizeX_; }
+    float GetSizeY() const { return sizeY_; }
+
+    // 外部から触る用（Controllerが使う）
+    Math::Vector3 pos_{ 10.0f, 1.0f, 0.0f };
+    Math::Vector3 vel_{ 0,0,0 };
+
+    float sizeX_ = 1.8f;
+    float sizeY_ = 1.8f;
+
+    float hp_ = 120.0f;
+    float maxHp_ = 120.0f;
+    bool  alive_ = true;
+
+    bool facingRight_ = true;
+    State state_ = State::Idle;
+
+    // 行動パラメータ
+    float walkSpeed_ = 1.5f;
+    float attackRange_ = 2.0f;
+    float dashRange_ = 15.0f;
+    float keepDistance_ = 6.0f;
+
+    float attackCooldown_ = 0.0f;
+    float dashInstantSpeed_ = 0.0f;
+};
