@@ -39,6 +39,7 @@ void Stage::Initialize(Object3dCommon* objCommon) {
 
             obj.Initialize(objCommon_);
             obj.SetModel(blockModel);
+            obj.SetEnableLighting(0);
 
 
             const float wx = (x + 0.5f) * kTileSize;
@@ -56,8 +57,11 @@ void Stage::Initialize(Object3dCommon* objCommon) {
 
 
 void Stage::Draw() {
-
+    for (auto& obj : blockObjs_) {
+        obj.Draw();
+    }
 }
+
 
 bool Stage::IsSolidTileByIndex(int mapX, int mapY) const {
     if (mapX < 0 || mapX >= kMapW || mapY < 0 || mapY >= kMapH) {

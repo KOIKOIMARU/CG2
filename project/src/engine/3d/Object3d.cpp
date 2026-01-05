@@ -2,6 +2,8 @@
 #include <fstream>
 #include <d3d12.h>
 #include <wrl/client.h>
+#include <cassert>
+
 
 #include "engine/base/Math.h"
 #include "engine/base/DirectXCommon.h"
@@ -22,6 +24,7 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
 
     CreateTransformationMatrix();
     CreateDirectionalLight();
+    CreateMaterial(); // ★追加
 
     transform_ = {
         {1.0f, 1.0f, 1.0f},
@@ -63,6 +66,12 @@ void Object3d::Update() {
 void Object3d::Draw()
 {
     auto commandList = object3dCommon_->GetDxCommon()->GetCommandList();
+
+    // Material (b0) ★追加
+    commandList->SetGraphicsRootConstantBufferView(
+        0, materialResource_->GetGPUVirtualAddress());
+
+
 
     // Transform
     commandList->SetGraphicsRootConstantBufferView(
@@ -142,4 +151,32 @@ Vector3 Object3d::GetTranslate() const {
 void Object3d::SetModel(const std::string& filePath)
 {
     model_ = ModelManager::GetInstance()->FindModel(filePath);
+}
+
+void Object3d::CreateMaterial() {
+    auto dxCommon = object3dCommon_->GetDxCommon();
+
+    materialResource_ =
+        dxCommon->CreateBufferResource(sizeof(ObjectMaterial));
+
+    materialResource_->Map(
+        0, nullptr,
+        reinterpret_cast<void**>(&materialData_));
+
+
+    materialData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    materialData_->enableLighting = 1;            // デフォ：Lambert
+    materialData_->uvTransform = MakeIdentity4x4();
+}
+
+void Object3d::SetEnableLighting(int32_t mode) {
+    if (materialData_) {
+        materialData_->enableLighting = mode; // 0/1/2
+    }
+}
+
+void Object3d::SetColor(const Vector4& color) {
+    if (materialData_) {
+        materialData_->color = color;
+    }
 }
