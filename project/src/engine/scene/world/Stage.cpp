@@ -1,4 +1,4 @@
-#include "Stage.h"
+#include "engine/scene/world/Stage.h"
 
 Stage::Stage() {
     // あなたの gMap をそのまま移植（同じ並び）

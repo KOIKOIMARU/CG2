@@ -1,13 +1,33 @@
 #include "engine/scene/core/GameScene.h"
+#include "engine/3d/Object3dCommon.h" 
 #include "engine/io/Input.h"
 #include "engine/scene/world/Collision.h"  
+#include "engine/3d/ModelManager.h"
+#include <array> 
+#include <cassert>
+
 
 // いったん仮：後でクラスにする
 // extern void DrawEverythingLikeMain(...); みたいにしてもOK
 
-void GameScene::Initialize()
+void GameScene::Initialize(Object3dCommon* objCommon)
 {
+    objCommon_ = objCommon;
+
+    playerObj_.Initialize(objCommon_);
+    playerObj_.SetModel(ModelManager::GetInstance()->FindModel("resources/player.obj"));
+
+    bossObj_.Initialize(objCommon_);
+    bossObj_.SetModel(ModelManager::GetInstance()->FindModel("resources/enemy.obj"));
+
+    auto* bulletModel = ModelManager::GetInstance()->FindModel("resources/bullet.obj");
+    for (auto& o : bulletObjs_) {
+        o.Initialize(objCommon_);
+        o.SetModel(bulletModel);
+    }
+
     state_ = GameState::Title;
+    ResetGame();
 }
 
 void GameScene::ResetGame()
@@ -122,18 +142,44 @@ void GameScene::Update(Input& input, float dt)
 
     }
 
+    // =====================
+// 見た目(Object3d)へ反映
+// =====================
+    playerObj_.SetTranslate({ player_.pos.x, player_.pos.y, 0.0f });
+    bossObj_.SetTranslate({ boss_.pos_.x, boss_.pos_.y, 0.0f });
+
+    // 弾のObject3dを弾情報に同期
+    const auto& bs = bullets_.GetBullets();
+
+    for (size_t i = 0; i < bulletObjs_.size(); ++i) {
+        if (bs[i].alive) {
+            bulletObjs_[i].SetTranslate({ bs[i].pos.x, bs[i].pos.y, 0.0f });
+            bulletObjs_[i].SetScale({ bs[i].size.x, bs[i].size.y, 1.0f });
+        } else {
+            bulletObjs_[i].SetTranslate({ 99999.0f, 99999.0f, 0.0f });
+        }
+    }
+
+
+    // WVP更新
+    playerObj_.Update();
+    bossObj_.Update();
+    for (auto& o : bulletObjs_) o.Update();
+
+
 }
 
 void GameScene::Draw()
 {
-    // いま main でやってる描画を
-    // 「GameSceneが持ってるデータ」を使って呼ぶ形に寄せていく
+    objCommon_->CommonDrawSetting();
 
-    // 例：
-    // DrawStage(stage_);
-    // DrawPlayer(player_);
-    // DrawBoss(...)
-    // DrawBullets(...)
-    // DrawUI(state_, player_, boss_...)
+    playerObj_.Draw();
+    bossObj_.Draw();
+
+    const auto& bs = bullets_.GetBullets();
+    for (size_t i = 0; i < bulletObjs_.size(); ++i) {
+        if (bs[i].alive) {
+            bulletObjs_[i].Draw();
+        }
+    }
 }
-

@@ -8,6 +8,7 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/base/SrvManager.h"
+#include <engine/base/Logger.h>
 
 void Model::Initialize(ModelCommon* modelCommon,
     const std::string& directoryPath,
@@ -66,15 +67,33 @@ void Model::CreateVertexBuffer()
     auto dxCommon = modelCommon_->GetDxCommon();
     const auto& vertices = modelData_.vertices;
 
-    vertexResource_ = dxCommon->CreateBufferResource(sizeof(VertexData) * vertices.size());
+    if (vertices.empty()) {
+        Logger::Log("[Model] vertices is empty. Skip CreateVertexBuffer.\n");
+        vertexResource_.Reset();
+        vertexBufferView_ = {};
+        return;
+    }
+
+    const size_t bytes = sizeof(VertexData) * vertices.size();
+    vertexResource_ = dxCommon->CreateBufferResource(bytes);
+
+    if (!vertexResource_) {
+        Logger::Log(std::format("[Model] CreateBufferResource failed. bytes={}\n", bytes));
+        return;
+    }
 
     VertexData* vertexData = nullptr;
-    vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
-    memcpy(vertexData, vertices.data(), sizeof(VertexData) * vertices.size());
+    HRESULT hr = vertexResource_->Map(0, nullptr, reinterpret_cast<void**>(&vertexData));
+    if (FAILED(hr) || !vertexData) {
+        Logger::Log("[Model] Map failed.\n");
+        return;
+    }
+
+    memcpy(vertexData, vertices.data(), bytes);
     vertexResource_->Unmap(0, nullptr);
 
     vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
-    vertexBufferView_.SizeInBytes = UINT(sizeof(VertexData) * vertices.size());
+    vertexBufferView_.SizeInBytes = static_cast<UINT>(bytes);
     vertexBufferView_.StrideInBytes = sizeof(VertexData);
 }
 

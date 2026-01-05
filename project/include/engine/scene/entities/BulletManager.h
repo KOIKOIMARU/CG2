@@ -1,30 +1,22 @@
 #pragma once
-#include <vector>
+#include <array>
 #include "engine/scene/entities/Bullet.h"
 
 class Boss;
-struct AABB;
 
 class BulletManager {
 public:
-    void Clear();
+    static constexpr size_t kMaxBullets = 128;
 
-    // 生成（PlayerControllerから）
-    void Spawn(
-        const Math::Vector3& pos,
-        const Math::Vector3& vel,
-        float power,
-        float damage,
-        float life
-    );
+    void Clear();
+    void Spawn(const Math::Vector3& pos, const Math::Vector3& vel,
+        float power, float damage, float life);
 
     void Update(float dt);
-
-    // ボスとの当たり判定
     void CheckHitBoss(Boss& boss);
 
-    const std::vector<Bullet>& GetBullets() const { return bullets_; }
+    const std::array<Bullet, kMaxBullets>& GetBullets() const { return bullets_; }
 
 private:
-    std::vector<Bullet> bullets_;
+    std::array<Bullet, kMaxBullets> bullets_{};
 };

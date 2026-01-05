@@ -5,14 +5,18 @@
 #include "engine/scene/entities/BulletManager.h"
 #include "engine/scene/entities/BossController.h"
 #include "engine/scene/entities/Boss.h"
+#include "engine/3d/Object3d.h"
+
 
 enum class GameState { Title, Playing, Clear, GameOver };
 
 class Input;
 
+class Object3dCommon;
+
 class GameScene {
 public:
-    void Initialize();
+    void Initialize(Object3dCommon* objCommon);
     void Update(Input& input, float dt);
     void Draw();
 
@@ -29,4 +33,11 @@ private:
     BulletManager bullets_;
     Boss boss_;
     BossController bossCtrl_;
+
+    Object3dCommon* objCommon_ = nullptr;
+
+    Object3d playerObj_;
+    Object3d bossObj_;
+    std::array<Object3d, BulletManager::kMaxBullets> bulletObjs_;
+
 };

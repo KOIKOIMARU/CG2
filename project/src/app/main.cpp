@@ -224,12 +224,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	ModelManager::GetInstance()->Initialize(dxCommon,srvManager);
-	ModelManager::GetInstance()->LoadModel("plane.obj");
-
-	Object3d* object3d = new Object3d();
-	object3d->Initialize(object3dCommon);
-	object3d->SetModel("plane.obj");
-
+	ModelManager::GetInstance()->LoadModel("resources/plane.obj");
+	ModelManager::GetInstance()->LoadModel("resources/player.obj");
+	ModelManager::GetInstance()->LoadModel("resources/enemy.obj");
+	ModelManager::GetInstance()->LoadModel("resources/bullet.obj");
 
 	ComPtr<IXAudio2> xAudio2 = nullptr;
 	HRESULT result = XAudio2Create(&xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
@@ -258,6 +256,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
 	TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
 	TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
+	TextureManager::GetInstance()->LoadTexture("resources/player.png");
+	TextureManager::GetInstance()->LoadTexture("resources/enemy.png");
+	TextureManager::GetInstance()->LoadTexture("resources/bullet.png");
+	TextureManager::GetInstance()->LoadTexture("resources/circle.png");
+
 
 	// --- Sprite 初期化 ---
 	std::vector<Sprite> sprites;
@@ -288,7 +291,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	SoundData soundData1 = SoundLoadWave("resources/Alarm01.wav");
 
 	GameScene gameScene;
-	gameScene.Initialize();
+	gameScene.Initialize(object3dCommon);
 
 	// ウィンドウのxボタンが押されるまでループ
 	while (true) {
@@ -321,8 +324,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		camera->Update();
 
-		object3d->Update();
-
 		emitter.Update(deltaTime);
 
 		ParticleManager::GetInstance()->Update(
@@ -345,23 +346,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		ParticleManager::GetInstance()->Draw();
 
-
-		object3dCommon->CommonDrawSetting();
-
-		object3d->Draw();
-
-
-
 		// ===== スプライト描画 =====
 		spriteCommon->CommonDrawSetting();
 		for (auto& s : sprites) s.Draw();
 
-
-		//// ImGuiの描画
-		//ImGui_ImplDX12_RenderDrawData(
-		//	ImGui::GetDrawData(),
-		//	dxCommon->GetCommandList()
-		//);
 
 
 		dxCommon->PostDraw();
@@ -373,7 +361,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// 解放処理
 	xAudio2.Reset(); // XAudio2の解放
-	delete object3d;          // シーン依存
 	delete object3dCommon;    // 基盤システム
 	delete input;
 	delete camera;
