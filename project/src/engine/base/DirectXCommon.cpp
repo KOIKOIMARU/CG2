@@ -774,21 +774,39 @@ void DirectXCommon::UploadTextureData(
 // すでにある UploadTextureData の下あたりに追加
 DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
 {
-    // std::string → std::wstring に変換
-    std::wstring filePathW(filePath.begin(), filePath.end());
+    namespace fs = std::filesystem;
+
+    if (filePath.empty()) {
+        Logger::Log("[LoadTexture] filePath is empty.\n");
+        assert(false);
+    }
+
+    fs::path p = fs::absolute(fs::path(filePath));
+    Logger::Log(std::format("[LoadTexture] request='{}'\n", filePath));
+    Logger::Log(std::format("[LoadTexture] abs='{}'\n", p.string()));
+    Logger::Log(std::format("[LoadTexture] cwd='{}'\n", fs::current_path().string()));
+
+    if (!fs::exists(p)) {
+        Logger::Log("[LoadTexture] file not found.\n");
+        assert(false);
+    }
+
+    std::wstring filePathW = p.wstring();
 
     DirectX::ScratchImage image{};
     DirectX::TexMetadata metadata{};
 
-    // PNG / JPG など WIC 対応画像を読み込む
     HRESULT hr = DirectX::LoadFromWICFile(
         filePathW.c_str(),
-        DirectX::WIC_FLAGS_FORCE_SRGB, // sRGB を想定
+        DirectX::WIC_FLAGS_FORCE_SRGB,
         &metadata,
-        image);
-    assert(SUCCEEDED(hr));
+        image
+    );
+    if (FAILED(hr)) {
+        Logger::Log(std::format("[LoadTexture] LoadFromWICFile failed. hr=0x{:08X}\n", (uint32_t)hr));
+        assert(false);
+    }
 
-    // ミップマップ生成
     DirectX::ScratchImage mipImages{};
     hr = DirectX::GenerateMipMaps(
         image.GetImages(),
@@ -796,10 +814,11 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
         metadata,
         DirectX::TEX_FILTER_SRGB,
         0,
-        mipImages);
+        mipImages
+    );
     assert(SUCCEEDED(hr));
 
-    return mipImages;  // これをそのまま返して使う
+    return mipImages;
 }
 
 void DirectXCommon::InitializeFixFPS() {

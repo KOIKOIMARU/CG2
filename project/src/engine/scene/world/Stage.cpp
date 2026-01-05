@@ -1,38 +1,65 @@
 #include "engine/scene/world/Stage.h"
+#include "engine/3d/Object3dCommon.h"
+#include "engine/3d/ModelManager.h"
+#include <cassert>
 
 Stage::Stage() {
-    // あなたの gMap をそのまま移植（同じ並び）
     map_ = { {
-            // ======= 天井 =======
-            MapRow{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+        MapRow{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+        MapRow{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    } };
+}
 
-            // ======= 空間 =======
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+void Stage::Initialize(Object3dCommon* objCommon) {
+    objCommon_ = objCommon;
 
-            // ======= 上段足場 =======
-            MapRow{1,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1},
+    // WinMainで LoadModel 済み前提
+    auto* blockModel = ModelManager::GetInstance()->FindModel("block.obj");
+    assert(blockModel);
 
-            // ======= 空間 =======
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+    blockObjs_.clear();
+    blockObjs_.reserve(kMapW * kMapH);
 
-            // ======= 中段足場 =======
-            MapRow{1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1},
+    for (int y = 0; y < kMapH; ++y) {
+        for (int x = 0; x < kMapW; ++x) {
+            if (map_[y][x] != 1) { continue; }
 
-            // ======= 空間 =======
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
-            MapRow{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+            blockObjs_.emplace_back();
+            auto& obj = blockObjs_.back();
 
-            // ======= 床 =======
-            MapRow{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
-        } };
+            obj.Initialize(objCommon_);
+            obj.SetModel(blockModel);
+
+
+            const float wx = (x + 0.5f) * kTileSize;
+            const int tileYWorld = (kMapH - 1) - y;
+            const float wy = (tileYWorld + 0.5f) * kTileSize;
+
+            obj.SetTranslate({ wx, wy, 0.0f });
+            obj.SetScale({ kTileSize, kTileSize, kTileSize });
+
+            // ★これ必須寄り
+            obj.Update();
+        }
+    }
+}
+
+
+void Stage::Draw() {
+
 }
 
 bool Stage::IsSolidTileByIndex(int mapX, int mapY) const {
-    // マップ外は壁扱い（今の挙動そのまま）
     if (mapX < 0 || mapX >= kMapW || mapY < 0 || mapY >= kMapH) {
         return true;
     }
@@ -44,7 +71,7 @@ int Stage::WorldToTileX(float wx) {
 }
 
 int Stage::WorldToTileYWorld(float wy) {
-    return static_cast<int>(std::floor(wy / kTileSize)); // 下から数える
+    return static_cast<int>(std::floor(wy / kTileSize));
 }
 
 bool Stage::IsSolidAtWorld(float wx, float wy) const {

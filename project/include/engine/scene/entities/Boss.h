@@ -1,6 +1,9 @@
 #pragma once
 #include "engine/base/Math.h"
 
+class Stage;
+struct Player;
+
 class Boss {
 public:
     enum class State {
@@ -12,17 +15,17 @@ public:
     };
 
 public:
-    // 更新系
-    void Update(float dt);
+    // ★ Controller統合版
+    void Update(const Player& player, const Stage& stage, float dt);
+
     void Damage(float dmg);
 
-    // Getter
     bool IsAlive() const { return alive_; }
     const Math::Vector3& GetPos() const { return pos_; }
     float GetSizeX() const { return sizeX_; }
     float GetSizeY() const { return sizeY_; }
 
-    // 外部から触る用（Controllerが使う）
+    // 状態（今のまま publicでもOK。あとで整理してもいい）
     Math::Vector3 pos_{ 10.0f, 1.0f, 0.0f };
     Math::Vector3 vel_{ 0,0,0 };
 
@@ -36,7 +39,6 @@ public:
     bool facingRight_ = true;
     State state_ = State::Idle;
 
-    // 行動パラメータ
     float walkSpeed_ = 1.5f;
     float attackRange_ = 2.0f;
     float dashRange_ = 15.0f;

@@ -224,10 +224,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 	ModelManager::GetInstance()->Initialize(dxCommon,srvManager);
-	ModelManager::GetInstance()->LoadModel("resources/plane.obj");
-	ModelManager::GetInstance()->LoadModel("resources/player.obj");
-	ModelManager::GetInstance()->LoadModel("resources/enemy.obj");
-	ModelManager::GetInstance()->LoadModel("resources/bullet.obj");
+	ModelManager::GetInstance()->LoadModel("plane.obj");
+	ModelManager::GetInstance()->LoadModel("player.obj");
+	ModelManager::GetInstance()->LoadModel("enemy.obj");
+	ModelManager::GetInstance()->LoadModel("bullet.obj");
+	ModelManager::GetInstance()->LoadModel("block.obj");
 
 	ComPtr<IXAudio2> xAudio2 = nullptr;
 	HRESULT result = XAudio2Create(&xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
@@ -259,6 +260,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	TextureManager::GetInstance()->LoadTexture("resources/player.png");
 	TextureManager::GetInstance()->LoadTexture("resources/enemy.png");
 	TextureManager::GetInstance()->LoadTexture("resources/bullet.png");
+	TextureManager::GetInstance()->LoadTexture("resources/block.png");
 	TextureManager::GetInstance()->LoadTexture("resources/circle.png");
 
 
@@ -324,16 +326,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		camera->Update();
 
-		emitter.Update(deltaTime);
-
-		ParticleManager::GetInstance()->Update(
-			camera->GetViewMatrix(),
-			camera->GetProjectionMatrix()
-		);
-
-
-		for (auto& s : sprites) s.Update();
-
 
 		// ImGuiの描画
 		//ImGui::Render();
@@ -344,13 +336,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		gameScene.Draw();
 
-		ParticleManager::GetInstance()->Draw();
-
-		// ===== スプライト描画 =====
-		spriteCommon->CommonDrawSetting();
-		for (auto& s : sprites) s.Draw();
-
-
 
 		dxCommon->PostDraw();
 		
@@ -360,28 +345,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	OutputDebugStringA("Hello, DirectX!\n");
 
 	// 解放処理
-	xAudio2.Reset(); // XAudio2の解放
-	delete object3dCommon;    // 基盤システム
+	SoundUnload(&soundData1);
+
+	if (masterVoice) {
+		masterVoice->DestroyVoice();
+		masterVoice = nullptr;
+	}
+	xAudio2.Reset();
+
+	delete modelCommon;
+	delete object3dCommon;
 	delete input;
 	delete camera;
-	ModelManager::GetInstance()->Finalize();
-	TextureManager::GetInstance()->Destroy();
-	ParticleManager::GetInstance()->Finalize();
 
+	ParticleManager::GetInstance()->Finalize();
+	TextureManager::GetInstance()->Destroy();
+	ModelManager::GetInstance()->Finalize();
 
 	delete srvManager;
 	delete dxCommon;
 
-
-	// windowsAPIの終了
 	winApp->Finalize();
-	// WindowsAPI解放
 	delete winApp;
-	
-	//// ImGuiの終了
-	//ImGui_ImplDX12_Shutdown();
-	//ImGui_ImplWin32_Shutdown();
-	//ImGui::DestroyContext();
+
 
 #ifdef _DEBUG
 	D3DResourceLeakChecker leakChecker;

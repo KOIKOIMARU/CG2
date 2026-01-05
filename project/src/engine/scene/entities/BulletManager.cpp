@@ -13,7 +13,6 @@ void BulletManager::Clear()
 void BulletManager::Spawn(const Math::Vector3& pos, const Math::Vector3& vel,
     float power, float damage, float life)
 {
-    // 空きスロット探す
     for (auto& b : bullets_) {
         if (!b.alive) {
             b.pos = pos;
@@ -25,7 +24,6 @@ void BulletManager::Spawn(const Math::Vector3& pos, const Math::Vector3& vel,
             return;
         }
     }
-    // 空き無しなら捨てる（上限）
 }
 
 void BulletManager::Update(float dt)

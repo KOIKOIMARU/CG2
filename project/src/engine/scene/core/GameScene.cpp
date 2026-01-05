@@ -14,13 +14,16 @@ void GameScene::Initialize(Object3dCommon* objCommon)
 {
     objCommon_ = objCommon;
 
+    // ★追加：ステージのブロックObjectを作る
+    stage_.Initialize(objCommon_);
+
     playerObj_.Initialize(objCommon_);
-    playerObj_.SetModel(ModelManager::GetInstance()->FindModel("resources/player.obj"));
+    playerObj_.SetModel(ModelManager::GetInstance()->FindModel("player.obj"));
 
     bossObj_.Initialize(objCommon_);
-    bossObj_.SetModel(ModelManager::GetInstance()->FindModel("resources/enemy.obj"));
+    bossObj_.SetModel(ModelManager::GetInstance()->FindModel("enemy.obj"));
 
-    auto* bulletModel = ModelManager::GetInstance()->FindModel("resources/bullet.obj");
+    auto* bulletModel = ModelManager::GetInstance()->FindModel("bullet.obj");
     for (auto& o : bulletObjs_) {
         o.Initialize(objCommon_);
         o.SetModel(bulletModel);
@@ -39,9 +42,11 @@ void GameScene::ResetGame()
     bullets_.Clear();
 }
 
+extern Math::Vector3 kPlayerSize;
 static AABB MakePlayerAABB(const Player& p) {
-    return { p.pos.x, p.pos.y, Player::Size.x, Player::Size.y };
+    return { p.pos.x, p.pos.y, kPlayerSize.x, kPlayerSize.y };
 }
+
 
 
 static AABB MakeBossAABB(const Boss& b) {
@@ -67,19 +72,23 @@ void GameScene::Update(Input& input, float dt)
         break;
 
     case GameState::Playing:
-        // プレイヤー更新
-        playerCtrl_.Update(player_, stage_, input, dt);
+    {
+        // プレイヤー更新（Controller統合版）
+        player_.Update(stage_, input, dt);
 
-        // 弾生成（次にBulletManager作ったらここに置く）
+        // 弾生成（Player内の要求を消費）
         Math::Vector3 pos, vel;
         float power, damage, life;
-
-        if (playerCtrl_.ConsumeShotRequest(pos, vel, power, damage, life)) {
+        if (player_.ConsumeShotRequest(pos, vel, power, damage, life)) {
             bullets_.Spawn(pos, vel, power, damage, life);
         }
 
         bullets_.Update(dt);
-        bossCtrl_.Update(boss_, player_, stage_, dt);
+
+        // ボス更新（Controller統合版）
+        boss_.Update(player_, stage_, dt);
+
+        // 弾→ボス当たり判定
         bullets_.CheckHitBoss(boss_);
 
         if (!boss_.IsAlive()) {
@@ -87,7 +96,7 @@ void GameScene::Update(Input& input, float dt)
         }
 
         // --------------------
-        // Player vs Boss 接触ダメージ
+        // Player vs Boss 接触ダメージ（ここはそのままでOK）
         // --------------------
         player_.blinkTimer += dt;
 
@@ -103,15 +112,12 @@ void GameScene::Update(Input& input, float dt)
         AABB aB = MakeBossAABB(boss_);
 
         if (boss_.IsAlive() && !player_.invincible && Collision::IntersectAABB(aP, aB)) {
-            // ダメージ
             player_.hp -= 10.0f;
             if (player_.hp < 0.0f) player_.hp = 0.0f;
 
-            // 無敵開始
             player_.invincible = true;
             player_.invincibleTime = 0.0f;
 
-            // ノックバック
             float dir = (player_.pos.x < boss_.pos_.x) ? -1.0f : +1.0f;
             player_.vel.x = dir * player_.knockbackPower;
             player_.vel.y = player_.knockbackUp;
@@ -122,9 +128,9 @@ void GameScene::Update(Input& input, float dt)
             }
         }
 
-
-        // クリア/ゲームオーバー判定もここ
         break;
+    }
+
 
     case GameState::Clear:
         if (input.TriggerKey(DIK_SPACE)) {
@@ -172,6 +178,9 @@ void GameScene::Update(Input& input, float dt)
 void GameScene::Draw()
 {
     objCommon_->CommonDrawSetting();
+
+    // ★追加：まずステージ描画
+    stage_.Draw();
 
     playerObj_.Draw();
     bossObj_.Draw();

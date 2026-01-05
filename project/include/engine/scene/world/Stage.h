@@ -1,7 +1,12 @@
 #pragma once
 #include <array>
+#include <vector>
 #include <cmath>
 #include <cstdint>
+
+#include "engine/3d/Object3d.h" // ★追加（Object3dを持つため）
+
+class Object3dCommon;          // ★前方宣言でOK
 
 class Stage {
 public:
@@ -14,27 +19,26 @@ public:
 
     Stage();
 
-    // そのまま差し替えたい場合用（固定マップでOKなら使わなくてもいい）
     void SetMap(const Map& map) { map_ = map; }
 
-    // ---- 当たり判定 ----
-    // mapX,mapY は gMap のインデックス（上が0、下がkMapH-1）を想定
-    bool IsSolidTileByIndex(int mapX, int mapY) const;
+    // ★描画用
+    void Initialize(Object3dCommon* objCommon);  // タイルObject生成
+    void Draw();                                 // タイルObject描画
 
-    // ワールド座標(wx,wy)が含まれるタイルがSolidか
+    bool IsSolidTileByIndex(int mapX, int mapY) const;
     bool IsSolidAtWorld(float wx, float wy) const;
 
-    // デバッグや描画用に取り出したい時
     int  GetTileByIndex(int mapX, int mapY) const { return map_[mapY][mapX]; }
     const Map& GetMap() const { return map_; }
 
-    // 便利：ワールド→(tileX, tileYWorld) 変換（tileYWorldは“下から数える”）
     static int WorldToTileX(float wx);
     static int WorldToTileYWorld(float wy);
-
-    // tileYWorld（下から）→ mapY（gMap配列用：上が0）
     static int TileYWorldToMapY(int tileYWorld) { return kMapH - 1 - tileYWorld; }
 
 private:
     Map map_{};
+
+    // ★描画用
+    Object3dCommon* objCommon_ = nullptr;
+    std::vector<Object3d> blockObjs_;
 };

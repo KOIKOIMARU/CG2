@@ -183,19 +183,10 @@
     <ClCompile Include="src\engine\scene\entities\Boss.cpp">
       <Filter>src\engine\scene\entities</Filter>
     </ClCompile>
-    <ClCompile Include="src\engine\scene\entities\Bullet.cpp">
-      <Filter>src\engine\scene\entities</Filter>
-    </ClCompile>
-    <ClCompile Include="src\engine\scene\entities\BossController.cpp">
-      <Filter>src\engine\scene\entities</Filter>
-    </ClCompile>
     <ClCompile Include="src\engine\scene\entities\BulletManager.cpp">
       <Filter>src\engine\scene\entities</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\scene\entities\Player.cpp">
-      <Filter>src\engine\scene\entities</Filter>
-    </ClCompile>
-    <ClCompile Include="src\engine\scene\entities\PlayerController.cpp">
       <Filter>src\engine\scene\entities</Filter>
     </ClCompile>
   </ItemGroup>
@@ -314,12 +305,6 @@
     <ClInclude Include="include\engine\scene\entities\Boss.h">
       <Filter>include\engine\scene\entities</Filter>
     </ClInclude>
-    <ClInclude Include="include\engine\scene\entities\BossController.h">
-      <Filter>include\engine\scene\entities</Filter>
-    </ClInclude>
-    <ClInclude Include="include\engine\scene\entities\Bullet.h">
-      <Filter>include\engine\scene\entities</Filter>
-    </ClInclude>
     <ClInclude Include="include\engine\scene\entities\BulletManager.h">
       <Filter>include\engine\scene\entities</Filter>
     </ClInclude>
@@ -328,9 +313,6 @@
     </ClInclude>
     <ClInclude Include="include\engine\scene\world\Stage.h">
       <Filter>include\engine\scene\world</Filter>
-    </ClInclude>
-    <ClInclude Include="include\engine\scene\entities\PlayerController.h">
-      <Filter>include\engine\scene\entities</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\entities\Player.h">
       <Filter>include\engine\scene\entities</Filter>
