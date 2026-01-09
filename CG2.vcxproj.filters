@@ -79,6 +79,6 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Object3d.hlsli" />
+    <None Include="Object3D.hlsli" />
   </ItemGroup>
 </Project>

@@ -1,19 +1,16 @@
+#include "Object3D.hlsli"
+
 cbuffer TransformCB : register(b1)
 {
     float4x4 gWVP;
     float4x4 gWorld;
+    float4x4 gWorldInverseTranspose; // ★追加
 };
+
 
 struct VertexShaderInput
 {
     float4 position : POSITION0;
-    float2 texcoord : TEXCOORD0;
-    float3 normal : NORMAL0;
-};
-
-struct VertexShaderOutput
-{
-    float4 position : SV_POSITION;
     float2 texcoord : TEXCOORD0;
     float3 normal : NORMAL0;
 };
@@ -24,9 +21,12 @@ VertexShaderOutput main(VertexShaderInput input)
     output.position = mul(input.position, gWVP);
     output.texcoord = input.texcoord;
 
-    // 法線をワールド空間へ変換（スケーリングがある場合は inverse-transpose 必須）
+    output.worldPosition = mul(input.position, gWorld).xyz;
+
     float3x3 normalMatrix = (float3x3) gWorld;
-    output.normal = normalize(mul(input.normal, normalMatrix));
+    output.normal =
+    normalize(mul(input.normal, (float3x3) gWorldInverseTranspose));
+
 
     return output;
 }

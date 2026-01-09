@@ -1,19 +1,20 @@
-#include "Object3d.hlsli" // DirectionalLight 構造体を含む
+#include "Object3D.hlsli"
 
 cbuffer MaterialCB : register(b0)
 {
-    float4 gMaterialColor;
-    int gEnableLighting;
-    float3 padding; // 16byte alignment
+    Material gMaterial;
+};
+cbuffer CameraCB : register(b2)
+{
+    Camera gCamera;
+};
+cbuffer LightCB : register(b3)
+{
+    DirectionalLight gDirectionalLight;
 };
 
 Texture2D<float4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
-
-cbuffer DirectionalLightCB : register(b3)
-{
-    DirectionalLight gDirectionalLight;
-};
 
 struct PixelShaderOutput
 {
@@ -23,20 +24,42 @@ struct PixelShaderOutput
 PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
+    float4 textureColor = gTexture.Sample(gSampler, input.texcoord);
 
-    if (gEnableLighting != 0)
+    if (gMaterial.enableLighting != 0)
     {
-        float NdotL = dot(normalize(input.normal), -gDirectionalLight.direction);
+        float3 N = normalize(input.normal);
+        float3 L = normalize(-gDirectionalLight.direction.xyz);
+
+        float3 toEye = normalize(gCamera.worldPosition - input.worldPosition);
+
+        float NdotL = dot(N, L);
         float halfLambert = pow(NdotL * 0.5f + 0.5f, 2.0f);
-        float3 litColor = gMaterialColor.rgb * gDirectionalLight.color.rgb * halfLambert;
-        output.color = float4(litColor, 1.0f) * gTexture.Sample(gSampler, input.texcoord);
+
+// diffuse（今のままでOK）
+        float3 diffuse =
+    gMaterial.color.rgb * textureColor.rgb *
+    gDirectionalLight.color.rgb * halfLambert *
+    gDirectionalLight.intensity;
+
+// ---- Blinn-Phong specular（ここが追加/変更）----
+        float3 H = normalize(L + toEye); // HalfVector
+        float NdotH = saturate(dot(N, H));
+        float specularPow = pow(NdotH, gMaterial.shininess);
+
+        float3 specular =
+    gDirectionalLight.color.rgb *
+    gDirectionalLight.intensity *
+    specularPow;
+
+        output.color.rgb = diffuse + specular;
+        output.color.a = gMaterial.color.a * textureColor.a;
 
     }
     else
     {
-        output.color = gMaterialColor * gTexture.Sample(gSampler, input.texcoord);
+        output.color = gMaterial.color * textureColor;
     }
-
 
     return output;
 }
