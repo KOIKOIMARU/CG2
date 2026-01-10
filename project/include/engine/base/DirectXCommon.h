@@ -78,6 +78,10 @@ public:
 
     float GetDeltaTime() const { return deltaTime_; }
 
+    // ★追加：スワップチェーンリソース数（バックバッファ数）
+    size_t GetSwapChainResourcesNum() const { return kBackBufferCount; }
+
+
 
 private:
     // --- ここから「Initialize」専用の内部関数たち ---
@@ -94,7 +98,6 @@ private:
     void InitializeViewport();
     void InitializeScissorRect();
     void InitializeDXC();
-    void InitializeImGui();
 
     // 汎用ハンドル取得関数（static／内部用）
     static D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(

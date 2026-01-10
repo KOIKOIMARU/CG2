@@ -49,6 +49,8 @@ public:
         return descriptorHeap_.Get();
     }
 
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> GetDescriptorHeapComPtr() const { return descriptorHeap_; }
+
 
 private:
     DirectXCommon* directXCommon_ = nullptr; // 借り物

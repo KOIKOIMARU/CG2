@@ -1,29 +1,29 @@
 #include "engine/base/WinApp.h"
-#include "imgui.h"
 
+#ifdef USE_IMGUI
+#include "imgui_impl_win32.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+#endif
 
 // ウィンドウプロシージャ
 LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 
-	// ImGuiのウィンドウプロシージャを呼び出す
+#ifdef USE_IMGUI
+	// ImGuiのウィンドウプロシージャを呼び出す（処理したらここで終了）
 	if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam)) {
-		return true;
+		return 1; // LRESULTなので true より 1 の方が安全
 	}
+#endif
 
-	// メッセージに応じてゲーム固有の処理を行う
 	switch (msg) {
-		// ウィンドウが破壊された
 	case WM_DESTROY:
-		// ウィンドウに対してアプリの終了を伝える
 		PostQuitMessage(0);
 		return 0;
 	}
 
-	// 標準のメッセージ処理を行う
 	return DefWindowProc(hwnd, msg, wparam, lparam);
-
 }
+
 
 void WinApp::Initialize()
 {

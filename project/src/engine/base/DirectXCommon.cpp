@@ -38,7 +38,6 @@ void DirectXCommon::Initialize(WinApp* winApp)
     InitializeViewport();       // ★ここで初期化
     InitializeScissorRect();
     InitializeDXC();
-    InitializeImGui();
 
     // ★ FPS 固定の初期化
     InitializeFixFPS();
@@ -504,23 +503,6 @@ void DirectXCommon::InitializeDXC()
     assert(SUCCEEDED(hr));
 }
 
-void DirectXCommon::InitializeImGui()
-{
-    //IMGUI_CHECKVERSION();
-    //ImGui::CreateContext();
-    //ImGui::StyleColorsDark();
-
-    //ImGui_ImplWin32_Init(winApp_->GetHwnd());
-
-    //ImGui_ImplDX12_Init(
-    //    device_.Get(),
-    //    kBackBufferCount,
-    //    // ★ ここも SRGB に揃える
-    //    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-    //    srvHeap_.Get(),
-    //    srvHeap_->GetCPUDescriptorHandleForHeapStart(),
-    //    srvHeap_->GetGPUDescriptorHandleForHeapStart());
-}
 
 Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     const std::wstring& filePath,

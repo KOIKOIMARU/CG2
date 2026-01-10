@@ -153,6 +153,9 @@
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp">
       <Filter>src\engine\3d</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\base\ImGuiManager.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
@@ -262,6 +265,9 @@
     </ClInclude>
     <ClInclude Include="include\engine\3d\ParticleEmitter.h">
       <Filter>include\engine\3d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\ImGuiManager.h">
+      <Filter>include\engine\base</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
