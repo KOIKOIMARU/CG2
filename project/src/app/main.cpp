@@ -243,7 +243,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	SoundManager sound;
 	sound.Initialize();
-	sound.Load("alarm", "resources/Alarm01.wav");
+	sound.Load("alarm", "resources/Alarm01.mp3");
 
 	// ポインタ
 	Input* input = nullptr;
