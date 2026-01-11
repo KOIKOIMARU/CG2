@@ -31,6 +31,7 @@
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/ParticleEmitter.h"
 #include "engine/base/ImGuiManager.h"
+#include "imgui.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "DirectXTex.h"
@@ -449,8 +450,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// ★ ファイルパスを渡して初期化（内部で TextureManager を使う）
 	sprites[0].Initialize(spriteCommon, "resources/uvChecker.png");
-	sprites[0].SetPosition({ 0, 0 });
+
+	// 課題：初期座標(100,100)
+	Vector2 spritePos = { 100.0f, 100.0f };
+	sprites[0].SetPosition(spritePos);
+
+	// サイズは好きでOK（課題には指定なし）
 	sprites[0].SetSize({ 640, 360 });
+
 
 	ParticleManager::GetInstance()->Initialize(dxCommon, srvManager);
 
@@ -492,7 +499,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 		imguiManager->Begin();
 
-		// ここにUI追加
+		// 課題UI：スプライト座標操作
+		ImGui::SetNextWindowSize(ImVec2(500, 100), ImGuiCond_Always);
+		ImGui::Begin("Sprite Controller", nullptr,
+			ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_NoCollapse);
+
+		// スライダー（範囲は画面サイズに合わせて適当に）
+		ImGui::SliderFloat("X", &spritePos.x, 0.0f, 1280.0f);
+		ImGui::SliderFloat("Y", &spritePos.y, 0.0f, 720.0f);
+
+		// 表示：整数部4桁 + 小数1桁（見た目を揃える）
+		ImGui::Text("Pos : %07.1f , %07.1f", spritePos.x, spritePos.y);
+
+		ImGui::End();
+
+		// スプライトに反映
+		sprites[0].SetPosition(spritePos);
+
 
 		imguiManager->End(); // ← Updateの最後が妥当
 
