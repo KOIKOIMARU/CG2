@@ -64,6 +64,9 @@
     <Filter Include="resources">
       <UniqueIdentifier>{724b9669-b3ff-492b-b583-c902814b1e55}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\engine\audio">
+      <UniqueIdentifier>{db1bd0e5-aeaf-42eb-b084-3afc55d93ee8}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="externals\imgui\imgui.cpp">
@@ -155,6 +158,9 @@
     </ClCompile>
     <ClCompile Include="src\engine\base\ImGuiManager.cpp">
       <Filter>src\engine\base</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\audio\SoundManager.cpp">
+      <Filter>src\engine\audio</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -268,6 +274,9 @@
     </ClInclude>
     <ClInclude Include="include\engine\base\ImGuiManager.h">
       <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\audio\SoundManager.h">
+      <Filter>include\engine\audio</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

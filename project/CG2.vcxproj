@@ -157,6 +157,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\audio\SoundManager.cpp" />
     <ClCompile Include="src\engine\base\ImGuiManager.cpp" />
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp" />
     <ClCompile Include="src\engine\3d\Particle.cpp" />
@@ -269,6 +270,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\2d\SpriteCommon.h" />
     <ClInclude Include="include\engine\3d\TextureManager.h" />
     <ClInclude Include="include\engine\base\SrvManager.h" />
+    <ClInclude Include="include\engine\audio\SoundManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
