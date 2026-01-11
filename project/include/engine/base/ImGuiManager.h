@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <wrl.h>
 #include <d3d12.h>
+#include "engine/base/Math.h"
 
 class WinApp;
 class DirectXCommon;
@@ -21,6 +22,8 @@ public:
     void End();
     void Draw();
     void Finalize();
+
+    void ShowSpriteController(Math::Vector2& spritePos);
 
 private:
     DirectXCommon* dxCommon_ = nullptr;

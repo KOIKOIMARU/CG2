@@ -31,7 +31,6 @@
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/ParticleEmitter.h"
 #include "engine/base/ImGuiManager.h"
-#include "imgui.h"
 #include <wrl/client.h>
 #include <xaudio2.h>
 #include "DirectXTex.h"
@@ -498,28 +497,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		//ImGui::NewFrame();
 
 		imguiManager->Begin();
+		imguiManager->ShowSpriteController(spritePos);
+		imguiManager->End();
 
-		// 課題UI：スプライト座標操作
-		ImGui::SetNextWindowSize(ImVec2(500, 100), ImGuiCond_Always);
-		ImGui::Begin("Sprite Controller", nullptr,
-			ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoCollapse);
-
-		// スライダー（範囲は画面サイズに合わせて適当に）
-		ImGui::SliderFloat("X", &spritePos.x, 0.0f, 1280.0f);
-		ImGui::SliderFloat("Y", &spritePos.y, 0.0f, 720.0f);
-
-		// 表示：整数部4桁 + 小数1桁（見た目を揃える）
-		ImGui::Text("Pos : %07.1f , %07.1f", spritePos.x, spritePos.y);
-
-		ImGui::End();
-
-		// スプライトに反映
+		// ★ここ追加：UIで変えた座標をスプライトに反映
 		sprites[0].SetPosition(spritePos);
-
-
-		imguiManager->End(); // ← Updateの最後が妥当
-
 
 		// キーボード入力の更新
 		input->Update();

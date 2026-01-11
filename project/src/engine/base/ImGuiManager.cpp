@@ -73,3 +73,19 @@ void ImGuiManager::Finalize() {
     ImGui::DestroyContext();
 #endif
 }
+
+void ImGuiManager::ShowSpriteController(Math::Vector2& spritePos) {
+#ifdef USE_IMGUI
+    ImGui::SetNextWindowSize(ImVec2(500, 100), ImGuiCond_Always);
+    ImGui::Begin("Sprite Controller", nullptr,
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+
+    ImGui::SliderFloat("X", &spritePos.x, 0.0f, 1280.0f);
+    ImGui::SliderFloat("Y", &spritePos.y, 0.0f, 720.0f);
+    ImGui::Text("Pos : %07.1f , %07.1f", spritePos.x, spritePos.y);
+
+    ImGui::End();
+#else
+    (void)spritePos;
+#endif
+}
