@@ -258,8 +258,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	spriteCommon = new SpriteCommon();
 	spriteCommon->Initialize(dxCommon, srvManager);
 
-
-
 	// リソース作成
 	std::vector<ComPtr<ID3D12Resource>> textureResources;
 	std::vector<D3D12_GPU_DESCRIPTOR_HANDLE> textureSrvHandles;
