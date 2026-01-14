@@ -1,6 +1,6 @@
 #include "engine/game/MyGame.h"
+#include "engine/base/D3DResourceLeakChecker.h"
 #include <cassert>
-#include <engine/base/D3DResourceLeakChecker.h>
 #include <Windows.h>
 
 
