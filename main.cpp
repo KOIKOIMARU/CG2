@@ -77,6 +77,16 @@ struct DirectionalLight {
     float intensity;    // 4  ←ここで16byte揃う
 };
 
+struct PointLight {
+	Vector4 color;      // 16
+	Vector3 position;   // 12
+	float intensity;    // 4  -> ここまでで 32
+	float radius;       // 4
+	float decay;        // 4
+	float padding[2];   // 8  -> 合計 48（安全）
+};
+
+
 struct CameraForGPU {
 	Vector3 worldPosition;
 	float padding; // 16byte合わせ
@@ -884,7 +894,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	// RootParameter作成。PixelShaderのMaterialとVertexShaderのTransform 
-	D3D12_ROOT_PARAMETER rootParameters[5] = {};
+	D3D12_ROOT_PARAMETER rootParameters[6] = {};
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -917,6 +927,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[4].Descriptor.ShaderRegister = 3;
+
+	rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[5].Descriptor.ShaderRegister = 4;
 
 	// ルートシグネチャのセットアップ
 	descriptionRootSignature.pParameters = rootParameters;
@@ -1172,6 +1186,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	directionalLightData->intensity = 1.0f;
 
+	// PointLight 用バッファ作成とMap
+	ID3D12Resource* pointLightResource = CreateBufferResource(device, sizeof(PointLight));
+	PointLight* pointLightData = nullptr;
+	pointLightResource->Map(0, nullptr, reinterpret_cast<void**>(&pointLightData));
+
+	// 初期値（資料の例）
+	pointLightData->color = { 1,1,1,1 };
+	pointLightData->position = { 0.0f, 2.0f, 0.0f };
+	pointLightData->intensity = 1.0f;
+
+	// 減衰パラメータ（調整しやすい例）
+	pointLightData->radius = 6.0f; // 影響範囲
+	pointLightData->decay = 2.0f; // 減衰の急さ
+
+
 
 	// ★ CameraForGPU 作成とMap
 	ID3D12Resource* cameraResource = CreateBufferResource(device, sizeof(CameraForGPU));
@@ -1352,6 +1381,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat("Shininess", &materialDataA->shininess, 0.5f, 1.0f, 256.0f);
 			ImGui::ColorEdit3("Specular Color", &materialDataA->specularColor.x);
 
+			ImGui::SeparatorText("PointLight");
+			ImGui::DragFloat3("Point Pos", &pointLightData->position.x, 0.01f, -10.0f, 10.0f);
+			ImGui::DragFloat("Point Intensity", &pointLightData->intensity, 0.01f, 0.0f, 10.0f);
+			ImGui::ColorEdit3("Point Color", &pointLightData->color.x);
+			ImGui::DragFloat("Point Radius", &pointLightData->radius, 0.01f, 0.01f, 50.0f);
+			ImGui::DragFloat("Point Decay", &pointLightData->decay, 0.01f, 0.01f, 8.0f);
+
+			// 点光源だけ確認したいなら（資料通り）
+			ImGui::Text("Tip: Set Directional Intensity = 0 to test PointLight");
+
+
 
 			ImGui::End();
 
@@ -1450,6 +1490,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootConstantBufferView(2, cameraResource->GetGPUVirtualAddress());   // b2 ★
 			commandList->SetGraphicsRootDescriptorTable(3, selectedTextureHandle);                        // t0
 			commandList->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress()); // b3
+			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress()); // b4 ★
 
 
 			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
@@ -1557,6 +1598,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 	cameraResource->Release();
+	pointLightResource->Release();
 
 
 	// ImGuiの終了処理
