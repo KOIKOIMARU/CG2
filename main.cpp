@@ -12,6 +12,9 @@
 #include <dxcapi.h>
 #include <cassert>
 #include <wrl/client.h>
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
 #include "externals/imgui/imgui.h"
 #include "externals/imgui/imgui_impl_dx12.h"
 #include "externals/imgui/imgui_impl_win32.h"
@@ -92,6 +95,24 @@ struct CameraForGPU {
 	float padding; // 16byte合わせ
 };
 
+struct ObjMesh {
+	std::vector<VertexData> vertices;
+	std::vector<uint32_t> indices;
+};
+
+struct ObjIndex {
+	int p = 0;
+	int t = 0;
+	int n = 0;
+	bool operator==(const ObjIndex& r) const { return p == r.p && t == r.t && n == r.n; }
+};
+
+struct ObjIndexHash {
+	size_t operator()(const ObjIndex& k) const noexcept {
+		// 適当でOK（衝突してもunordered_mapが解決する）
+		return (size_t)k.p * 73856093u ^ (size_t)k.t * 19349663u ^ (size_t)k.n * 83492791u;
+	}
+};
 
 // 単位行列の作成
 Matrix4x4 MakeIdentity4x4() {
@@ -627,6 +648,115 @@ void SetVertex(VertexData& v, const Vector4& pos, const Vector2& uv) {
 	v.normal = Normalize(p);
 }
 
+
+static ObjMesh LoadObjFileSimpleLH(const std::string& filePath) {
+	ObjMesh mesh;
+
+	std::vector<Vector3> positions;
+	std::vector<Vector2> texcoords;
+	std::vector<Vector3> normals;
+
+	std::unordered_map<ObjIndex, uint32_t, ObjIndexHash> table;
+
+	std::ifstream file(filePath);
+	assert(file.is_open());
+
+	std::string line;
+	while (std::getline(file, line)) {
+		std::istringstream s(line);
+		std::string id;
+		s >> id;
+
+		if (id == "v") {
+			Vector3 p{};
+			s >> p.x >> p.y >> p.z;
+			// RH -> LH（Z反転）
+			p.z *= -1.0f;
+			positions.push_back(p);
+
+		} else if (id == "vt") {
+			Vector2 uv{};
+			s >> uv.x >> uv.y;
+			// DirectX系に合わせてV反転
+			uv.y = 1.0f - uv.y;
+			texcoords.push_back(uv);
+
+		} else if (id == "vn") {
+			Vector3 n{};
+			s >> n.x >> n.y >> n.z;
+			// RH -> LH（Z反転）
+			n.z *= -1.0f;
+			normals.push_back(n);
+
+		} else if (id == "f") {
+			// f は基本「v/vt/vn」を想定（terrain.objはたぶんこれ）
+			ObjIndex face[4]{};
+			int count = 0;
+
+			for (int i = 0; i < 4; ++i) {
+				std::string vert;
+				if (!(s >> vert)) break;
+
+				// "p/t/n"
+				ObjIndex oi{};
+				char slash;
+				std::istringstream vs(vert);
+				vs >> oi.p >> slash >> oi.t >> slash >> oi.n;
+
+				// objは1始まり
+				oi.p -= 1; oi.t -= 1; oi.n -= 1;
+				face[count++] = oi;
+			}
+
+			auto getOrCreate = [&](const ObjIndex& oi) -> uint32_t {
+				auto it = table.find(oi);
+				if (it != table.end()) return it->second;
+
+				VertexData v{};
+				const Vector3& p = positions[oi.p];
+				const Vector2& uv = texcoords[oi.t];
+				const Vector3& n = normals[oi.n];
+
+				v.position = { p.x, p.y, p.z, 1.0f };
+				v.texcoord = { uv.x, uv.y };
+				v.normal = { n.x, n.y, n.z };
+
+				uint32_t newIndex = (uint32_t)mesh.vertices.size();
+				mesh.vertices.push_back(v);
+				table.emplace(oi, newIndex);
+				return newIndex;
+				};
+
+			// 三角形 or 四角形を三角形にする（countは3 or 4想定）
+			// ★ LH化でwindingが変わるので、ここで並びを反転しておく
+			if (count == 3) {
+				uint32_t i0 = getOrCreate(face[0]);
+				uint32_t i1 = getOrCreate(face[1]);
+				uint32_t i2 = getOrCreate(face[2]);
+				// 反転
+				mesh.indices.push_back(i0);
+				mesh.indices.push_back(i2);
+				mesh.indices.push_back(i1);
+			} else if (count == 4) {
+				uint32_t i0 = getOrCreate(face[0]);
+				uint32_t i1 = getOrCreate(face[1]);
+				uint32_t i2 = getOrCreate(face[2]);
+				uint32_t i3 = getOrCreate(face[3]);
+				// (0,1,2) と (0,2,3) を作る + 反転
+				mesh.indices.push_back(i0);
+				mesh.indices.push_back(i2);
+				mesh.indices.push_back(i1);
+
+				mesh.indices.push_back(i0);
+				mesh.indices.push_back(i3);
+				mesh.indices.push_back(i2);
+			}
+		}
+	}
+
+	return mesh;
+}
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
@@ -1081,6 +1211,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indexBufferViewSphere.SizeInBytes = UINT(sizeof(uint32_t) * sphereIndices.size());
 	indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
 
+	// ===== terrain OBJ load =====
+	ObjMesh terrainMesh = LoadObjFileSimpleLH("resources/terrain.obj");
+
+	// VertexBuffer
+	ID3D12Resource* vertexResourceTerrain = CreateBufferResource(device, sizeof(VertexData) * terrainMesh.vertices.size());
+	void* vertexDataTerrain = nullptr;
+	vertexResourceTerrain->Map(0, nullptr, &vertexDataTerrain);
+	memcpy(vertexDataTerrain, terrainMesh.vertices.data(), sizeof(VertexData)* terrainMesh.vertices.size());
+	vertexResourceTerrain->Unmap(0, nullptr);
+
+	D3D12_VERTEX_BUFFER_VIEW vbvTerrain{};
+	vbvTerrain.BufferLocation = vertexResourceTerrain->GetGPUVirtualAddress();
+	vbvTerrain.SizeInBytes = UINT(sizeof(VertexData) * terrainMesh.vertices.size());
+	vbvTerrain.StrideInBytes = sizeof(VertexData);
+
+	// IndexBuffer
+	ID3D12Resource* indexResourceTerrain = CreateBufferResource(device, sizeof(uint32_t) * terrainMesh.indices.size());
+	void* indexDataTerrain = nullptr;
+	indexResourceTerrain->Map(0, nullptr, &indexDataTerrain);
+	memcpy(indexDataTerrain, terrainMesh.indices.data(), sizeof(uint32_t)* terrainMesh.indices.size());
+	indexResourceTerrain->Unmap(0, nullptr);
+
+	D3D12_INDEX_BUFFER_VIEW ibvTerrain{};
+	ibvTerrain.BufferLocation = indexResourceTerrain->GetGPUVirtualAddress();
+	ibvTerrain.SizeInBytes = UINT(sizeof(uint32_t) * terrainMesh.indices.size());
+	ibvTerrain.Format = DXGI_FORMAT_R32_UINT;
+
+
 	// 頂点リソース用のヒープの設定
 	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
 	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // アップロード用
@@ -1238,6 +1396,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		  {0.0f, 0.0f, 0.0f},  // rotate
 		  {0.0f, 0.0f, 0.0f}   // translate
 	};
+
+	static Transform transformTerrain = {
+	{ 1.0f, 1.0f, 1.0f },   // scale（大きさはOBJ次第。あとで調整）
+	{ 0.0f, 0.0f, 0.0f },   // rotate
+	{ 0.0f, -1.0f, 0.0f }   // translate（少し下げる例）
+	};
+
+
 	// 現在選択されているテクスチャのインデックス
 	static size_t selectedTextureIndex = 0;
 
@@ -1253,6 +1419,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12Resource* textureResource2 = CreateTextureResource(device, metadata2);
 	UploadTextureData(textureResource2, mipImages2);
 
+	DirectX::ScratchImage mipImagesGrass = LoadTexture("resources/grass.png");
+	const DirectX::TexMetadata& metaGrass = mipImagesGrass.GetMetadata();
+	ID3D12Resource* textureResourceGrass = CreateTextureResource(device, metaGrass);
+	UploadTextureData(textureResourceGrass, mipImagesGrass);
+
 	// metadataを基にSRVを作成する
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
 	srvDesc.Format = metadata.format; // フォーマット
@@ -1266,6 +1437,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; // 2Dテクスチャ
 	srvDesc2.Texture2D.MipLevels = UINT(metadata.mipLevels); // mipレベルの数
 
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDescGrass{};
+	srvDescGrass.Format = metaGrass.format;
+	srvDescGrass.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDescGrass.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDescGrass.Texture2D.MipLevels = UINT(metaGrass.mipLevels);
+
 	//SRVを作成するDescriptorHeapの先頭を取得する
 	UINT descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 1);
@@ -1277,6 +1454,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 2);
 	// テクスチャのSRVを作成する
 	device->CreateShaderResourceView(textureResource2, &srvDesc2, textureSrvHandleCPU2);
+
+	// SRVを index=3 に作る
+	D3D12_CPU_DESCRIPTOR_HANDLE grassSrvCPU = GetCPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+	D3D12_GPU_DESCRIPTOR_HANDLE grassSrvGPU = GetGPUDescriptorHandle(srvDescriptorHeap, descriptorSizeSRV, 3);
+	device->CreateShaderResourceView(textureResourceGrass, &srvDescGrass, grassSrvCPU);
+
+
 
 	// Sprite用の頂点リソースを作る
 	ID3D12Resource* vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 6);
@@ -1374,6 +1558,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 				directionalLightData->direction = normDir; // ← Vector3 代入
 			}
 
+			ImGui::SeparatorText("Terrain");
+			ImGui::DragFloat3("Terrain Translate", &transformTerrain.translate.x, 0.01f, -50.0f, 50.0f);
+			ImGui::DragFloat3("Terrain Rotate", &transformTerrain.rotate.x, 0.01f, -6.0f, 6.0f);
+			ImGui::DragFloat3("Terrain Scale", &transformTerrain.scale.x, 0.01f, 0.01f, 50.0f);
+
 
 			// 光の強さ
 			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
@@ -1396,7 +1585,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::End();
 
 			// WVP行列の計算
-			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
+			Transform cameraTransform = { { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -15.0f } };
 			cameraData->worldPosition = cameraTransform.translate;
 			Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 			Matrix4x4 viewMatrix = Inverse(cameraMatrix);
@@ -1418,6 +1607,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			Matrix4x4 worldViewProjectionMatrixB = Multiply(worldMatrixB, Multiply(viewMatrix, projectionMatrix));
 			wvpDataB->WVP = worldViewProjectionMatrixB;
 			wvpDataB->World = worldMatrixB;
+
+			Matrix4x4 worldMatrixTerrain = MakeAffineMatrix(transformTerrain.scale, transformTerrain.rotate, transformTerrain.translate);
+			Matrix4x4 wvpTerrain = Multiply(worldMatrixTerrain, Multiply(viewMatrix, projectionMatrix));
+
+			// 既存の wvpResourceB を「terrain用」に流用してもOK（簡単）
+			// もしくは terrain専用 wvpResourceTerrain を作ってもOK
+			wvpDataB->WVP = wvpTerrain;
+			wvpDataB->World = worldMatrixTerrain;
+
+			Matrix4x4 invWorldT = Inverse(worldMatrixTerrain);
+			wvpDataB->WorldInverseTranspose = Transpose(invWorldT);
+
 
 			// Sprite用のWVPMを作る// 三角形A
 			Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
@@ -1480,6 +1681,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 			// 頂点バッファの設定
 			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			// ===== terrain draw =====
+			commandList->IASetVertexBuffers(0, 1, &vbvTerrain);
+			commandList->IASetIndexBuffer(&ibvTerrain);
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			commandList->SetGraphicsRootConstantBufferView(0, materialResourceA->GetGPUVirtualAddress()); // b0（同じでOK）
+			commandList->SetGraphicsRootConstantBufferView(1, wvpResourceB->GetGPUVirtualAddress());      // b1（terrainのWVPを入れた方）
+			commandList->SetGraphicsRootConstantBufferView(2, cameraResource->GetGPUVirtualAddress());   // b2
+			commandList->SetGraphicsRootDescriptorTable(3, grassSrvGPU);                                 // t0 ★grass
+			commandList->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress()); // b3
+			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress());      // b4
+
+			commandList->DrawIndexedInstanced((UINT)terrainMesh.indices.size(), 1, 0, 0, 0);
+
 
 			// 球の描画
 			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);
@@ -1572,6 +1788,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	vertexResource->Release();
 	graphicsPipelineState->Release();
+	indexResourceTerrain->Release();
+	vertexResourceTerrain->Release();
+	textureResourceGrass->Release();
 	signatureBlob->Release();
 	if (errorBlob) {
 		errorBlob->Release();
