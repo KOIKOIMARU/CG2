@@ -89,6 +89,20 @@ struct PointLight {
 	float padding[2];   // 8  -> 合計 48（安全）
 };
 
+struct SpotLight {
+	Vector4 color;        // 16
+	Vector3 position;     // 12
+	float intensity;      // 4  -> 32
+
+	Vector3 direction;    // 12
+	float distance;       // 4  -> 48
+
+	float decay;          // 4
+	float cosAngle;       // 4  (終端：ここで0になる)
+	float cosFalloffStart;// 4  (開始：ここでは1)
+	float padding;        // 4  -> 合計64（16の倍数で安全）
+};
+
 
 struct CameraForGPU {
 	Vector3 worldPosition;
@@ -1024,7 +1038,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	// RootParameter作成。PixelShaderのMaterialとVertexShaderのTransform 
-	D3D12_ROOT_PARAMETER rootParameters[6] = {};
+	D3D12_ROOT_PARAMETER rootParameters[7] = {};
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -1061,6 +1075,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[5].Descriptor.ShaderRegister = 4;
+
+	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[6].Descriptor.ShaderRegister = 5;
+
 
 	// ルートシグネチャのセットアップ
 	descriptionRootSignature.pParameters = rootParameters;
@@ -1358,6 +1377,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	pointLightData->radius = 6.0f; // 影響範囲
 	pointLightData->decay = 2.0f; // 減衰の急さ
 
+	// SpotLight 用バッファ作成とMap
+	ID3D12Resource* spotLightResource = CreateBufferResource(device, sizeof(SpotLight));
+	SpotLight* spotLightData = nullptr;
+	spotLightResource->Map(0, nullptr, reinterpret_cast<void**>(&spotLightData));
+
+	// 資料の例に近い初期値
+	spotLightData->color = { 1,1,1,1 };
+	spotLightData->position = { 2.0f, 1.25f, 0.0f };
+	spotLightData->direction = Normalize({ -1.0f, 1.0f, 0.0f });
+
+	spotLightData->distance = 7.0f;
+	spotLightData->intensity = 4.0f;
+	spotLightData->decay = 2.0f;
+
+	// cosAngle = cos(π/3) だが <numbers> 使わずに固定値でOK
+	spotLightData->cosAngle = std::cos(3.14159265f / 3.0f);
+
+	// Falloff開始（cosFalloffStart は cosAngle より “大きく” する）
+	// 例：開始を少し狭めにして、終端(π/3)より手前(π/6)から減衰開始
+	spotLightData->cosFalloffStart = std::cos(3.14159265f / 6.0f);
 
 
 	// ★ CameraForGPU 作成とMap
@@ -1577,6 +1616,41 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat("Point Radius", &pointLightData->radius, 0.01f, 0.01f, 50.0f);
 			ImGui::DragFloat("Point Decay", &pointLightData->decay, 0.01f, 0.01f, 8.0f);
 
+			ImGui::SeparatorText("SpotLight");
+			ImGui::DragFloat3("Spot Pos", &spotLightData->position.x, 0.01f, -10.0f, 10.0f);
+
+			static Vector3 spotDirEdit = spotLightData->direction;
+			if (ImGui::DragFloat3("Spot Dir", &spotDirEdit.x, 0.01f, -1.0f, 1.0f)) {
+				spotLightData->direction = Normalize(spotDirEdit);
+			}
+
+			ImGui::DragFloat("Spot Intensity", &spotLightData->intensity, 0.01f, 0.0f, 20.0f);
+			ImGui::ColorEdit3("Spot Color", &spotLightData->color.x);
+
+			ImGui::DragFloat("Spot Distance", &spotLightData->distance, 0.01f, 0.01f, 50.0f);
+			ImGui::DragFloat("Spot Decay", &spotLightData->decay, 0.01f, 0.01f, 8.0f);
+
+			// 角度（ラジアン）をUIで持ってcosに変換
+			static float spotAngleRad = 3.14159265f / 3.0f;        // 終端
+			static float spotFalloffStartRad = 3.14159265f / 6.0f; // 開始
+
+			if (ImGui::SliderFloat("Spot Angle(rad) [end]", &spotAngleRad, 0.05f, 1.5f)) {
+				spotLightData->cosAngle = std::cos(spotAngleRad);
+			}
+			if (ImGui::SliderFloat("Spot FalloffStart(rad)", &spotFalloffStartRad, 0.05f, 1.5f)) {
+				// ★0除算回避：開始と終端が一致しないようにする
+				if (std::abs(spotFalloffStartRad - spotAngleRad) < 0.01f) {
+					spotFalloffStartRad = spotAngleRad + 0.01f;
+				}
+				// “開始は終端より小さい角度”のほうが自然（cosは大きくなる）
+				// なので rad は start < end になるようにしておくと扱いやすい
+				if (spotFalloffStartRad > spotAngleRad) {
+					spotFalloffStartRad = spotAngleRad * 0.5f;
+				}
+				spotLightData->cosFalloffStart = std::cos(spotFalloffStartRad);
+			}
+
+
 			// 点光源だけ確認したいなら（資料通り）
 			ImGui::Text("Tip: Set Directional Intensity = 0 to test PointLight");
 
@@ -1693,6 +1767,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootDescriptorTable(3, grassSrvGPU);                                 // t0 ★grass
 			commandList->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress()); // b3
 			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress());      // b4
+			commandList->SetGraphicsRootConstantBufferView(6, spotLightResource->GetGPUVirtualAddress()); // b5 SpotLight
+
 
 			commandList->DrawIndexedInstanced((UINT)terrainMesh.indices.size(), 1, 0, 0, 0);
 
@@ -1707,6 +1783,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootDescriptorTable(3, selectedTextureHandle);                        // t0
 			commandList->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress()); // b3
 			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress()); // b4 ★
+			commandList->SetGraphicsRootConstantBufferView(6, spotLightResource->GetGPUVirtualAddress()); // b5 SpotLight
 
 
 			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
@@ -1818,6 +1895,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	cameraResource->Release();
 	pointLightResource->Release();
+	spotLightResource->Release();
 
 
 	// ImGuiの終了処理
