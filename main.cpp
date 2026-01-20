@@ -19,6 +19,9 @@
 #include "externals/imgui/imgui_impl_dx12.h"
 #include "externals/imgui/imgui_impl_win32.h"
 #include "externals/DirectXTex/DirectXTex.h"
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
 #pragma comment(lib, "d3d12.lib")
@@ -771,6 +774,70 @@ static ObjMesh LoadObjFileSimpleLH(const std::string& filePath) {
 	return mesh;
 }
 
+static ObjMesh LoadObjFileAssimpLH(const std::string& filePath) {
+	ObjMesh model{};
+
+	Assimp::Importer importer;
+
+	// OBJ -> DX12 で扱いやすいように
+	// - Triangulate: 三角形化
+	// - FlipUVs: v反転（君がやってた uv.y = 1-uv.y と同等）
+	// - FlipWindingOrder: 面の並び反転（LH化等で必要になりがち）
+	const unsigned int flags =
+		aiProcess_Triangulate |
+		aiProcess_FlipUVs |
+		aiProcess_FlipWindingOrder |
+		aiProcess_JoinIdenticalVertices;
+
+	const aiScene* scene = importer.ReadFile(filePath.c_str(), flags);
+	assert(scene && "assimp ReadFile failed");
+	assert(scene->HasMeshes() && "scene has no meshes");
+
+	// 複数メッシュが来ても 1つに結合して返す（簡単運用）
+	for (uint32_t meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
+		const aiMesh* mesh = scene->mMeshes[meshIndex];
+		assert(mesh);
+
+		// 今回のシェーダ前提
+		assert(mesh->HasNormals() && "mesh has no normals");
+		assert(mesh->HasTextureCoords(0) && "mesh has no texcoords");
+
+		// 追加する頂点の開始位置（結合のため）
+		uint32_t baseVertex = (uint32_t)model.vertices.size();
+
+		// 頂点を詰める
+		model.vertices.reserve(model.vertices.size() + mesh->mNumVertices);
+		for (uint32_t v = 0; v < mesh->mNumVertices; ++v) {
+			const aiVector3D& p = mesh->mVertices[v];
+			const aiVector3D& n = mesh->mNormals[v];
+			const aiVector3D& uv = mesh->mTextureCoords[0][v];
+
+			VertexData vd{};
+			// RH -> LH (君の既存コードと合わせてZ反転で統一)
+			vd.position = { p.x, p.y, -p.z, 1.0f };
+			vd.normal = { n.x, n.y, -n.z };
+			vd.texcoord = { uv.x, uv.y };
+
+			model.vertices.push_back(vd);
+		}
+
+		// Face(=三角形) から index を作る
+		for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
+			const aiFace& face = mesh->mFaces[faceIndex];
+			assert(face.mNumIndices == 3 && "only triangles are supported");
+
+			// aiProcess_FlipWindingOrder を使ってるので、そのまま追加でOK
+			// （もし面が裏返るなら、ここで 0,2,1 に入れ替える）
+			model.indices.push_back(baseVertex + face.mIndices[0]);
+			model.indices.push_back(baseVertex + face.mIndices[1]);
+			model.indices.push_back(baseVertex + face.mIndices[2]);
+		}
+	}
+
+	return model;
+}
+
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
@@ -1231,7 +1298,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
 
 	// ===== terrain OBJ load =====
-	ObjMesh terrainMesh = LoadObjFileSimpleLH("resources/terrain.obj");
+	ObjMesh terrainMesh = LoadObjFileAssimpLH("resources/terrain.obj");
+
 
 	// VertexBuffer
 	ID3D12Resource* vertexResourceTerrain = CreateBufferResource(device, sizeof(VertexData) * terrainMesh.vertices.size());
