@@ -112,9 +112,17 @@ struct CameraForGPU {
 	float padding; // 16byte合わせ
 };
 
+struct Node {
+	Matrix4x4 localMatrix{};
+	std::string name;
+	std::vector<Node> children;
+};
+
 struct ObjMesh {
 	std::vector<VertexData> vertices;
 	std::vector<uint32_t> indices;
+	Node rootNode;              // ★追加
+	// （今後マルチマテリアルやテクスチャも追加できる）
 };
 
 struct ObjIndex {
@@ -308,6 +316,33 @@ Matrix4x4 MakeOrthographicMatrix(float left, float top, float right, float botto
 	result.m[3][2] = -nearClip / (farClip - nearClip);
 	result.m[3][3] = 1.0f;
 
+	return result;
+}
+
+static Matrix4x4 ConvertAiMatrixToMyMatrix(aiMatrix4x4 m) {
+	// assimpは列ベクトル系の並びを想定することが多いので、資料通りTranspose
+	m.Transpose();
+
+	Matrix4x4 r{};
+	r.m[0][0] = m.a1; r.m[0][1] = m.a2; r.m[0][2] = m.a3; r.m[0][3] = m.a4;
+	r.m[1][0] = m.b1; r.m[1][1] = m.b2; r.m[1][2] = m.b3; r.m[1][3] = m.b4;
+	r.m[2][0] = m.c1; r.m[2][1] = m.c2; r.m[2][2] = m.c3; r.m[2][3] = m.c4;
+	r.m[3][0] = m.d1; r.m[3][1] = m.d2; r.m[3][2] = m.d3; r.m[3][3] = m.d4;
+	return r;
+}
+
+static Node ReadNode(const aiNode* node) {
+	Node result{};
+	result.name = node->mName.C_Str();
+
+	// nodeのローカル行列
+	result.localMatrix = ConvertAiMatrixToMyMatrix(node->mTransformation);
+
+	// 子
+	result.children.resize(node->mNumChildren);
+	for (uint32_t i = 0; i < node->mNumChildren; ++i) {
+		result.children[i] = ReadNode(node->mChildren[i]);
+	}
 	return result;
 }
 
@@ -786,7 +821,7 @@ static ObjMesh LoadObjFileAssimpLH(const std::string& filePath) {
 	const unsigned int flags =
 		aiProcess_Triangulate |
 		aiProcess_FlipUVs |
-		aiProcess_FlipWindingOrder |
+		aiProcess_FlipWindingOrder |   // ★追加（Z反転するならほぼ必要）
 		aiProcess_JoinIdenticalVertices;
 
 	const aiScene* scene = importer.ReadFile(filePath.c_str(), flags);
@@ -828,6 +863,62 @@ static ObjMesh LoadObjFileAssimpLH(const std::string& filePath) {
 
 			// aiProcess_FlipWindingOrder を使ってるので、そのまま追加でOK
 			// （もし面が裏返るなら、ここで 0,2,1 に入れ替える）
+			model.indices.push_back(baseVertex + face.mIndices[0]);
+			model.indices.push_back(baseVertex + face.mIndices[1]);
+			model.indices.push_back(baseVertex + face.mIndices[2]);
+		}
+	}
+
+	return model;
+}
+
+static ObjMesh LoadModelFileAssimpLH(const std::string& directoryPath, const std::string& filename) {
+	ObjMesh model{};
+
+	Assimp::Importer importer;
+	std::string filePath = directoryPath + "/" + filename;
+
+	const unsigned int flags =
+		aiProcess_Triangulate |
+		aiProcess_FlipUVs |
+		aiProcess_JoinIdenticalVertices;
+
+	const aiScene* scene = importer.ReadFile(filePath.c_str(), flags);
+	assert(scene && "assimp ReadFile failed");
+	assert(scene->HasMeshes());
+
+	// ★Node階層
+	assert(scene->mRootNode);
+	model.rootNode = ReadNode(scene->mRootNode);
+
+	// メッシュ結合（前のOBJ版と同じ）
+	for (uint32_t meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
+		const aiMesh* mesh = scene->mMeshes[meshIndex];
+		assert(mesh);
+		assert(mesh->HasNormals());
+		assert(mesh->HasTextureCoords(0));
+
+		uint32_t baseVertex = (uint32_t)model.vertices.size();
+
+		model.vertices.reserve(model.vertices.size() + mesh->mNumVertices);
+		for (uint32_t v = 0; v < mesh->mNumVertices; ++v) {
+			const aiVector3D& p = mesh->mVertices[v];
+			const aiVector3D& n = mesh->mNormals[v];
+			const aiVector3D& uv = mesh->mTextureCoords[0][v];
+
+			VertexData vd{};
+			// RH -> LH（君の方針に合わせてZ反転で統一）
+			vd.position = { p.x, p.y, -p.z, 1.0f };
+			vd.normal = { n.x, n.y, -n.z };
+			vd.texcoord = { uv.x, uv.y };
+
+			model.vertices.push_back(vd);
+		}
+
+		for (uint32_t f = 0; f < mesh->mNumFaces; ++f) {
+			const aiFace& face = mesh->mFaces[f];
+			assert(face.mNumIndices == 3);
+
 			model.indices.push_back(baseVertex + face.mIndices[0]);
 			model.indices.push_back(baseVertex + face.mIndices[1]);
 			model.indices.push_back(baseVertex + face.mIndices[2]);
@@ -1298,7 +1389,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
 
 	// ===== terrain OBJ load =====
-	ObjMesh terrainMesh = LoadObjFileAssimpLH("resources/terrain.obj");
+	ObjMesh terrainMesh = LoadModelFileAssimpLH("resources", "plane.gltf");
+	Matrix4x4 rootLocal = terrainMesh.rootNode.localMatrix;
+
 
 
 	// VertexBuffer
@@ -1526,7 +1619,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	ID3D12Resource* textureResource2 = CreateTextureResource(device, metadata2);
 	UploadTextureData(textureResource2, mipImages2);
 
-	DirectX::ScratchImage mipImagesGrass = LoadTexture("resources/grass.png");
+	DirectX::ScratchImage mipImagesGrass = LoadTexture("resources/uvChecker.png");
 	const DirectX::TexMetadata& metaGrass = mipImagesGrass.GetMetadata();
 	ID3D12Resource* textureResourceGrass = CreateTextureResource(device, metaGrass);
 	UploadTextureData(textureResourceGrass, mipImagesGrass);
@@ -1747,19 +1840,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			// 三角形B
 			Matrix4x4 worldMatrixB = MakeAffineMatrix(transformB.scale, transformB.rotate, transformB.translate);
 			Matrix4x4 worldViewProjectionMatrixB = Multiply(worldMatrixB, Multiply(viewMatrix, projectionMatrix));
-			wvpDataB->WVP = worldViewProjectionMatrixB;
-			wvpDataB->World = worldMatrixB;
 
-			Matrix4x4 worldMatrixTerrain = MakeAffineMatrix(transformTerrain.scale, transformTerrain.rotate, transformTerrain.translate);
-			Matrix4x4 wvpTerrain = Multiply(worldMatrixTerrain, Multiply(viewMatrix, projectionMatrix));
+			Matrix4x4 rootLocal = terrainMesh.rootNode.localMatrix;
 
-			// 既存の wvpResourceB を「terrain用」に流用してもOK（簡単）
-			// もしくは terrain専用 wvpResourceTerrain を作ってもOK
+			Matrix4x4 worldMatrixTerrain = MakeAffineMatrix(
+				transformTerrain.scale,
+				transformTerrain.rotate,
+				transformTerrain.translate
+			);
+
+			// Rootを適用したWorld
+			Matrix4x4 worldWithRoot = Multiply(rootLocal, worldMatrixTerrain);
+
+			// WVP
+			Matrix4x4 wvpTerrain = Multiply(worldWithRoot, Multiply(viewMatrix, projectionMatrix));
+
 			wvpDataB->WVP = wvpTerrain;
-			wvpDataB->World = worldMatrixTerrain;
+			wvpDataB->World = worldWithRoot;
 
-			Matrix4x4 invWorldT = Inverse(worldMatrixTerrain);
+			// 逆転置
+			Matrix4x4 invWorldT = Inverse(worldWithRoot);
 			wvpDataB->WorldInverseTranspose = Transpose(invWorldT);
+
 
 
 			// Sprite用のWVPMを作る// 三角形A
