@@ -67,6 +67,9 @@
     <Filter Include="src\engine\audio">
       <UniqueIdentifier>{db1bd0e5-aeaf-42eb-b084-3afc55d93ee8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\app">
+      <UniqueIdentifier>{ec19c3a1-1317-4b46-bfe5-011156ee37e3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="externals\imgui\imgui.cpp">
@@ -161,6 +164,12 @@
     </ClCompile>
     <ClCompile Include="src\engine\audio\SoundManager.cpp">
       <Filter>src\engine\audio</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\base\Framework.cpp">
+      <Filter>src\engine\base</Filter>
+    </ClCompile>
+    <ClCompile Include="src\app\MyGame.cpp">
+      <Filter>src\app</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -277,6 +286,12 @@
     </ClInclude>
     <ClInclude Include="include\engine\audio\SoundManager.h">
       <Filter>include\engine\audio</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\base\Framework.h">
+      <Filter>include\engine\base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\app\MyGame.h">
+      <Filter>include\app</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -157,6 +157,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\base\Framework.cpp" />
+    <ClCompile Include="src\app\MyGame.cpp" />
     <ClCompile Include="src\engine\audio\SoundManager.cpp" />
     <ClCompile Include="src\engine\base\ImGuiManager.cpp" />
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp" />
@@ -239,6 +241,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\engine\base\Framework.h" />
     <ClInclude Include="include\engine\base\ImGuiManager.h" />
     <ClInclude Include="include\engine\3d\Camera.h" />
     <ClInclude Include="include\engine\base\D3DResourceLeakChecker.h" />
@@ -264,6 +267,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\Particle.h" />
     <ClInclude Include="include\engine\3d\ParticleManager.h" />
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
+    <ClInclude Include="include\app\MyGame.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />
     <ClInclude Include="include\engine\2d\Sprite.h" />
