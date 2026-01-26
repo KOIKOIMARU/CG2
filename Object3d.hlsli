@@ -30,12 +30,15 @@ struct Camera
 
 struct PointLight
 {
-    float4 color; // ライトの色
-    float3 position; // ライトの位置
-    float intensity; // 輝度
-    float radius; // 届く最大距離
-    float decay; // 減衰率（大きいほど急減衰）
+    float4 color;
+    float3 position;
+    float intensity;
+
+    float radius;
+    float decay;
+    float2 padding; // ★追加：C++と同じにして48byte化
 };
+
 
 struct SpotLight
 {

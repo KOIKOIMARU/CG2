@@ -14,16 +14,50 @@ cbuffer LightCB : register(b3)
 };
 
 // ★追加：PointLight (b4)
+#define MAX_POINT_LIGHTS 4
+
 cbuffer PointLightCB : register(b4)
 {
-    PointLight gPointLight;
+    PointLight gPointLights[MAX_POINT_LIGHTS];
+    int gPointCount;
+    float3 _padPoint; // 16byte境界
 };
 
-// ★追加：SpotLight (b5)
+#define MAX_SPOT_LIGHTS 4
+
 cbuffer SpotLightCB : register(b5)
 {
-    SpotLight gSpotLight;
+    SpotLight gSpotLights[MAX_SPOT_LIGHTS];
+    int gSpotCount;
+    float3 _padSpot; // 16byte境界
 };
+
+struct RectLight
+{
+    float4 color; // rgb: 色, a未使用
+    float3 position; // 矩形中心（World）
+    float intensity;
+
+    float3 right; // 矩形の横方向（正規化推奨）
+    float halfWidth; // 横の半分
+
+    float3 up; // 矩形の縦方向（正規化推奨）
+    float halfHeight; // 縦の半分
+
+    float radius; // 影響範囲（距離減衰用）
+    float decay; // 減衰
+    float2 padding; // 16byte境界
+};
+
+#define MAX_RECT_LIGHTS 2
+
+cbuffer RectLightCB : register(b6)
+{
+    RectLight gRectLights[MAX_RECT_LIGHTS];
+    int gRectCount;
+    float3 _padRect;
+};
+
 
 
 Texture2D<float4> gTexture : register(t0);
@@ -68,81 +102,163 @@ PixelShaderOutput main(VertexShaderOutput input)
             gMaterial.specularColor; // ★specularColor を反映（君のMaterialにあるので使う）
 
         // =========================
-        // Point Light (with attenuation)
+// Point Lights (multiple)
+// =========================
+        float3 diffusePtSum = 0.0f;
+        float3 specularPtSum = 0.0f;
+
+        int pc = min(gPointCount, MAX_POINT_LIGHTS);
+        for (int i = 0; i < pc; ++i)
+        {
+            PointLight pl = gPointLights[i];
+
+            float3 LpVec = pl.position - input.worldPosition;
+            float dist = length(LpVec);
+
+            float factor = pow(saturate(1.0f - dist / pl.radius), pl.decay);
+            float3 Lp = (dist > 1e-4f) ? (LpVec / dist) : float3(0, 1, 0);
+
+            float NdotLp = dot(N, Lp);
+            float halfLambertP = pow(NdotLp * 0.5f + 0.5f, 2.0f);
+
+            diffusePtSum +=
+        gMaterial.color.rgb * textureColor.rgb *
+        pl.color.rgb * halfLambertP *
+        (pl.intensity * factor);
+
+            float3 Hp = normalize(Lp + toEye);
+            float specPow = pow(saturate(dot(N, Hp)), gMaterial.shininess);
+
+            specularPtSum +=
+        pl.color.rgb *
+        (pl.intensity * factor) *
+        specPow *
+        gMaterial.specularColor;
+        }
+
+      // =========================
+// Spot Lights (multiple)
+// =========================
+        float3 diffuseSpSum = 0.0f;
+        float3 specularSpSum = 0.0f;
+
+        int sc = min(gSpotCount, MAX_SPOT_LIGHTS);
+        for (int i = 0; i < sc; ++i)
+        {
+            SpotLight sl = gSpotLights[i];
+
+    // surface -> light
+            float3 toLight = sl.position - input.worldPosition;
+            float distS = length(toLight);
+            float3 L = (distS > 1e-4f) ? (toLight / distS) : float3(0, 1, 0);
+
+    // distance attenuation
+            float attenS = pow(saturate(1.0f - distS / sl.distance), sl.decay);
+
+    // angle falloff (スポット中心方向は sl.direction)
+            float3 lightToSurf = (distS > 1e-4f) ? (-L) : float3(0, -1, 0); // light -> surface
+            float3 spotDir = normalize(sl.direction);
+            float cosTheta = dot(lightToSurf, spotDir);
+
+            float denom = max(sl.cosFalloffStart - sl.cosAngle, 1e-4f);
+            float falloff = saturate((cosTheta - sl.cosAngle) / denom);
+
+            float spotFactor = sl.intensity * attenS * falloff;
+
+    // diffuse
+            float NdotL = dot(N, L);
+            float halfLambertS = pow(NdotL * 0.5f + 0.5f, 2.0f);
+
+            diffuseSpSum +=
+        gMaterial.color.rgb * textureColor.rgb *
+        sl.color.rgb * halfLambertS *
+        spotFactor;
+
+    // specular (Blinn-Phong)
+            float3 H = normalize(L + toEye);
+            float specPow = pow(saturate(dot(N, H)), gMaterial.shininess);
+
+            specularSpSum +=
+        sl.color.rgb *
+        spotFactor *
+        specPow *
+        gMaterial.specularColor;
+        }
+
         // =========================
-        float3 LpVec = gPointLight.position - input.worldPosition;
-        float dist = length(LpVec);
+// Rect Lights (multiple) : pseudo area light (sampled points)
+// =========================
+        float3 diffuseRectSum = 0.0f;
+        float3 specularRectSum = 0.0f;
 
-        // 距離0で最大、radius以上で0、decayで曲線を調整
-        float factor = pow(saturate(1.0f - dist / gPointLight.radius), gPointLight.decay);
+#define RECT_SAMPLES_1D 3
+#define RECT_SAMPLES (RECT_SAMPLES_1D*RECT_SAMPLES_1D)
 
-        float3 Lp = (dist > 0.0001f) ? (LpVec / dist) : float3(0.0f, 1.0f, 0.0f);
+        int rc = min(gRectCount, MAX_RECT_LIGHTS);
+        for (int r = 0; r < rc; ++r)
+        {
+            RectLight rl = gRectLights[r];
 
-        float NdotLp = dot(N, Lp);
-        float halfLambertP = pow(NdotLp * 0.5f + 0.5f, 2.0f);
+            float3 right = normalize(rl.right);
+            float3 up = normalize(rl.up);
 
-        float3 diffusePt =
-            gMaterial.color.rgb * textureColor.rgb *
-            gPointLight.color.rgb * halfLambertP *
-            (gPointLight.intensity * factor);
+    // 3x3 サンプル
+    [unroll]
+            for (int y = 0; y < RECT_SAMPLES_1D; ++y)
+            {
+                float fy = ((y + 0.5f) / RECT_SAMPLES_1D) * 2.0f - 1.0f; // -1..1
+        [unroll]
+                for (int x = 0; x < RECT_SAMPLES_1D; ++x)
+                {
+                    float fx = ((x + 0.5f) / RECT_SAMPLES_1D) * 2.0f - 1.0f;
 
-        float3 Hp = normalize(Lp + toEye);
-        float NdotHp = saturate(dot(N, Hp));
-        float specularPowPt = pow(NdotHp, gMaterial.shininess);
+                    float3 samplePos =
+                rl.position +
+                right * (fx * rl.halfWidth) +
+                up * (fy * rl.halfHeight);
 
-        float3 specularPt =
-            gPointLight.color.rgb *
-            (gPointLight.intensity * factor) *
-            specularPowPt *
-            gMaterial.specularColor;
-        
-                // =========================
-        // Spot Light (distance attenuation + falloff)
-        // =========================
+                    float3 toLight = samplePos - input.worldPosition;
+                    float dist = length(toLight);
+                    float3 L = (dist > 1e-4f) ? (toLight / dist) : float3(0, 1, 0);
 
-        // ライト -> 表面方向（入射光）
-        float3 LsVec = input.worldPosition - gSpotLight.position;
-        float distS = length(LsVec);
-        float3 Ls = (distS > 0.0001f) ? (LsVec / distS) : float3(0.0f, 1.0f, 0.0f);
+            // 距離減衰（Pointと同じ形）
+                    float atten = pow(saturate(1.0f - dist / rl.radius), rl.decay);
 
-        // 距離減衰（Pointと同じ形）
-        float attenS = pow(saturate(1.0f - distS / gSpotLight.distance), gSpotLight.decay);
+            // 9点に分割するので割る
+                    float eachI = (rl.intensity * atten) / RECT_SAMPLES;
 
-        // 角度Falloff
-        float3 spotDir = normalize(gSpotLight.direction);
-        float cosTheta = dot(Ls, spotDir);
+            // diffuse（Half-Lambert）
+                    float NdotLr = dot(N, L);
+                    float halfLambertR = pow(NdotLr * 0.5f + 0.5f, 2.0f);
 
-        // cosFalloffStart と cosAngle が同じだと0除算になるので、C++側で同値禁止にする前提
-        float denom = (gSpotLight.cosFalloffStart - gSpotLight.cosAngle);
-        float falloff = saturate((cosTheta - gSpotLight.cosAngle) / denom);
+                    diffuseRectSum +=
+                gMaterial.color.rgb * textureColor.rgb *
+                rl.color.rgb * halfLambertR *
+                eachI;
 
-        float spotFactor = gSpotLight.intensity * attenS * falloff;
+            // specular（Blinn-Phong）
+                    float3 H = normalize(L + toEye);
+                    float specPow = pow(saturate(dot(N, H)), gMaterial.shininess);
 
-        // diffuse
-        float NdotLs = dot(N, Ls);
-        float halfLambertS = pow(NdotLs * 0.5f + 0.5f, 2.0f);
-
-        float3 diffuseSp =
-            gMaterial.color.rgb * textureColor.rgb *
-            gSpotLight.color.rgb * halfLambertS *
-            spotFactor;
-
-        // specular
-        float3 Hs = normalize(Ls + toEye);
-        float NdotHs = saturate(dot(N, Hs));
-        float specularPowSp = pow(NdotHs, gMaterial.shininess);
-
-        float3 specularSp =
-            gSpotLight.color.rgb *
-            spotFactor *
-            specularPowSp *
-            gMaterial.specularColor;
+                    specularRectSum +=
+                rl.color.rgb *
+                eachI *
+                specPow *
+                gMaterial.specularColor;
+                }
+            }
+        }
 
 
         // =========================
         // Sum
         // =========================
-        output.color.rgb = diffuseDir + specularDir + diffusePt + specularPt + diffuseSp + specularSp;
+        output.color.rgb =
+    diffuseDir + specularDir +
+    diffusePtSum + specularPtSum +
+    diffuseSpSum + specularSpSum +
+    diffuseRectSum + specularRectSum;
+
         output.color.a = gMaterial.color.a * textureColor.a;
     }
     else

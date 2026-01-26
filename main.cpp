@@ -106,6 +106,49 @@ struct SpotLight {
 	float padding;        // 4  -> 合計64（16の倍数で安全）
 };
 
+static const int kMaxPointLights = 4;
+static const int kMaxSpotLights = 4;
+
+struct PointLightCB
+{
+	PointLight lights[kMaxPointLights];
+	int32_t count = 0;
+	float pad[3] = {}; // 16byte境界
+};
+
+struct SpotLightCB
+{
+	SpotLight lights[kMaxSpotLights];
+	int32_t count = 0;
+	float pad[3] = {}; // 16byte境界
+};
+
+struct RectLight
+{
+	Vector4 color;      // 16
+	Vector3 position;   // 12
+	float intensity;    // 4  -> 32
+
+	Vector3 right;      // 12
+	float halfWidth;    // 4  -> 48
+
+	Vector3 up;         // 12
+	float halfHeight;   // 4  -> 64
+
+	float radius;       // 4
+	float decay;        // 4
+	float padding[2];   // 8  -> 80（16の倍数で安全）
+};
+
+static const int kMaxRectLights = 2;
+
+struct RectLightCB
+{
+	RectLight lights[kMaxRectLights];
+	int32_t count = 0;
+	float pad[3] = {}; // 16byte境界
+};
+
 
 struct CameraForGPU {
 	Vector3 worldPosition;
@@ -929,6 +972,7 @@ static ObjMesh LoadModelFileAssimpLH(const std::string& directoryPath, const std
 }
 
 
+
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
@@ -1196,7 +1240,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	// RootParameter作成。PixelShaderのMaterialとVertexShaderのTransform 
-	D3D12_ROOT_PARAMETER rootParameters[7] = {};
+	D3D12_ROOT_PARAMETER rootParameters[8] = {}; // ★7 → 8
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -1237,6 +1281,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[6].Descriptor.ShaderRegister = 5;
+
+	// ★ b6: RectLightCB (PixelShader)
+	rootParameters[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[7].Descriptor.ShaderRegister = 6;
 
 
 	// ルートシグネチャのセットアップ
@@ -1525,39 +1574,75 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	directionalLightData->intensity = 1.0f;
 
 	// PointLight 用バッファ作成とMap
-	ID3D12Resource* pointLightResource = CreateBufferResource(device, sizeof(PointLight));
-	PointLight* pointLightData = nullptr;
+	ID3D12Resource* pointLightResource = CreateBufferResource(device, sizeof(PointLightCB));
+	PointLightCB* pointLightData = nullptr;
 	pointLightResource->Map(0, nullptr, reinterpret_cast<void**>(&pointLightData));
 
-	// 初期値（資料の例）
-	pointLightData->color = { 1,1,1,1 };
-	pointLightData->position = { 0.0f, 2.0f, 0.0f };
-	pointLightData->intensity = 1.0f;
+	// 例：2個炊く
+	pointLightData->count = 2;
 
-	// 減衰パラメータ（調整しやすい例）
-	pointLightData->radius = 6.0f; // 影響範囲
-	pointLightData->decay = 2.0f; // 減衰の急さ
+	// 0番
+	pointLightData->lights[0].color = { 1,1,1,1 };
+	pointLightData->lights[0].position = { 0.0f, 2.0f, 0.0f };
+	pointLightData->lights[0].intensity = 1.0f;
+	pointLightData->lights[0].radius = 6.0f;
+	pointLightData->lights[0].decay = 2.0f;
+
+	// 1番（位置を変えるだけでも「複数」が分かりやすい）
+	pointLightData->lights[1].color = { 1,0.8f,0.8f,1 };
+	pointLightData->lights[1].position = { 2.5f, 1.0f, -1.5f };
+	pointLightData->lights[1].intensity = 1.0f;
+	pointLightData->lights[1].radius = 6.0f;
+	pointLightData->lights[1].decay = 2.0f;
 
 	// SpotLight 用バッファ作成とMap
-	ID3D12Resource* spotLightResource = CreateBufferResource(device, sizeof(SpotLight));
-	SpotLight* spotLightData = nullptr;
+	ID3D12Resource* spotLightResource = CreateBufferResource(device, sizeof(SpotLightCB));
+	SpotLightCB* spotLightData = nullptr;
 	spotLightResource->Map(0, nullptr, reinterpret_cast<void**>(&spotLightData));
 
-	// 資料の例に近い初期値
-	spotLightData->color = { 1,1,1,1 };
-	spotLightData->position = { 2.0f, 1.25f, 0.0f };
-	spotLightData->direction = Normalize({ -1.0f, 1.0f, 0.0f });
+	// 例：2個
+	spotLightData->count = 2;
 
-	spotLightData->distance = 7.0f;
-	spotLightData->intensity = 4.0f;
-	spotLightData->decay = 2.0f;
+	// 0番
+	spotLightData->lights[0].color = { 1,1,1,1 };
+	spotLightData->lights[0].position = { 2.0f, 1.25f, 0.0f };
+	spotLightData->lights[0].direction = Normalize({ -1.0f, 1.0f, 0.0f });
+	spotLightData->lights[0].distance = 7.0f;
+	spotLightData->lights[0].intensity = 4.0f;
+	spotLightData->lights[0].decay = 2.0f;
+	spotLightData->lights[0].cosAngle = std::cos(3.14159265f / 3.0f);
+	spotLightData->lights[0].cosFalloffStart = std::cos(3.14159265f / 6.0f);
 
-	// cosAngle = cos(π/3) だが <numbers> 使わずに固定値でOK
-	spotLightData->cosAngle = std::cos(3.14159265f / 3.0f);
+	// 1番（違いが見えるように）
+	spotLightData->lights[1] = spotLightData->lights[0];
+	spotLightData->lights[1].position = { -2.0f, 1.25f, 0.0f };
+	spotLightData->lights[1].direction = Normalize({ 1.0f, 1.0f, 0.0f });
+	spotLightData->lights[1].intensity = 3.0f;
 
-	// Falloff開始（cosFalloffStart は cosAngle より “大きく” する）
-	// 例：開始を少し狭めにして、終端(π/3)より手前(π/6)から減衰開始
-	spotLightData->cosFalloffStart = std::cos(3.14159265f / 6.0f);
+	// RectLight 用バッファ作成とMap
+	ID3D12Resource* rectLightResource = CreateBufferResource(device, sizeof(RectLightCB));
+	RectLightCB* rectLightData = nullptr;
+	rectLightResource->Map(0, nullptr, reinterpret_cast<void**>(&rectLightData));
+
+	// 例：1個だけ炊く
+	rectLightData->count = 1;
+
+	auto& R = rectLightData->lights[0];
+	R.color = { 1,1,1,1 };
+	R.intensity = 2.0f;
+
+	// 矩形中心（上から照らすイメージ）
+	R.position = { 0.0f, 3.0f, 0.0f };
+
+	// 矩形の向き（ワールド軸に合わせるならこれでOK）
+	R.right = Normalize({ 1.0f, 0.0f, 0.0f });
+	R.up = Normalize({ 0.0f, 0.0f, 1.0f });
+
+	R.halfWidth = 1.5f;  // 横の半分
+	R.halfHeight = 1.5f;  // 縦の半分
+
+	R.radius = 10.0f;
+	R.decay = 2.0f;
 
 
 	// ★ CameraForGPU 作成とMap
@@ -1698,7 +1783,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		vertexDataSprite[i].normal = { 0.0f, 0.0f, -1.0f };
 	}
 
-
 	// TransformationMatrix 構造体を使う
 	ID3D12Resource* transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(TransformationMatrix));
 	TransformationMatrix* transformationMatrixDataSprite = nullptr;
@@ -1713,7 +1797,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	};
 
 	bool useMonsterBall = true;
-	
 
 	// Imguiの初期化
 	IMGUI_CHECKVERSION();
@@ -1740,8 +1823,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 
-			// ImGuiのウィンドウを作成
-			ImGui::ShowDemoWindow();
 
 			// デバッグテキストの表示
 			ImGui::Begin("Window");
@@ -1750,13 +1831,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			ImGui::DragFloat3("ScaleA", &transformA.scale.x, 0.01f, 0.0f, 4.0f);
 			ImGui::Checkbox("Use Monster Ball Texture", &useMonsterBall);
 			// 光の方向ベクトルの編集
-			static Vector3 lightDirEdit = directionalLightData->direction; // そのままコピーでOK
-
-			if (ImGui::DragFloat3("Light Dir", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
-				// 正規化して反映
-				Vector3 normDir = Normalize(lightDirEdit);
-				directionalLightData->direction = normDir; // ← Vector3 代入
-			}
 
 			ImGui::SeparatorText("Terrain");
 			ImGui::DragFloat3("Terrain Translate", &transformTerrain.translate.x, 0.01f, -50.0f, 50.0f);
@@ -1765,56 +1839,206 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 
 			// 光の強さ
-			ImGui::DragFloat("Light Intensity", &directionalLightData->intensity, 0.01f, 0.0f, 10.0f);
-			ImGui::ColorEdit3("Light Color", &directionalLightData->color.x);
-			ImGui::DragFloat("Shininess", &materialDataA->shininess, 0.5f, 1.0f, 256.0f);
-			ImGui::ColorEdit3("Specular Color", &materialDataA->specularColor.x);
+			ImGui::SeparatorText("Directional");
 
-			ImGui::SeparatorText("PointLight");
-			ImGui::DragFloat3("Point Pos", &pointLightData->position.x, 0.01f, -10.0f, 10.0f);
-			ImGui::DragFloat("Point Intensity", &pointLightData->intensity, 0.01f, 0.0f, 10.0f);
-			ImGui::ColorEdit3("Point Color", &pointLightData->color.x);
-			ImGui::DragFloat("Point Radius", &pointLightData->radius, 0.01f, 0.01f, 50.0f);
-			ImGui::DragFloat("Point Decay", &pointLightData->decay, 0.01f, 0.01f, 8.0f);
+			static bool enableDir = true;
+			static bool prevEnableDir = true;
+			static float savedDirIntensity = 1.0f;
 
-			ImGui::SeparatorText("SpotLight");
-			ImGui::DragFloat3("Spot Pos", &spotLightData->position.x, 0.01f, -10.0f, 10.0f);
+			// ON/OFF
+			ImGui::Checkbox("Enable Directional", &enableDir);
 
-			static Vector3 spotDirEdit = spotLightData->direction;
-			if (ImGui::DragFloat3("Spot Dir", &spotDirEdit.x, 0.01f, -1.0f, 1.0f)) {
-				spotLightData->direction = Normalize(spotDirEdit);
+			// OFFに切り替わった瞬間だけ保存
+			if (prevEnableDir && !enableDir) {
+				savedDirIntensity = directionalLightData->intensity;
 			}
-
-			ImGui::DragFloat("Spot Intensity", &spotLightData->intensity, 0.01f, 0.0f, 20.0f);
-			ImGui::ColorEdit3("Spot Color", &spotLightData->color.x);
-
-			ImGui::DragFloat("Spot Distance", &spotLightData->distance, 0.01f, 0.01f, 50.0f);
-			ImGui::DragFloat("Spot Decay", &spotLightData->decay, 0.01f, 0.01f, 8.0f);
-
-			// 角度（ラジアン）をUIで持ってcosに変換
-			static float spotAngleRad = 3.14159265f / 3.0f;        // 終端
-			static float spotFalloffStartRad = 3.14159265f / 6.0f; // 開始
-
-			if (ImGui::SliderFloat("Spot Angle(rad) [end]", &spotAngleRad, 0.05f, 1.5f)) {
-				spotLightData->cosAngle = std::cos(spotAngleRad);
+			// ONに戻った瞬間は saved を反映
+			if (!prevEnableDir && enableDir) {
+				directionalLightData->intensity = savedDirIntensity;
 			}
-			if (ImGui::SliderFloat("Spot FalloffStart(rad)", &spotFalloffStartRad, 0.05f, 1.5f)) {
-				// ★0除算回避：開始と終端が一致しないようにする
-				if (std::abs(spotFalloffStartRad - spotAngleRad) < 0.01f) {
-					spotFalloffStartRad = spotAngleRad + 0.01f;
+			prevEnableDir = enableDir;
+
+			// 強さスライダー（保存値をいじる）
+			ImGui::DragFloat("Dir Intensity", &savedDirIntensity, 0.01f, 0.0f, 10.0f);
+
+			// 現在の有効/無効に応じてGPUに渡す値を決定
+			directionalLightData->intensity = enableDir ? savedDirIntensity : 0.0f;
+
+			// 方向・色
+			static Vector3 lightDirEdit = { 0,0,0 };
+			lightDirEdit = directionalLightData->direction;
+			if (ImGui::DragFloat3("Dir Direction", &lightDirEdit.x, 0.01f, -1.0f, 1.0f)) {
+				directionalLightData->direction = Normalize(lightDirEdit);
+			}
+			ImGui::ColorEdit3("Dir Color", &directionalLightData->color.x);
+
+
+			ImGui::SeparatorText("PointLights");
+
+			// countを操作（0〜kMaxPointLights）
+			static int prevPointCount = pointLightData->count;
+			int pointCount = pointLightData->count;
+
+			if (ImGui::SliderInt("Point Count", &pointCount, 0, kMaxPointLights)) {
+				for (int i = prevPointCount; i < pointCount; ++i) {
+					pointLightData->lights[i] = pointLightData->lights[0];
+					pointLightData->lights[i].position.x += 2.0f * i;
+					pointLightData->lights[i].radius = 10.0f;
+					pointLightData->lights[i].decay = 2.0f;
 				}
-				// “開始は終端より小さい角度”のほうが自然（cosは大きくなる）
-				// なので rad は start < end になるようにしておくと扱いやすい
-				if (spotFalloffStartRad > spotAngleRad) {
-					spotFalloffStartRad = spotAngleRad * 0.5f;
-				}
-				spotLightData->cosFalloffStart = std::cos(spotFalloffStartRad);
+				pointLightData->count = pointCount;
+				prevPointCount = pointCount;
 			}
 
 
-			// 点光源だけ確認したいなら（資料通り）
-			ImGui::Text("Tip: Set Directional Intensity = 0 to test PointLight");
+			// それぞれのライトを編集
+			for (int i = 0; i < pointLightData->count; ++i) {
+				auto& L = pointLightData->lights[i];
 
+				ImGui::PushID(i);
+				if (ImGui::TreeNode("PointLight", "PointLight [%d]", i)) {
+					ImGui::ColorEdit3("Color", &L.color.x);
+					ImGui::DragFloat3("Position", &L.position.x, 0.01f, -50.0f, 50.0f);
+					ImGui::DragFloat("Intensity", &L.intensity, 0.01f, 0.0f, 20.0f);
+					ImGui::DragFloat("Radius", &L.radius, 0.01f, 0.01f, 100.0f);
+					ImGui::DragFloat("Decay", &L.decay, 0.01f, 0.01f, 10.0f);
+					ImGui::TreePop();
+				}
+				ImGui::PopID();
+			}
+
+			ImGui::SeparatorText("SpotLights");
+
+			// Spot count
+			static int prevSpotCount = spotLightData->count;
+			int spotCount = spotLightData->count;
+
+			if (ImGui::SliderInt("Spot Count", &spotCount, 0, kMaxSpotLights)) {
+				// 増えた分だけ初期化
+				for (int i = prevSpotCount; i < spotCount; ++i) {
+					spotLightData->lights[i] = spotLightData->lights[0]; // 0番をコピー
+					spotLightData->lights[i].position.x += 2.0f * i;     // 位置ずらす
+					// 安全値（ゼロ禁止）
+					spotLightData->lights[i].distance = 7.0f;
+					spotLightData->lights[i].decay = 2.0f;
+					// falloffの関係を必ず守る
+					spotLightData->lights[i].cosAngle = std::cos(3.14159265f / 3.0f);
+					spotLightData->lights[i].cosFalloffStart = std::cos(3.14159265f / 6.0f);
+				}
+				spotLightData->count = spotCount;
+				prevSpotCount = spotCount;
+			}
+
+			for (int i = 0; i < spotLightData->count; ++i) {
+				auto& S = spotLightData->lights[i];
+
+				ImGui::PushID(i);
+				if (ImGui::TreeNode("SpotLight", "SpotLight [%d]", i)) {
+					ImGui::ColorEdit3("Color", &S.color.x);
+					ImGui::DragFloat3("Position", &S.position.x, 0.01f, -50.0f, 50.0f);
+
+					// direction編集（正規化）
+					Vector3 dirEdit = S.direction;
+					if (ImGui::DragFloat3("Direction", &dirEdit.x, 0.01f, -1.0f, 1.0f)) {
+						S.direction = Normalize(dirEdit);
+					}
+
+
+					ImGui::DragFloat("Intensity", &S.intensity, 0.01f, 0.0f, 50.0f);
+					ImGui::DragFloat("Distance", &S.distance, 0.01f, 0.01f, 200.0f);
+					ImGui::DragFloat("Decay", &S.decay, 0.01f, 0.01f, 10.0f);
+
+					// 角度（ラジアン）で保持 → cosに変換してSへ反映
+					// cosAngle: 終端（ここで0）
+					// cosFalloffStart: 開始（ここまでは1）※cosは start の方が大きい必要あり
+					static float endRad[kMaxSpotLights] = {};
+					static float startRad[kMaxSpotLights] = {};
+
+					// 初回だけ既存値から復元（0のときだけ）
+					if (endRad[i] == 0.0f) {
+						endRad[i] = std::acos(std::clamp(S.cosAngle, -1.0f, 1.0f));
+						startRad[i] = std::acos(std::clamp(S.cosFalloffStart, -1.0f, 1.0f));
+					}
+
+					// 0.05〜1.5 rad くらいが扱いやすい
+					if (ImGui::SliderFloat("Angle End (rad)", &endRad[i], 0.05f, 1.5f)) {
+						S.cosAngle = std::cos(endRad[i]);
+					}
+					if (ImGui::SliderFloat("Falloff Start (rad)", &startRad[i], 0.05f, 1.5f)) {
+						// start < end を保つ（cosは start > end）
+						if (startRad[i] > endRad[i] - 0.01f) {
+							startRad[i] = endRad[i] - 0.01f;
+						}
+						S.cosFalloffStart = std::cos(startRad[i]);
+					}
+
+					ImGui::TreePop();
+				}
+				ImGui::PopID();
+			}
+
+			ImGui::SeparatorText("RectLights");
+
+			static int prevRectCount = rectLightData->count;
+			int rectCount = rectLightData->count;
+
+			if (ImGui::SliderInt("Rect Count", &rectCount, 0, kMaxRectLights)) {
+
+				// 増えた分だけ初期化（これが重要）
+				if (rectCount > prevRectCount) {
+					for (int i = prevRectCount; i < rectCount; ++i) {
+						rectLightData->lights[i] = rectLightData->lights[0]; // 0番をコピーが安全
+						rectLightData->lights[i].position.x += 2.0f * i;     // 少しずらして見分けやすく
+						// ついでに念のため「死にやすい値」を下限で保証
+						rectLightData->lights[i].halfWidth =
+							rectLightData->lights[i].halfWidth > 0.01f ? rectLightData->lights[i].halfWidth : 0.01f;
+
+						rectLightData->lights[i].halfHeight =
+							rectLightData->lights[i].halfHeight > 0.01f ? rectLightData->lights[i].halfHeight : 0.01f;
+
+						rectLightData->lights[i].radius =
+							rectLightData->lights[i].radius > 0.01f ? rectLightData->lights[i].radius : 0.01f;
+
+						rectLightData->lights[i].decay =
+							rectLightData->lights[i].decay > 0.01f ? rectLightData->lights[i].decay : 0.01f;
+
+					}
+				}
+
+				rectLightData->count = rectCount;
+				prevRectCount = rectCount;
+			}
+
+
+			for (int i = 0; i < rectLightData->count; ++i) {
+				auto& R = rectLightData->lights[i];
+
+				ImGui::PushID(i);
+				if (ImGui::TreeNode("RectLight", "RectLight [%d]", i)) {
+					ImGui::ColorEdit3("Color", &R.color.x);
+					ImGui::DragFloat3("Position", &R.position.x, 0.01f, -50.0f, 50.0f);
+
+					Vector3 rightEdit = R.right;
+					if (ImGui::DragFloat3("Right", &rightEdit.x, 0.01f, -1.0f, 1.0f)) {
+						R.right = Normalize(rightEdit);
+					}
+
+					Vector3 upEdit = R.up;
+					if (ImGui::DragFloat3("Up", &upEdit.x, 0.01f, -1.0f, 1.0f)) {
+						R.up = Normalize(upEdit);
+					}
+
+					ImGui::DragFloat("HalfWidth", &R.halfWidth, 0.01f, 0.01f, 50.0f);
+					ImGui::DragFloat("HalfHeight", &R.halfHeight, 0.01f, 0.01f, 50.0f);
+
+					ImGui::DragFloat("Intensity", &R.intensity, 0.01f, 0.0f, 50.0f);
+					ImGui::DragFloat("Radius", &R.radius, 0.01f, 0.01f, 200.0f);
+					ImGui::DragFloat("Decay", &R.decay, 0.01f, 0.01f, 10.0f);
+
+					ImGui::TreePop();
+				}
+				ImGui::PopID();
+			}
 
 
 			ImGui::End();
@@ -1938,6 +2162,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress()); // b3
 			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress());      // b4
 			commandList->SetGraphicsRootConstantBufferView(6, spotLightResource->GetGPUVirtualAddress()); // b5 SpotLight
+			commandList->SetGraphicsRootConstantBufferView(7, rectLightResource->GetGPUVirtualAddress()); // ★b6
 
 
 			commandList->DrawIndexedInstanced((UINT)terrainMesh.indices.size(), 1, 0, 0, 0);
@@ -1954,6 +2179,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 			commandList->SetGraphicsRootConstantBufferView(4, directionalLightResource->GetGPUVirtualAddress()); // b3
 			commandList->SetGraphicsRootConstantBufferView(5, pointLightResource->GetGPUVirtualAddress()); // b4 ★
 			commandList->SetGraphicsRootConstantBufferView(6, spotLightResource->GetGPUVirtualAddress()); // b5 SpotLight
+			commandList->SetGraphicsRootConstantBufferView(7, rectLightResource->GetGPUVirtualAddress()); // ★b6
 
 
 			commandList->DrawIndexedInstanced(static_cast<UINT>(sphereIndices.size()), 1, 0, 0, 0);
