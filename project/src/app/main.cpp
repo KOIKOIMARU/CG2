@@ -1,9 +1,9 @@
 #include <Windows.h>
+#include <memory>
 #include "app/MyGame.h"
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    Framework* game = new MyGame();
+    std::unique_ptr<Framework> game = std::make_unique<MyGame>();
     game->Run();
-    delete game;
-    return 0;
+    return 0; // delete不要
 }

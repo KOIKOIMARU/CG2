@@ -22,27 +22,27 @@ void Framework::Run() {
 }
 
 void Framework::Initialize() {
-    winApp_ = new WinApp();
+    winApp_ = std::make_unique<WinApp>();
     winApp_->Initialize();
 
-    dxCommon_ = new DirectXCommon();
-    dxCommon_->Initialize(winApp_);
+    dxCommon_ = std::make_unique<DirectXCommon>();
+    dxCommon_->Initialize(winApp_.get());
 
-    srvManager_ = new SrvManager();
-    srvManager_->Initialize(dxCommon_);
+    srvManager_ = std::make_unique<SrvManager>();
+    srvManager_->Initialize(dxCommon_.get());
 
-    imguiManager_ = new ImGuiManager();
-    imguiManager_->Initialize(winApp_, dxCommon_, srvManager_);
+    imguiManager_ = std::make_unique<ImGuiManager>();
+    imguiManager_->Initialize(winApp_.get(), dxCommon_.get(), srvManager_.get());
 
-    TextureManager::GetInstance()->Initialize(dxCommon_, srvManager_);
+    TextureManager::GetInstance()->Initialize(dxCommon_.get(), srvManager_.get());
 
-    input_ = new Input();
-    input_->Initialize(winApp_);
+    input_ = std::make_unique<Input>();
+    input_->Initialize(winApp_.get());
 
-    spriteCommon_ = new SpriteCommon();
-    spriteCommon_->Initialize(dxCommon_, srvManager_);
+    spriteCommon_ = std::make_unique<SpriteCommon>();
+    spriteCommon_->Initialize(dxCommon_.get(), srvManager_.get());
 
-    ParticleManager::GetInstance()->Initialize(dxCommon_, srvManager_);
+    ParticleManager::GetInstance()->Initialize(dxCommon_.get(), srvManager_.get());
 }
 
 void Framework::Update() {
@@ -56,31 +56,22 @@ void Framework::Update() {
 }
 
 void Framework::Finalize() {
-    // 基盤の後始末（ゲーム固有のFinalizeが先に呼ばれる前提）
     ParticleManager::GetInstance()->Finalize();
     TextureManager::GetInstance()->Destroy();
 
-    delete spriteCommon_;
-    spriteCommon_ = nullptr;
-
-    delete input_;
-    input_ = nullptr;
-
     if (imguiManager_) {
         imguiManager_->Finalize();
-        delete imguiManager_;
-        imguiManager_ = nullptr;
     }
-
-    delete srvManager_;
-    srvManager_ = nullptr;
-
-    delete dxCommon_;
-    dxCommon_ = nullptr;
 
     if (winApp_) {
         winApp_->Finalize();
-        delete winApp_;
-        winApp_ = nullptr;
     }
+
+    // unique_ptr なので delete 不要
+    spriteCommon_.reset();
+    input_.reset();
+    imguiManager_.reset();
+    srvManager_.reset();
+    dxCommon_.reset();
+    winApp_.reset();
 }

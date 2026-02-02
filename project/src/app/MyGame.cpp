@@ -16,67 +16,57 @@
 #include "engine/base/SrvManager.h"
 #include "engine/3d/ModelManager.h"
 
+
+MyGame::MyGame() = default;
+MyGame::~MyGame() = default;
+
+
 void MyGame::Initialize() {
-    // ★汎用初期化
     Framework::Initialize();
 
-    // ===== 3D共通部 =====
-    object3dCommon_ = new Object3dCommon();
-    object3dCommon_->Initialize(dxCommon_, srvManager_);
+    object3dCommon_ = std::make_unique<Object3dCommon>();
+    object3dCommon_->Initialize(dxCommon_.get(), srvManager_.get());
 
-    // ===== カメラ =====
-    camera_ = new Camera();
+    camera_ = std::make_unique<Camera>();
     camera_->SetRotate({ 0.3f, 0.0f, 0.0f });
     camera_->SetTranslate({ 0.0f, 4.0f, -10.0f });
-    object3dCommon_->SetDefaultCamera(camera_);
+    object3dCommon_->SetDefaultCamera(camera_.get()); // 借りるだけなので get()
 
-    // ===== モデル =====
-    ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
+    ModelManager::GetInstance()->Initialize(dxCommon_.get(), srvManager_.get());
     ModelManager::GetInstance()->LoadModel("plane.obj");
 
-    object3d_ = new Object3d();
-    object3d_->Initialize(object3dCommon_);
+    object3d_ = std::make_unique<Object3d>();
+    object3d_->Initialize(object3dCommon_.get());
     object3d_->SetModel("plane.obj");
 
-    // ----- テクスチャ読み込み（ゲーム固有） -----
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
     TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
 
-    // ===== Sprite =====
     sprites_.resize(1);
-    sprites_[0].Initialize(spriteCommon_, "resources/uvChecker.png");
+    sprites_[0].Initialize(spriteCommon_.get(), "resources/uvChecker.png");
     sprites_[0].SetPosition(spritePos_);
     sprites_[0].SetSize({ 640, 360 });
 
-    // ===== Particle group / emitter（ゲーム固有の設定）=====
     ParticleManager::GetInstance()->CreateParticleGroup("test", "resources/circle.png");
 
-    emitter_ = new ParticleEmitter(
+    emitter_ = std::make_unique<ParticleEmitter>(
         "test",
-        { 0.0f, 2.0f, 0.0f },
+        Math::Vector3{ 0.0f, 2.0f, 0.0f },
         0.1f,
         5
     );
-
-    // ===== Sound（ゲーム固有）=====
-    // 例：SoundManagerが値型で使えるならメンバにしてここで init/load
-    // sound_.Initialize();
-    // sound_.Load("alarm", "resources/Alarm01.mp3");
 }
 
 void MyGame::Update() {
-    // ★汎用Update（ProcessMessage, input_->Update）
     Framework::Update();
     if (endRequst_) { return; }
 
-    // ----- ImGui -----
     imguiManager_->Begin();
     imguiManager_->ShowSpriteController(spritePos_);
     imguiManager_->End();
     sprites_[0].SetPosition(spritePos_);
 
-    // ----- ゲーム更新 -----
     float deltaTime = dxCommon_->GetDeltaTime();
 
     camera_->Update();
@@ -92,12 +82,8 @@ void MyGame::Update() {
     );
 
     for (auto& s : sprites_) { s.Update(); }
-
-    // ----- 例：SPACEでサウンド -----
-    if (input_->TriggerKey(DIK_SPACE)) {
-        // sound_.Play("alarm");
-    }
 }
+
 
 void MyGame::Draw() {
     dxCommon_->PreDraw();
@@ -116,23 +102,12 @@ void MyGame::Draw() {
 }
 
 void MyGame::Finalize() {
-    // ゲーム固有の後始末（先に消す）
-    // sound_.Finalize();
-
-    delete emitter_;
-    emitter_ = nullptr;
-
-    delete object3d_;
-    object3d_ = nullptr;
-
-    delete camera_;
-    camera_ = nullptr;
-
-    delete object3dCommon_;
-    object3dCommon_ = nullptr;
+    // unique_ptrなので delete 不要（必要なら明示的解放は reset）
+    emitter_.reset();
+    object3d_.reset();
+    camera_.reset();
+    object3dCommon_.reset();
 
     ModelManager::GetInstance()->Finalize();
-
-    // ★最後に汎用Finalize
     Framework::Finalize();
 }

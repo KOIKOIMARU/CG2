@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 
 class WinApp;
 class DirectXCommon;
@@ -23,11 +24,10 @@ public:
 protected:
     bool endRequst_ = false;
 
-    // 汎用基盤（どのゲームでも使う）
-    WinApp* winApp_ = nullptr;
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
-    ImGuiManager* imguiManager_ = nullptr;
-    Input* input_ = nullptr;
-    SpriteCommon* spriteCommon_ = nullptr;
+    std::unique_ptr<WinApp> winApp_;
+    std::unique_ptr<DirectXCommon> dxCommon_;
+    std::unique_ptr<SrvManager> srvManager_;
+    std::unique_ptr<ImGuiManager> imguiManager_;
+    std::unique_ptr<Input> input_;
+    std::unique_ptr<SpriteCommon> spriteCommon_;
 };
