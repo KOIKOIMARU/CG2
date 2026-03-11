@@ -157,6 +157,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\engine\scene\SceneManager.cpp" />
+    <ClCompile Include="src\engine\scene\BaseScene.cpp" />
+    <ClCompile Include="src\engine\scene\GamePlayScene.cpp" />
     <ClCompile Include="src\engine\base\Framework.cpp" />
     <ClCompile Include="src\app\MyGame.cpp" />
     <ClCompile Include="src\engine\audio\SoundManager.cpp" />
@@ -195,6 +198,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\base\SrvManager.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
     </ClCompile>
+    <ClCompile Include="src\engine\scene\TitleScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Particle.PS.hlsl">
@@ -241,6 +245,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\engine\scene\BaseScene.h" />
+    <ClInclude Include="include\engine\scene\GamePlayScene.h" />
     <ClInclude Include="include\engine\base\Framework.h" />
     <ClInclude Include="include\engine\base\ImGuiManager.h" />
     <ClInclude Include="include\engine\3d\Camera.h" />
@@ -275,6 +281,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\TextureManager.h" />
     <ClInclude Include="include\engine\base\SrvManager.h" />
     <ClInclude Include="include\engine\audio\SoundManager.h" />
+    <ClInclude Include="include\engine\scene\TitleScene.h" />
+    <ClInclude Include="include\engine\scene\SceneManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

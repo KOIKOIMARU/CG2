@@ -9,6 +9,8 @@
 #include "engine/3d/TextureManager.h"
 #include "engine/3d/ParticleManager.h"
 
+Framework::~Framework() = default;
+
 void Framework::Run() {
     Initialize();
 

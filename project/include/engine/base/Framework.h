@@ -1,16 +1,17 @@
 #pragma once
 #include <memory>
 
+#include "engine/io/Input.h"
+#include "engine/2d/SpriteCommon.h"
+
 class WinApp;
 class DirectXCommon;
 class SrvManager;
 class ImGuiManager;
-class Input;
-class SpriteCommon;
 
 class Framework {
 public:
-    virtual ~Framework() = default;
+    virtual ~Framework();
 
     void Run();
 
