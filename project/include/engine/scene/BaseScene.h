@@ -5,6 +5,7 @@ class DirectXCommon;
 class SrvManager;
 class SpriteCommon;
 class ImGuiManager;
+class Input;
 
 class BaseScene {
 public:
@@ -23,12 +24,14 @@ public:
         DirectXCommon* dxCommon,
         SrvManager* srvManager,
         SpriteCommon* spriteCommon,
-        ImGuiManager* imguiManager
+        ImGuiManager* imguiManager,
+        Input* input
     ) {
         dxCommon_ = dxCommon;
         srvManager_ = srvManager;
         spriteCommon_ = spriteCommon;
         imguiManager_ = imguiManager;
+        input_ = input;
     }
 
 protected:
@@ -38,4 +41,5 @@ protected:
     SrvManager* srvManager_ = nullptr;
     SpriteCommon* spriteCommon_ = nullptr;
     ImGuiManager* imguiManager_ = nullptr;
+    Input* input_ = nullptr;
 };

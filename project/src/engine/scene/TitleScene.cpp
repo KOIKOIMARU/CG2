@@ -1,32 +1,26 @@
 #include "engine/scene/TitleScene.h"
-
-#include "engine/base/DirectXCommon.h"
-#include "engine/base/SrvManager.h"
-#include "engine/base/ImGuiManager.h"
-#include "engine/2d/SpriteCommon.h"
-#include "engine/3d/TextureManager.h"
+#include "engine/scene/SceneManager.h"
+#include "engine/scene/SceneType.h"
+#include "engine/io/Input.h"
+#include <dinput.h>
 
 TitleScene::TitleScene() = default;
 TitleScene::~TitleScene() = default;
 
-
 void TitleScene::Initialize() {
-    TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
-
-    sprites_.resize(1);
-    sprites_[0].Initialize(spriteCommon_, "resources/checkerBoard.png");
-    sprites_[0].SetPosition(spritePos_);
-    sprites_[0].SetSize({ 640, 360 });
 }
 
 void TitleScene::Update() {
+    if (input_ && input_->TriggerKey(DIK_RETURN)) {
+        sceneManager_->SetNextScene(SceneType::GamePlay);
+    }
+
     for (auto& s : sprites_) {
         s.Update();
     }
 }
 
 void TitleScene::Draw() {
-
 }
 
 void TitleScene::Finalize() {

@@ -1,10 +1,11 @@
 #include "app/MyGame.h"
 #include "engine/scene/SceneManager.h"
-#include "engine/scene/TitleScene.h"
+#include "engine/scene/SceneFactory.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/ImGuiManager.h"
+#include "engine/io/Input.h"
 
 MyGame::MyGame() = default;
 MyGame::~MyGame() = default;
@@ -12,17 +13,18 @@ MyGame::~MyGame() = default;
 void MyGame::Initialize() {
     Framework::Initialize();
 
-    sceneManager_ = std::make_unique<SceneManager>();
+    sceneFactory_ = std::make_unique<SceneFactory>();
 
-    auto titleScene = std::make_unique<TitleScene>();
-    titleScene->SetSystems(
+    SceneManager::GetInstance()->SetSceneFactory(sceneFactory_.get());
+    SceneManager::GetInstance()->SetSystems(
         dxCommon_.get(),
         srvManager_.get(),
         spriteCommon_.get(),
-        imguiManager_.get()
+        imguiManager_.get(),
+        input_.get()
     );
 
-    sceneManager_->SetNextScene(std::move(titleScene));
+    SceneManager::GetInstance()->SetNextScene(SceneType::Title);
 }
 
 void MyGame::Update() {
@@ -31,19 +33,16 @@ void MyGame::Update() {
 
     imguiManager_->Begin();
 
-    if (sceneManager_) {
-        sceneManager_->Update();
-    }
+    SceneManager::GetInstance()->Update();
 
     imguiManager_->End();
 }
+
 void MyGame::Draw() {
     dxCommon_->PreDraw();
     srvManager_->PreDraw();
 
-    if (sceneManager_) {
-        sceneManager_->Draw();
-    }
+    SceneManager::GetInstance()->Draw();
 
     imguiManager_->Draw();
 
@@ -51,6 +50,6 @@ void MyGame::Draw() {
 }
 
 void MyGame::Finalize() {
-    sceneManager_.reset();
+    sceneFactory_.reset();
     Framework::Finalize();
 }

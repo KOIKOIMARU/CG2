@@ -2,7 +2,7 @@
 #include "engine/base/Framework.h"
 #include <memory>
 
-class SceneManager;
+class AbstractSceneFactory;
 
 class MyGame : public Framework {
 public:
@@ -15,5 +15,5 @@ public:
     void Draw() override;
 
 private:
-    std::unique_ptr<SceneManager> sceneManager_;
+    std::unique_ptr<AbstractSceneFactory> sceneFactory_;
 };
