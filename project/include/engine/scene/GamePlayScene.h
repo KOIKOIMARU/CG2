@@ -4,6 +4,7 @@
 #include <vector>
 #include "engine/base/Math.h"
 #include "engine/2d/Sprite.h"
+#include "engine/3d/Object3dCommon.h"
 
 class Object3dCommon;
 class Object3d;
@@ -33,4 +34,10 @@ private:
     Math::Vector3 objectRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 lightDirection_{ 0.0f, -1.0f, 0.0f };
     float lightIntensity_ = 1.0f;
+    int blendModeIndex_ = static_cast<int>(BlendMode::Normal);
+    Math::Vector3 pointLightPosition_{ 0.0f, 2.0f, 0.0f };
+    float pointLightIntensity_ = 1.0f;
+    Math::Vector3 spotLightPosition_{ 2.0f, 1.25f, 0.0f };
+    Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
+    float spotLightIntensity_ = 4.0f;
 };

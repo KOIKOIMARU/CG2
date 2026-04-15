@@ -14,6 +14,7 @@ class Camera;
 struct TransformationMatrix {
     Matrix4x4 WVP;
     Matrix4x4 World;
+    Matrix4x4 WorldInverseTranspose;
 };
 
 struct DirectionalLight {
@@ -21,6 +22,32 @@ struct DirectionalLight {
     Vector3 direction;
     float intensity;
     Vector3 padding;
+};
+
+struct CameraForGPU {
+    Vector3 worldPosition;
+    float padding;
+};
+
+struct PointLight {
+    Vector4 color;
+    Vector3 position;
+    float intensity;
+    float radius;
+    float decay;
+    float padding[2];
+};
+
+struct SpotLight {
+    Vector4 color;
+    Vector3 position;
+    float intensity;
+    Vector3 direction;
+    float distance;
+    float decay;
+    float cosAngle;
+    float cosFalloffStart;
+    float padding;
 };
 
 class Object3d {
@@ -37,6 +64,11 @@ public:
     void SetTranslate(const Vector3& translate);
     void SetDirectionalLightDirection(const Vector3& direction);
     void SetDirectionalLightIntensity(float intensity);
+    void SetPointLightPosition(const Vector3& position);
+    void SetPointLightIntensity(float intensity);
+    void SetSpotLightPosition(const Vector3& position);
+    void SetSpotLightDirection(const Vector3& direction);
+    void SetSpotLightIntensity(float intensity);
 
     // getter
     Vector3 GetScale() const;
@@ -51,6 +83,9 @@ public:
 private:
     void CreateTransformationMatrix();
     void CreateDirectionalLight();
+    void CreateCameraResource();
+    void CreatePointLight();
+    void CreateSpotLight();
 
 private:
     Object3dCommon* object3dCommon_ = nullptr;
@@ -64,4 +99,13 @@ private:
 
     ComPtr<ID3D12Resource> directionalLightResource_;
     DirectionalLight* directionalLightData_ = nullptr;
+
+    ComPtr<ID3D12Resource> cameraResource_;
+    CameraForGPU* cameraData_ = nullptr;
+
+    ComPtr<ID3D12Resource> pointLightResource_;
+    PointLight* pointLightData_ = nullptr;
+
+    ComPtr<ID3D12Resource> spotLightResource_;
+    SpotLight* spotLightData_ = nullptr;
 };

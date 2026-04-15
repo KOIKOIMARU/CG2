@@ -1,5 +1,6 @@
 #include <vector>
 #include <fstream>
+#include <cmath>
 #include <d3d12.h>
 #include <wrl/client.h>
 
@@ -22,6 +23,9 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
 
     CreateTransformationMatrix();
     CreateDirectionalLight();
+    CreateCameraResource();
+    CreatePointLight();
+    CreateSpotLight();
 
     transform_ = {
         {1.0f, 1.0f, 1.0f},
@@ -56,6 +60,12 @@ void Object3d::Update() {
         Transpose(worldViewProjectionMatrix);
     transformationMatrixData_->World =
         Transpose(worldMatrix);
+    transformationMatrixData_->WorldInverseTranspose =
+        Transpose(Inverse(worldMatrix));
+
+    if (camera_) {
+        cameraData_->worldPosition = camera_->GetTranslate();
+    }
 }
 
 
@@ -70,7 +80,16 @@ void Object3d::Draw()
 
     // Light
     commandList->SetGraphicsRootConstantBufferView(
-        3, directionalLightResource_->GetGPUVirtualAddress());
+        2, cameraResource_->GetGPUVirtualAddress());
+
+    commandList->SetGraphicsRootConstantBufferView(
+        4, directionalLightResource_->GetGPUVirtualAddress());
+
+    commandList->SetGraphicsRootConstantBufferView(
+        5, pointLightResource_->GetGPUVirtualAddress());
+
+    commandList->SetGraphicsRootConstantBufferView(
+        6, spotLightResource_->GetGPUVirtualAddress());
 
     // Model 描画
     if (model_) {
@@ -93,6 +112,7 @@ void Object3d::CreateTransformationMatrix() {
     // 単位行列で初期化
     transformationMatrixData_->WVP = MakeIdentity4x4();
     transformationMatrixData_->World = MakeIdentity4x4();
+    transformationMatrixData_->WorldInverseTranspose = MakeIdentity4x4();
 }
 
 void Object3d::CreateDirectionalLight() {
@@ -111,6 +131,57 @@ void Object3d::CreateDirectionalLight() {
     directionalLightData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
     directionalLightData_->direction = { 0.0f, -1.0f, 0.0f };
     directionalLightData_->intensity = 1.0f;
+}
+
+void Object3d::CreateCameraResource() {
+    auto dxCommon = object3dCommon_->GetDxCommon();
+
+    cameraResource_ =
+        dxCommon->CreateBufferResource(sizeof(CameraForGPU));
+
+    cameraResource_->Map(
+        0, nullptr,
+        reinterpret_cast<void**>(&cameraData_));
+
+    cameraData_->worldPosition = { 0.0f, 0.0f, -5.0f };
+    cameraData_->padding = 0.0f;
+}
+
+void Object3d::CreatePointLight() {
+    auto dxCommon = object3dCommon_->GetDxCommon();
+
+    pointLightResource_ =
+        dxCommon->CreateBufferResource(sizeof(PointLight));
+
+    pointLightResource_->Map(
+        0, nullptr,
+        reinterpret_cast<void**>(&pointLightData_));
+
+    pointLightData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    pointLightData_->position = { 0.0f, 2.0f, 0.0f };
+    pointLightData_->intensity = 1.0f;
+    pointLightData_->radius = 6.0f;
+    pointLightData_->decay = 2.0f;
+}
+
+void Object3d::CreateSpotLight() {
+    auto dxCommon = object3dCommon_->GetDxCommon();
+
+    spotLightResource_ =
+        dxCommon->CreateBufferResource(sizeof(SpotLight));
+
+    spotLightResource_->Map(
+        0, nullptr,
+        reinterpret_cast<void**>(&spotLightData_));
+
+    spotLightData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    spotLightData_->position = { 2.0f, 1.25f, 0.0f };
+    spotLightData_->direction = Normalize({ -1.0f, 1.0f, 0.0f });
+    spotLightData_->intensity = 4.0f;
+    spotLightData_->distance = 7.0f;
+    spotLightData_->decay = 2.0f;
+    spotLightData_->cosAngle = std::cos(3.14159265f / 3.0f);
+    spotLightData_->cosFalloffStart = std::cos(3.14159265f / 6.0f);
 }
 
 // ===== setter =====
@@ -132,6 +203,26 @@ void Object3d::SetDirectionalLightDirection(const Vector3& direction) {
 
 void Object3d::SetDirectionalLightIntensity(float intensity) {
     directionalLightData_->intensity = intensity;
+}
+
+void Object3d::SetPointLightPosition(const Vector3& position) {
+    pointLightData_->position = position;
+}
+
+void Object3d::SetPointLightIntensity(float intensity) {
+    pointLightData_->intensity = intensity;
+}
+
+void Object3d::SetSpotLightPosition(const Vector3& position) {
+    spotLightData_->position = position;
+}
+
+void Object3d::SetSpotLightDirection(const Vector3& direction) {
+    spotLightData_->direction = Normalize(direction);
+}
+
+void Object3d::SetSpotLightIntensity(float intensity) {
+    spotLightData_->intensity = intensity;
 }
 
 // ===== getter =====

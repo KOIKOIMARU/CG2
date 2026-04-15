@@ -3,9 +3,71 @@
 #include "engine/base/Logger.h"
 #include "engine/base/SrvManager.h"
 #include <cassert>
+#include <array>
 
 using Microsoft::WRL::ComPtr;
 using Logger::Log;
+
+namespace {
+
+D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode)
+{
+	D3D12_BLEND_DESC desc{};
+	auto& rt = desc.RenderTarget[0];
+	rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	rt.BlendEnable = TRUE;
+	rt.BlendOp = D3D12_BLEND_OP_ADD;
+	rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+
+	switch (mode) {
+	case BlendMode::None:
+		rt.BlendEnable = FALSE;
+		rt.SrcBlend = D3D12_BLEND_ONE;
+		rt.DestBlend = D3D12_BLEND_ZERO;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+		break;
+	case BlendMode::Normal:
+		rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+		break;
+	case BlendMode::Add:
+		rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		rt.DestBlend = D3D12_BLEND_ONE;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_ONE;
+		break;
+	case BlendMode::Subtract:
+		rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+		rt.DestBlend = D3D12_BLEND_ONE;
+		rt.BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_ONE;
+		rt.BlendOpAlpha = D3D12_BLEND_OP_REV_SUBTRACT;
+		break;
+	case BlendMode::Multiply:
+		rt.SrcBlend = D3D12_BLEND_DEST_COLOR;
+		rt.DestBlend = D3D12_BLEND_ZERO;
+		rt.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+		rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+		break;
+	case BlendMode::Screen:
+		rt.SrcBlend = D3D12_BLEND_INV_DEST_COLOR;
+		rt.DestBlend = D3D12_BLEND_ONE;
+		rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+		rt.DestBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
+		break;
+	case BlendMode::Count:
+		assert(false);
+		break;
+	}
+
+	return desc;
+}
+
+}
 
 void Object3dCommon::Initialize(
 	DirectXCommon* dxCommon,
@@ -29,8 +91,8 @@ void Object3dCommon::CreateRootSignature() {
 	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-	// RootParameter作成。PixelShaderのMaterialとVertexShaderのTransform 
-	D3D12_ROOT_PARAMETER rootParameters[4] = {};
+	// RootParameter作成
+	D3D12_ROOT_PARAMETER rootParameters[7] = {};
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -42,6 +104,11 @@ void Object3dCommon::CreateRootSignature() {
 	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 	rootParameters[1].Descriptor.ShaderRegister = 1;
 
+	// b2: CameraCB (PixelShader)
+	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[2].Descriptor.ShaderRegister = 2;
+
 	// t0: SRVテクスチャ (PixelShader)
 	D3D12_DESCRIPTOR_RANGE descriptorRange[1] = {};
 	descriptorRange[0].BaseShaderRegister = 0;
@@ -49,15 +116,25 @@ void Object3dCommon::CreateRootSignature() {
 	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;
-	rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
+	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[3].DescriptorTable.pDescriptorRanges = descriptorRange;
+	rootParameters[3].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
 
 	// b3: DirectionalLight (PixelShader)
-	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[3].Descriptor.ShaderRegister = 3;
+	rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[4].Descriptor.ShaderRegister = 3;
+
+	// b4: PointLight (PixelShader)
+	rootParameters[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[5].Descriptor.ShaderRegister = 4;
+
+	// b5: SpotLight (PixelShader)
+	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[6].Descriptor.ShaderRegister = 5;
 
 	// ルートシグネチャのセットアップ
 	descriptionRootSignature.pParameters = rootParameters;
@@ -125,12 +202,6 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 	inputLayoutDesc.pInputElementDescs = inputElementDescs; // セマンティクスの情報
 	inputLayoutDesc.NumElements = _countof(inputElementDescs); // セマンティクスの数
 
-	// BlendStateの設定
-	D3D12_BLEND_DESC blendDesc{};
-	// すべての色要素を書き込む
-	blendDesc.RenderTarget[0].RenderTargetWriteMask =
-		D3D12_COLOR_WRITE_ENABLE_ALL;
-
 	// RasterizerStateの設定
 	D3D12_RASTERIZER_DESC rasterizerDesc{};
 	// 裏面を表示しない
@@ -152,7 +223,7 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc; // InputLayout
 	graphicsPipelineStateDesc.VS = { vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize() }; // VertexShader
 	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() }; // PixelShader
-	graphicsPipelineStateDesc.BlendState = blendDesc; // BlendState
+	graphicsPipelineStateDesc.BlendState = MakeBlendDesc(BlendMode::Normal); // BlendState
 	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc; // RasterizerState
 	// 書き込むRTVの情報
 	graphicsPipelineStateDesc.NumRenderTargets = 1;
@@ -176,13 +247,17 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
-	// 実際に生成
-	ComPtr<ID3D12PipelineState> graphicsPipelineState = nullptr;
-	hr = device->CreateGraphicsPipelineState(
-		&graphicsPipelineStateDesc,
-		IID_PPV_ARGS(&pipelineState_) // ★ メンバに保存
-	);
-	assert(SUCCEEDED(hr));
+	// BlendModeごとにPSOを生成
+	for (uint32_t i = 0; i < static_cast<uint32_t>(BlendMode::Count); ++i) {
+		graphicsPipelineStateDesc.BlendState =
+			MakeBlendDesc(static_cast<BlendMode>(i));
+
+		hr = device->CreateGraphicsPipelineState(
+			&graphicsPipelineStateDesc,
+			IID_PPV_ARGS(&pipelineStates_[i])
+		);
+		assert(SUCCEEDED(hr));
+	}
 
 }
 
@@ -194,7 +269,8 @@ void Object3dCommon::CommonDrawSetting() {
 	// commandList->SetDescriptorHeaps(1, heaps);
 
 	commandList->SetGraphicsRootSignature(rootSignature_.Get());
-	commandList->SetPipelineState(pipelineState_.Get());
+	commandList->SetPipelineState(
+		pipelineStates_[static_cast<size_t>(blendMode_)].Get());
 	commandList->IASetPrimitiveTopology(
 		D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

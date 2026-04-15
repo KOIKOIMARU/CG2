@@ -9,6 +9,8 @@ struct VSOutput
 cbuffer MaterialCB : register(b0)
 {
     float4 gMaterialColor;
+    int gEnableLighting;
+    float3 gPadding;
     float4x4 gUVTransform;
 };
 

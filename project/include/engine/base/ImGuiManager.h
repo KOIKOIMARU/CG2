@@ -27,7 +27,13 @@ public:
     void ShowGamePlayController(
         Math::Vector3& objectRotate,
         Math::Vector3& lightDirection,
-        float& lightIntensity);
+        float& lightIntensity,
+        int& blendModeIndex,
+        Math::Vector3& pointLightPosition,
+        float& pointLightIntensity,
+        Math::Vector3& spotLightPosition,
+        Math::Vector3& spotLightDirection,
+        float& spotLightIntensity);
 
 private:
     DirectXCommon* dxCommon_ = nullptr;

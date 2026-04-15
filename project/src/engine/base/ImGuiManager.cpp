@@ -7,6 +7,8 @@
 
 namespace {
 
+#ifdef USE_IMGUI
+
 void AllocateImGuiSrvDescriptor(
     ImGui_ImplDX12_InitInfo* info,
     D3D12_CPU_DESCRIPTOR_HANDLE* outCpuHandle,
@@ -31,6 +33,8 @@ void FreeImGuiSrvDescriptor(
     // ImGuiが不要になったSRVを、次の確保で再利用できるように戻す
     srvManager->Free(cpuHandle);
 }
+
+#endif
 
 }
 
@@ -122,12 +126,31 @@ void ImGuiManager::ShowSpriteController(Math::Vector2& spritePos) {
 void ImGuiManager::ShowGamePlayController(
     Math::Vector3& objectRotate,
     Math::Vector3& lightDirection,
-    float& lightIntensity)
+    float& lightIntensity,
+    int& blendModeIndex,
+    Math::Vector3& pointLightPosition,
+    float& pointLightIntensity,
+    Math::Vector3& spotLightPosition,
+    Math::Vector3& spotLightDirection,
+    float& spotLightIntensity)
 {
 #ifdef USE_IMGUI
-    ImGui::SetNextWindowSize(ImVec2(500, 180), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(520, 420), ImGuiCond_Once);
     ImGui::Begin("GamePlay Controller", nullptr,
         ImGuiWindowFlags_NoCollapse);
+
+    // 3DモデルのBlendModeを切り替え
+    const char* blendItems[] = {
+        "None", "Normal", "Add", "Subtract", "Multiply", "Screen"
+    };
+    ImGui::Combo(
+        "BlendMode",
+        &blendModeIndex,
+        blendItems,
+        IM_ARRAYSIZE(blendItems)
+    );
+
+    ImGui::Separator();
 
     // Planeの回転を調整
     ImGui::Text("Object Rotate");
@@ -144,10 +167,37 @@ void ImGuiManager::ShowGamePlayController(
     ImGui::SliderFloat("Light Z", &lightDirection.z, -1.0f, 1.0f);
     ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 5.0f);
 
+    ImGui::Separator();
+
+    // PointLightの位置と強さを調整
+    ImGui::Text("Point Light");
+    ImGui::SliderFloat("Point X", &pointLightPosition.x, -10.0f, 10.0f);
+    ImGui::SliderFloat("Point Y", &pointLightPosition.y, -10.0f, 10.0f);
+    ImGui::SliderFloat("Point Z", &pointLightPosition.z, -10.0f, 10.0f);
+    ImGui::SliderFloat("Point Intensity", &pointLightIntensity, 0.0f, 10.0f);
+
+    ImGui::Separator();
+
+    // SpotLightの位置、向き、強さを調整
+    ImGui::Text("Spot Light");
+    ImGui::SliderFloat("Spot X", &spotLightPosition.x, -10.0f, 10.0f);
+    ImGui::SliderFloat("Spot Y", &spotLightPosition.y, -10.0f, 10.0f);
+    ImGui::SliderFloat("Spot Z", &spotLightPosition.z, -10.0f, 10.0f);
+    ImGui::SliderFloat("Spot Dir X", &spotLightDirection.x, -1.0f, 1.0f);
+    ImGui::SliderFloat("Spot Dir Y", &spotLightDirection.y, -1.0f, 1.0f);
+    ImGui::SliderFloat("Spot Dir Z", &spotLightDirection.z, -1.0f, 1.0f);
+    ImGui::SliderFloat("Spot Intensity", &spotLightIntensity, 0.0f, 20.0f);
+
     ImGui::End();
 #else
     (void)objectRotate;
     (void)lightDirection;
     (void)lightIntensity;
+    (void)blendModeIndex;
+    (void)pointLightPosition;
+    (void)pointLightIntensity;
+    (void)spotLightPosition;
+    (void)spotLightDirection;
+    (void)spotLightIntensity;
 #endif
 }

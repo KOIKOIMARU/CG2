@@ -137,9 +137,9 @@ void SpriteCommon::CreateGraphicsPipelineState()
     depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     depth.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 
-    // シェーダ（Object3D と同じでOK）
-    auto vs = dxCommon_->CompileShader(L"shaders/Object3D.VS.hlsl", L"vs_6_0");
-    auto ps = dxCommon_->CompileShader(L"shaders/Object3D.PS.hlsl", L"ps_6_0");
+    // Sprite専用のShaderを使う
+    auto vs = dxCommon_->CompileShader(L"shaders/Sprite.VS.hlsl", L"vs_6_0");
+    auto ps = dxCommon_->CompileShader(L"shaders/Sprite.PS.hlsl", L"ps_6_0");
     assert(vs && ps);
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};

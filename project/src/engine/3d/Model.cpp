@@ -3,11 +3,147 @@
 #include <fstream>
 #include <sstream>
 #include <cassert>
+#include <filesystem>
+
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 
 #include "engine/3d/ModelCommon.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/base/SrvManager.h"
+
+namespace {
+
+Matrix4x4 ConvertAiMatrixToMatrix4x4(aiMatrix4x4 matrix)
+{
+    matrix.Transpose();
+
+    Matrix4x4 result{};
+    result.m[0][0] = matrix.a1;
+    result.m[0][1] = matrix.a2;
+    result.m[0][2] = matrix.a3;
+    result.m[0][3] = matrix.a4;
+    result.m[1][0] = matrix.b1;
+    result.m[1][1] = matrix.b2;
+    result.m[1][2] = matrix.b3;
+    result.m[1][3] = matrix.b4;
+    result.m[2][0] = matrix.c1;
+    result.m[2][1] = matrix.c2;
+    result.m[2][2] = matrix.c3;
+    result.m[2][3] = matrix.c4;
+    result.m[3][0] = matrix.d1;
+    result.m[3][1] = matrix.d2;
+    result.m[3][2] = matrix.d3;
+    result.m[3][3] = matrix.d4;
+    return result;
+}
+
+Vector4 TransformPosition(const Vector4& position, const Matrix4x4& matrix)
+{
+    return {
+        position.x * matrix.m[0][0] +
+            position.y * matrix.m[1][0] +
+            position.z * matrix.m[2][0] +
+            position.w * matrix.m[3][0],
+        position.x * matrix.m[0][1] +
+            position.y * matrix.m[1][1] +
+            position.z * matrix.m[2][1] +
+            position.w * matrix.m[3][1],
+        position.x * matrix.m[0][2] +
+            position.y * matrix.m[1][2] +
+            position.z * matrix.m[2][2] +
+            position.w * matrix.m[3][2],
+        position.x * matrix.m[0][3] +
+            position.y * matrix.m[1][3] +
+            position.z * matrix.m[2][3] +
+            position.w * matrix.m[3][3],
+    };
+}
+
+Vector3 TransformNormal(const Vector3& normal, const Matrix4x4& matrix)
+{
+    Vector4 transformed =
+        TransformPosition({ normal.x, normal.y, normal.z, 0.0f }, matrix);
+    return Normalize({ transformed.x, transformed.y, transformed.z });
+}
+
+std::string GetAssimpTexturePath(
+    const aiScene* scene,
+    const std::string& directoryPath)
+{
+    for (uint32_t i = 0; i < scene->mNumMaterials; ++i) {
+        aiMaterial* material = scene->mMaterials[i];
+        aiString texturePath;
+
+        if (material->GetTexture(aiTextureType_BASE_COLOR, 0, &texturePath) ==
+                AI_SUCCESS ||
+            material->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath) ==
+                AI_SUCCESS) {
+            std::filesystem::path path = texturePath.C_Str();
+            return directoryPath + "/" + path.filename().string();
+        }
+    }
+
+    return directoryPath + "/uvChecker.png";
+}
+
+void AppendAssimpNode(
+    const aiScene* scene,
+    const aiNode* node,
+    const Matrix4x4& parentMatrix,
+    ModelData& modelData)
+{
+    Matrix4x4 localMatrix =
+        ConvertAiMatrixToMatrix4x4(node->mTransformation);
+    Matrix4x4 worldMatrix = Multiply(localMatrix, parentMatrix);
+
+    for (uint32_t meshIndex = 0; meshIndex < node->mNumMeshes; ++meshIndex) {
+        const aiMesh* mesh = scene->mMeshes[node->mMeshes[meshIndex]];
+        assert(mesh);
+        assert(mesh->HasNormals());
+
+        for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
+            const aiFace& face = mesh->mFaces[faceIndex];
+            assert(face.mNumIndices == 3);
+
+            for (uint32_t index = 0; index < face.mNumIndices; ++index) {
+                uint32_t vertexIndex = face.mIndices[index];
+                const aiVector3D& position = mesh->mVertices[vertexIndex];
+                const aiVector3D& normal = mesh->mNormals[vertexIndex];
+
+                Vector2 texcoord{ 0.0f, 0.0f };
+                if (mesh->HasTextureCoords(0)) {
+                    const aiVector3D& uv =
+                        mesh->mTextureCoords[0][vertexIndex];
+                    texcoord = { uv.x, uv.y };
+                }
+
+                VertexData vertex{};
+                vertex.position = TransformPosition(
+                    { position.x, position.y, position.z, 1.0f },
+                    worldMatrix);
+                vertex.texcoord = texcoord;
+                vertex.normal = TransformNormal(
+                    { normal.x, normal.y, normal.z },
+                    worldMatrix);
+
+                modelData.vertices.push_back(vertex);
+            }
+        }
+    }
+
+    for (uint32_t childIndex = 0; childIndex < node->mNumChildren; ++childIndex) {
+        AppendAssimpNode(
+            scene,
+            node->mChildren[childIndex],
+            worldMatrix,
+            modelData);
+    }
+}
+
+}
 
 void Model::Initialize(ModelCommon* modelCommon,
     const std::string& directoryPath,
@@ -16,8 +152,15 @@ void Model::Initialize(ModelCommon* modelCommon,
     assert(modelCommon);
     modelCommon_ = modelCommon;
 
-    // OBJ 読み込み
-    modelData_ = LoadObjFile(directoryPath, filename);
+    std::filesystem::path path = filename;
+    std::string extension = path.extension().string();
+
+    // OBJは既存の読み込み、glTF系はAssimpで読み込む
+    if (extension == ".gltf" || extension == ".glb") {
+        modelData_ = LoadAssimpFile(directoryPath, filename);
+    } else {
+        modelData_ = LoadObjFile(directoryPath, filename);
+    }
 
     // GPUリソース作成
     CreateVertexBuffer();
@@ -47,7 +190,7 @@ void Model::Draw()
 
     // Texture SRV（★ index を使う）
     srvManager->SetGraphicsRootDescriptorTable(
-        2,
+        3,
         TextureManager::GetInstance()->GetSrvIndex(
             modelData_.material.textureFilePath
         )
@@ -87,6 +230,8 @@ void Model::CreateMaterial()
 
     materialData_->color = { 1,1,1,1 };
     materialData_->lightingMode = 2; // Half Lambert
+    materialData_->shininess = 64.0f;
+    materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
     materialData_->uvTransform = MakeIdentity4x4();
 }
 
@@ -189,6 +334,38 @@ ModelData Model::LoadObjFile(const std::string& directoryPath, const std::string
             modelData.material = LoadMaterialTemplate(directoryPath, mtl);
         }
     }
+
+    return modelData;
+}
+
+ModelData Model::LoadAssimpFile(
+    const std::string& directoryPath,
+    const std::string& filename)
+{
+    ModelData modelData;
+
+    Assimp::Importer importer;
+    std::string filePath = directoryPath + "/" + filename;
+
+    const unsigned int flags =
+        aiProcess_Triangulate |
+        aiProcess_FlipUVs |
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_GenNormals;
+
+    const aiScene* scene = importer.ReadFile(filePath.c_str(), flags);
+    assert(scene);
+    assert(scene->HasMeshes());
+    assert(scene->mRootNode);
+
+    modelData.material.textureFilePath =
+        GetAssimpTexturePath(scene, directoryPath);
+
+    AppendAssimpNode(
+        scene,
+        scene->mRootNode,
+        MakeIdentity4x4(),
+        modelData);
 
     return modelData;
 }

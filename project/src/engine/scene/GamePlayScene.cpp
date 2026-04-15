@@ -35,20 +35,15 @@ void GamePlayScene::Initialize() {
     );
 
     ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
-    ModelManager::GetInstance()->LoadModel("plane.obj");
+    ModelManager::GetInstance()->LoadModel("plane.gltf");
 
     object3d_ = std::make_unique<Object3d>();
     object3d_->Initialize(object3dCommon_.get());
-    object3d_->SetModel("plane.obj");
+    object3d_->SetModel("plane.gltf");
 
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
     TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
-
-    sprites_.resize(1);
-    sprites_[0].Initialize(spriteCommon_, "resources/uvChecker.png");
-    sprites_[0].SetPosition(spritePos_);
-    sprites_[0].SetSize({ 640, 360 });
 
     ParticleManager::GetInstance()->CreateParticleGroup("test", "resources/circle.png");
 
@@ -65,13 +60,28 @@ void GamePlayScene::Update() {
     imguiManager_->ShowGamePlayController(
         objectRotate_,
         lightDirection_,
-        lightIntensity_
+        lightIntensity_,
+        blendModeIndex_,
+        pointLightPosition_,
+        pointLightIntensity_,
+        spotLightPosition_,
+        spotLightDirection_,
+        spotLightIntensity_
     );
 
-    sprites_[0].SetPosition(spritePos_);
+    for (auto& sprite : sprites_) {
+        sprite.SetPosition(spritePos_);
+    }
     object3d_->SetRotate(objectRotate_);
     object3d_->SetDirectionalLightDirection(lightDirection_);
     object3d_->SetDirectionalLightIntensity(lightIntensity_);
+    object3d_->SetPointLightPosition(pointLightPosition_);
+    object3d_->SetPointLightIntensity(pointLightIntensity_);
+    object3d_->SetSpotLightPosition(spotLightPosition_);
+    object3d_->SetSpotLightDirection(spotLightDirection_);
+    object3d_->SetSpotLightIntensity(spotLightIntensity_);
+    object3dCommon_->SetBlendMode(
+        static_cast<BlendMode>(blendModeIndex_));
 
     float deltaTime = dxCommon_->GetDeltaTime();
 

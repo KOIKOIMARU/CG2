@@ -64,6 +64,9 @@
     <Filter Include="resources">
       <UniqueIdentifier>{724b9669-b3ff-492b-b583-c902814b1e55}</UniqueIdentifier>
     </Filter>
+    <Filter Include="resources\skybox">
+      <UniqueIdentifier>{28d6eb0f-1178-4c7e-9e58-6b2c9f40b482}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\engine\audio">
       <UniqueIdentifier>{db1bd0e5-aeaf-42eb-b084-3afc55d93ee8}</UniqueIdentifier>
     </Filter>
@@ -191,6 +194,12 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <FxCompile Include="shaders\Sprite.PS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="shaders\Sprite.VS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
     <FxCompile Include="shaders\Object3d.PS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
@@ -348,6 +357,18 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
+    <None Include="resources\grass.png">
+      <Filter>resources</Filter>
+    </None>
+    <None Include="resources\plane.bin">
+      <Filter>resources</Filter>
+    </None>
+    <None Include="resources\plane.gltf">
+      <Filter>resources</Filter>
+    </None>
+    <None Include="resources\skybox\rostock_laage_airport_4k.dds">
+      <Filter>resources\skybox</Filter>
+    </None>
     <None Include="shaders\Object3d.hlsli">
       <Filter>shaders</Filter>
     </None>

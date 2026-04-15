@@ -17,6 +17,9 @@
 
 # Build results
 generated/
+project/imgui.ini
+project/externals/generated/
+project/externals/DirectXTex/x64/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

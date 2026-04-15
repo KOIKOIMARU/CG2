@@ -30,7 +30,10 @@ struct ModelData {
 struct Material {
     Vector4 color;
     int32_t lightingMode;
-    float padding[3];
+    float shininess;
+    float padding0[2];
+    Vector3 specularColor;
+    float padding1;
     Matrix4x4 uvTransform;
 };
 
@@ -48,6 +51,7 @@ public:
 
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
+    static ModelData LoadAssimpFile(const std::string& directoryPath, const std::string& filename);
 
 private:
     void CreateVertexBuffer();
