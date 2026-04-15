@@ -51,13 +51,23 @@ void TextureManager::LoadTexture(const std::string& filePath) {
     // ===== SRV確保 =====
     textureData.srvIndex = srvManager_->Allocate();
 
-    // SRV作成（Texture2D）
-    srvManager_->CreateSRVforTexture2D(
-        textureData.srvIndex,
-        textureData.resource.Get(),
-        textureData.metadata.format,
-        UINT(textureData.metadata.mipLevels)
-    );
+    // Cubemapの場合はTexture2DではなくTextureCubeとしてSRVを作成
+    if (textureData.metadata.IsCubemap()) {
+        srvManager_->CreateSRVforTextureCube(
+            textureData.srvIndex,
+            textureData.resource.Get(),
+            textureData.metadata.format,
+            UINT(textureData.metadata.mipLevels)
+        );
+    } else {
+        // SRV作成（Texture2D）
+        srvManager_->CreateSRVforTexture2D(
+            textureData.srvIndex,
+            textureData.resource.Get(),
+            textureData.metadata.format,
+            UINT(textureData.metadata.mipLevels)
+        );
+    }
 
 }
 

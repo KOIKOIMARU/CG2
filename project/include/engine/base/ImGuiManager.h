@@ -24,9 +24,13 @@ public:
     void Finalize();
 
     void ShowSpriteController(Math::Vector2& spritePos);
+    void ShowGamePlayController(
+        Math::Vector3& objectRotate,
+        Math::Vector3& lightDirection,
+        float& lightIntensity);
 
 private:
     DirectXCommon* dxCommon_ = nullptr;
-    uint32_t imguiSrvIndex_ = 0;
+    SrvManager* srvManager_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap_;
 };

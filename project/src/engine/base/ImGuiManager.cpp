@@ -5,6 +5,35 @@
 
 #include <cassert>
 
+namespace {
+
+void AllocateImGuiSrvDescriptor(
+    ImGui_ImplDX12_InitInfo* info,
+    D3D12_CPU_DESCRIPTOR_HANDLE* outCpuHandle,
+    D3D12_GPU_DESCRIPTOR_HANDLE* outGpuHandle)
+{
+    auto* srvManager = static_cast<SrvManager*>(info->UserData);
+    assert(srvManager);
+
+    uint32_t srvIndex = srvManager->Allocate();
+    *outCpuHandle = srvManager->GetCPUDescriptorHandle(srvIndex);
+    *outGpuHandle = srvManager->GetGPUDescriptorHandle(srvIndex);
+}
+
+void FreeImGuiSrvDescriptor(
+    ImGui_ImplDX12_InitInfo* info,
+    D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle,
+    D3D12_GPU_DESCRIPTOR_HANDLE)
+{
+    auto* srvManager = static_cast<SrvManager*>(info->UserData);
+    assert(srvManager);
+
+    // ImGuiが不要になったSRVを、次の確保で再利用できるように戻す
+    srvManager->Free(cpuHandle);
+}
+
+}
+
 void ImGuiManager::Initialize(
     [[maybe_unused]] WinApp* winApp,
     [[maybe_unused]] DirectXCommon* dxCommon,
@@ -16,27 +45,27 @@ void ImGuiManager::Initialize(
     assert(srvManager);
 
     dxCommon_ = dxCommon;
+    srvManager_ = srvManager;
 
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 
-    imguiSrvIndex_ = srvManager->Allocate();
-
     srvHeap_ = srvManager->GetDescriptorHeapComPtr();
 
-    D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = srvManager->GetCPUDescriptorHandle(imguiSrvIndex_);
-    D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle = srvManager->GetGPUDescriptorHandle(imguiSrvIndex_);
+    ImGui_ImplDX12_InitInfo initInfo{};
+    initInfo.Device = dxCommon_->GetDevice();
+    initInfo.CommandQueue = dxCommon_->GetCommandQueue();
+    initInfo.NumFramesInFlight =
+        static_cast<int>(dxCommon_->GetSwapChainResourcesNum());
+    initInfo.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    initInfo.SrvDescriptorHeap = srvHeap_.Get();
+    initInfo.SrvDescriptorAllocFn = AllocateImGuiSrvDescriptor;
+    initInfo.SrvDescriptorFreeFn = FreeImGuiSrvDescriptor;
+    initInfo.UserData = srvManager_;
 
-    ImGui_ImplDX12_Init(
-        dxCommon_->GetDevice(),
-        static_cast<int>(dxCommon_->GetSwapChainResourcesNum()),
-        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-        srvHeap_.Get(),
-        cpuHandle,
-        gpuHandle
-    );
+    ImGui_ImplDX12_Init(&initInfo);
 #endif
 }
 
@@ -87,5 +116,38 @@ void ImGuiManager::ShowSpriteController(Math::Vector2& spritePos) {
     ImGui::End();
 #else
     (void)spritePos;
+#endif
+}
+
+void ImGuiManager::ShowGamePlayController(
+    Math::Vector3& objectRotate,
+    Math::Vector3& lightDirection,
+    float& lightIntensity)
+{
+#ifdef USE_IMGUI
+    ImGui::SetNextWindowSize(ImVec2(500, 180), ImGuiCond_Once);
+    ImGui::Begin("GamePlay Controller", nullptr,
+        ImGuiWindowFlags_NoCollapse);
+
+    // Planeの回転を調整
+    ImGui::Text("Object Rotate");
+    ImGui::SliderFloat("Rotate X", &objectRotate.x, -3.14f, 3.14f);
+    ImGui::SliderFloat("Rotate Y", &objectRotate.y, -3.14f, 3.14f);
+    ImGui::SliderFloat("Rotate Z", &objectRotate.z, -3.14f, 3.14f);
+
+    ImGui::Separator();
+
+    // DirectionalLightの向きと強さを調整
+    ImGui::Text("Directional Light");
+    ImGui::SliderFloat("Light X", &lightDirection.x, -1.0f, 1.0f);
+    ImGui::SliderFloat("Light Y", &lightDirection.y, -1.0f, 1.0f);
+    ImGui::SliderFloat("Light Z", &lightDirection.z, -1.0f, 1.0f);
+    ImGui::SliderFloat("Intensity", &lightIntensity, 0.0f, 5.0f);
+
+    ImGui::End();
+#else
+    (void)objectRotate;
+    (void)lightDirection;
+    (void)lightIntensity;
 #endif
 }

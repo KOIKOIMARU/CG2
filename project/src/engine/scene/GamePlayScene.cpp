@@ -8,6 +8,7 @@
 #include "engine/3d/TextureManager.h"
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/ParticleEmitter.h"
+#include "engine/3d/Skybox.h"
 #include "engine/base/ImGuiManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
@@ -25,6 +26,13 @@ void GamePlayScene::Initialize() {
     camera_->SetRotate({ 0.3f, 0.0f, 0.0f });
     camera_->SetTranslate({ 0.0f, 4.0f, -10.0f });
     object3dCommon_->SetDefaultCamera(camera_.get());
+
+    skybox_ = std::make_unique<Skybox>();
+    skybox_->Initialize(
+        dxCommon_,
+        srvManager_,
+        "resources/skybox/rostock_laage_airport_4k.dds"
+    );
 
     ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
     ModelManager::GetInstance()->LoadModel("plane.obj");
@@ -54,12 +62,21 @@ void GamePlayScene::Initialize() {
 
 void GamePlayScene::Update() {
     imguiManager_->ShowSpriteController(spritePos_);
+    imguiManager_->ShowGamePlayController(
+        objectRotate_,
+        lightDirection_,
+        lightIntensity_
+    );
 
     sprites_[0].SetPosition(spritePos_);
+    object3d_->SetRotate(objectRotate_);
+    object3d_->SetDirectionalLightDirection(lightDirection_);
+    object3d_->SetDirectionalLightIntensity(lightIntensity_);
 
     float deltaTime = dxCommon_->GetDeltaTime();
 
     camera_->Update();
+    skybox_->Update(camera_.get());
     object3d_->Update();
 
     if (emitter_) {
@@ -77,6 +94,8 @@ void GamePlayScene::Update() {
 }
 
 void GamePlayScene::Draw() {
+    skybox_->Draw();
+
     ParticleManager::GetInstance()->Draw();
 
     object3dCommon_->CommonDrawSetting();
@@ -91,6 +110,7 @@ void GamePlayScene::Draw() {
 void GamePlayScene::Finalize() {
     emitter_.reset();
     object3d_.reset();
+    skybox_.reset();
     camera_.reset();
     object3dCommon_.reset();
 

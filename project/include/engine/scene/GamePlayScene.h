@@ -9,6 +9,7 @@ class Object3dCommon;
 class Object3d;
 class Camera;
 class ParticleEmitter;
+class Skybox;
 
 class GamePlayScene : public BaseScene {
 public:
@@ -23,9 +24,13 @@ public:
 private:
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
+    std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Object3d> object3d_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
     std::vector<Sprite> sprites_;
     Math::Vector2 spritePos_{ 100.0f, 100.0f };
+    Math::Vector3 objectRotate_{ 0.0f, 0.0f, 0.0f };
+    Math::Vector3 lightDirection_{ 0.0f, -1.0f, 0.0f };
+    float lightIntensity_ = 1.0f;
 };

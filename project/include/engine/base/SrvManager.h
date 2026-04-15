@@ -2,6 +2,7 @@
 #include <wrl.h>
 #include <d3d12.h>
 #include <cstdint>
+#include <vector>
 
 class DirectXCommon;
 
@@ -15,6 +16,8 @@ public:
 
     // ===== 確保 =====
     uint32_t Allocate();
+    void Free(uint32_t index);
+    void Free(D3D12_CPU_DESCRIPTOR_HANDLE handle);
 
     // ===== ハンドル取得 =====
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(uint32_t index);
@@ -22,6 +25,13 @@ public:
 
     // ===== SRV生成 =====
     void CreateSRVforTexture2D(
+        uint32_t srvIndex,
+        ID3D12Resource* resource,
+        DXGI_FORMAT format,
+        UINT mipLevels
+    );
+
+    void CreateSRVforTextureCube(
         uint32_t srvIndex,
         ID3D12Resource* resource,
         DXGI_FORMAT format,
@@ -59,4 +69,5 @@ private:
     uint32_t descriptorSize_ = 0;
 
     uint32_t useIndex_ = 0;
+    std::vector<uint32_t> freeIndices_;
 };

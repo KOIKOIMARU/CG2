@@ -86,7 +86,7 @@ void Model::CreateMaterial()
     materialResource_->Map(0, nullptr, reinterpret_cast<void**>(&materialData_));
 
     materialData_->color = { 1,1,1,1 };
-    materialData_->lightingMode = 1; // Lambert
+    materialData_->lightingMode = 2; // Half Lambert
     materialData_->uvTransform = MakeIdentity4x4();
 }
 

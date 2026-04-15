@@ -762,8 +762,22 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
     DirectX::ScratchImage image{};
     DirectX::TexMetadata metadata{};
 
+    HRESULT hr = S_OK;
+    const std::wstring extension =
+        std::filesystem::path(filePathW).extension().wstring();
+
+    if (extension == L".dds" || extension == L".DDS") {
+        hr = DirectX::LoadFromDDSFile(
+            filePathW.c_str(),
+            DirectX::DDS_FLAGS_NONE,
+            &metadata,
+            image);
+        assert(SUCCEEDED(hr));
+        return image;
+    }
+
     // PNG / JPG など WIC 対応画像を読み込む
-    HRESULT hr = DirectX::LoadFromWICFile(
+    hr = DirectX::LoadFromWICFile(
         filePathW.c_str(),
         DirectX::WIC_FLAGS_FORCE_SRGB, // sRGB を想定
         &metadata,

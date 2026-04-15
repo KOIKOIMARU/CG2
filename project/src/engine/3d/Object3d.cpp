@@ -126,6 +126,14 @@ void Object3d::SetTranslate(const Vector3& translate) {
     transform_.translate = translate;
 }
 
+void Object3d::SetDirectionalLightDirection(const Vector3& direction) {
+    directionalLightData_->direction = direction;
+}
+
+void Object3d::SetDirectionalLightIntensity(float intensity) {
+    directionalLightData_->intensity = intensity;
+}
+
 // ===== getter =====
 Vector3 Object3d::GetScale() const {
     return transform_.scale;

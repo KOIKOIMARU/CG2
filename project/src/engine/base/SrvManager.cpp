@@ -26,15 +26,44 @@ void SrvManager::Initialize(DirectXCommon* dxCommon)
         );
 
     useIndex_ = 0;
+    freeIndices_.clear();
 }
 
 uint32_t SrvManager::Allocate()
 {
+    if (!freeIndices_.empty()) {
+        uint32_t index = freeIndices_.back();
+        freeIndices_.pop_back();
+        return index;
+    }
+
     assert(useIndex_ < kMaxSRVCount);
 
     uint32_t index = useIndex_;
     useIndex_++;
     return index;
+}
+
+void SrvManager::Free(uint32_t index)
+{
+    assert(index < useIndex_);
+    freeIndices_.push_back(index);
+}
+
+void SrvManager::Free(D3D12_CPU_DESCRIPTOR_HANDLE handle)
+{
+    assert(descriptorHeap_);
+    assert(descriptorSize_ != 0);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE start =
+        descriptorHeap_->GetCPUDescriptorHandleForHeapStart();
+    assert(handle.ptr >= start.ptr);
+
+    SIZE_T offset = handle.ptr - start.ptr;
+    assert(offset % descriptorSize_ == 0);
+
+    uint32_t index = static_cast<uint32_t>(offset / descriptorSize_);
+    Free(index);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE
@@ -73,6 +102,31 @@ void SrvManager::CreateSRVforTexture2D(
         D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = mipLevels;
+
+    directXCommon_->GetDevice()->CreateShaderResourceView(
+        resource,
+        &srvDesc,
+        GetCPUDescriptorHandle(srvIndex)
+    );
+}
+
+void SrvManager::CreateSRVforTextureCube(
+    uint32_t srvIndex,
+    ID3D12Resource* resource,
+    DXGI_FORMAT format,
+    UINT mipLevels)
+{
+    assert(resource);
+
+    // Skyboxなどで使うCubemap用のSRVを作成
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = format;
+    srvDesc.Shader4ComponentMapping =
+        D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+    srvDesc.TextureCube.MipLevels = mipLevels;
+    srvDesc.TextureCube.MostDetailedMip = 0;
+    srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
 
     directXCommon_->GetDevice()->CreateShaderResourceView(
         resource,
