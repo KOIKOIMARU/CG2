@@ -43,6 +43,13 @@ void ModelManager::LoadModel(const std::string& filePath)
     models_.insert(std::make_pair(filePath, std::move(model)));
 }
 
+void ModelManager::SetEnvironmentTexturePath(const std::string& texturePath)
+{
+    if (modelCommon_) {
+        modelCommon_->SetEnvironmentTexturePath(texturePath);
+    }
+}
+
 Model* ModelManager::FindModel(const std::string& filePath)
 {
     if (models_.contains(filePath)) {

@@ -29,6 +29,7 @@ public:
         Math::Vector3& lightDirection,
         float& lightIntensity,
         int& blendModeIndex,
+        float& environmentCoefficient,
         Math::Vector3& pointLightPosition,
         float& pointLightIntensity,
         Math::Vector3& spotLightPosition,

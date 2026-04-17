@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <string>
 #include <wrl.h>
 #include <d3d12.h>
 
@@ -44,6 +45,14 @@ public:
         return defaultCamera_;
     }
 
+    void SetEnvironmentTexturePath(const std::string& texturePath) {
+        environmentTexturePath_ = texturePath;
+    }
+
+    const std::string& GetEnvironmentTexturePath() const {
+        return environmentTexturePath_;
+    }
+
 private:
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
@@ -60,4 +69,5 @@ private:
     BlendMode blendMode_ = BlendMode::Normal;
 
     Camera* defaultCamera_ = nullptr;
+    std::string environmentTexturePath_;
 };

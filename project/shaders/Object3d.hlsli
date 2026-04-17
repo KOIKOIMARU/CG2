@@ -11,7 +11,8 @@ struct Material
     float4 color;
     int lightingMode;
     float shininess;
-    float2 padding0;
+    float environmentCoefficient;
+    float padding0;
     float3 specularColor;
     float padding1;
     float4x4 uvTransform;

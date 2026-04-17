@@ -31,7 +31,8 @@ struct Material {
     Vector4 color;
     int32_t lightingMode;
     float shininess;
-    float padding0[2];
+    float environmentCoefficient;
+    float padding0;
     Vector3 specularColor;
     float padding1;
     Matrix4x4 uvTransform;
@@ -43,6 +44,8 @@ class Model {
 public:
     void Initialize(ModelCommon* modelCommon, const std::string& directoryPath, const std::string& filename);
     void Draw();
+    void SetEnvironmentCoefficient(float coefficient);
+    float GetEnvironmentCoefficient() const;
 
     // Object3d が必要になったら使う用（次段階用）
     const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }

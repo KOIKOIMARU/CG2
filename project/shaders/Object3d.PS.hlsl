@@ -6,6 +6,7 @@ cbuffer MaterialCB : register(b0)
 };
 
 Texture2D<float4> gTexture : register(t0);
+TextureCube<float4> gEnvironmentTexture : register(t1);
 SamplerState gSampler : register(s0);
 
 cbuffer CameraCB : register(b2)
@@ -137,10 +138,18 @@ PixelShaderOutput main(VertexShaderOutput input)
             specularPowSpot *
             gMaterial.specularColor;
 
+        float3 cameraToPosition =
+            normalize(input.worldPosition - gCamera.worldPosition);
+        float3 reflectedVector = reflect(cameraToPosition, normal);
+        float3 environmentColor =
+            gEnvironmentTexture.Sample(gSampler, reflectedVector).rgb *
+            gMaterial.environmentCoefficient;
+
         output.color.rgb =
             diffuseDir + specularDir +
             diffusePoint + specularPoint +
-            diffuseSpot + specularSpot;
+            diffuseSpot + specularSpot +
+            environmentColor;
         output.color.a = gMaterial.color.a * tex.a;
     }
     else

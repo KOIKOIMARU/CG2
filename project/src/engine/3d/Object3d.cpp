@@ -83,13 +83,13 @@ void Object3d::Draw()
         2, cameraResource_->GetGPUVirtualAddress());
 
     commandList->SetGraphicsRootConstantBufferView(
-        4, directionalLightResource_->GetGPUVirtualAddress());
+        5, directionalLightResource_->GetGPUVirtualAddress());
 
     commandList->SetGraphicsRootConstantBufferView(
-        5, pointLightResource_->GetGPUVirtualAddress());
+        6, pointLightResource_->GetGPUVirtualAddress());
 
     commandList->SetGraphicsRootConstantBufferView(
-        6, spotLightResource_->GetGPUVirtualAddress());
+        7, spotLightResource_->GetGPUVirtualAddress());
 
     // Model 描画
     if (model_) {
@@ -225,6 +225,13 @@ void Object3d::SetSpotLightIntensity(float intensity) {
     spotLightData_->intensity = intensity;
 }
 
+void Object3d::SetEnvironmentCoefficient(float coefficient)
+{
+    if (model_) {
+        model_->SetEnvironmentCoefficient(coefficient);
+    }
+}
+
 // ===== getter =====
 Vector3 Object3d::GetScale() const {
     return transform_.scale;
@@ -236,6 +243,14 @@ Vector3 Object3d::GetRotate() const {
 
 Vector3 Object3d::GetTranslate() const {
     return transform_.translate;
+}
+
+float Object3d::GetEnvironmentCoefficient() const
+{
+    if (model_) {
+        return model_->GetEnvironmentCoefficient();
+    }
+    return 0.0f;
 }
 
 void Object3d::SetModel(const std::string& filePath)

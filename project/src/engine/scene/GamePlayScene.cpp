@@ -59,8 +59,12 @@ GamePlayScene::~GamePlayScene() = default;
 
 
 void GamePlayScene::Initialize() {
+    const std::string environmentTexturePath =
+        "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
+
     object3dCommon_ = std::make_unique<Object3dCommon>();
     object3dCommon_->Initialize(dxCommon_, srvManager_);
+    object3dCommon_->SetEnvironmentTexturePath(environmentTexturePath);
 
     camera_ = std::make_unique<Camera>();
     camera_->SetRotate({ 0.3f, 0.0f, 0.0f });
@@ -71,15 +75,27 @@ void GamePlayScene::Initialize() {
     skybox_->Initialize(
         dxCommon_,
         srvManager_,
-        "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds"
+        environmentTexturePath
     );
 
     ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
+    ModelManager::GetInstance()->SetEnvironmentTexturePath(
+        environmentTexturePath
+    );
     ModelManager::GetInstance()->LoadModel("plane.gltf");
+    ModelManager::GetInstance()->LoadModel("sphere.obj");
 
     object3d_ = std::make_unique<Object3d>();
     object3d_->Initialize(object3dCommon_.get());
     object3d_->SetModel("plane.gltf");
+    object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
+
+    sphereObject_ = std::make_unique<Object3d>();
+    sphereObject_->Initialize(object3dCommon_.get());
+    sphereObject_->SetModel("sphere.obj");
+    sphereObject_->SetScale({ 1.5f, 1.5f, 1.5f });
+    sphereObject_->SetTranslate({ 0.0f, 1.5f, 0.0f });
+    sphereObject_->SetEnvironmentCoefficient(environmentCoefficient_);
 
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
@@ -112,6 +128,7 @@ void GamePlayScene::Update() {
         lightDirection_,
         lightIntensity_,
         blendModeIndex_,
+        environmentCoefficient_,
         pointLightPosition_,
         pointLightIntensity_,
         spotLightPosition_,
@@ -125,17 +142,28 @@ void GamePlayScene::Update() {
     object3d_->SetRotate(objectRotate_);
     object3d_->SetDirectionalLightDirection(lightDirection_);
     object3d_->SetDirectionalLightIntensity(lightIntensity_);
+    object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
     object3d_->SetPointLightPosition(pointLightPosition_);
     object3d_->SetPointLightIntensity(pointLightIntensity_);
     object3d_->SetSpotLightPosition(spotLightPosition_);
     object3d_->SetSpotLightDirection(spotLightDirection_);
     object3d_->SetSpotLightIntensity(spotLightIntensity_);
+    sphereObject_->SetRotate(objectRotate_);
+    sphereObject_->SetDirectionalLightDirection(lightDirection_);
+    sphereObject_->SetDirectionalLightIntensity(lightIntensity_);
+    sphereObject_->SetEnvironmentCoefficient(environmentCoefficient_);
+    sphereObject_->SetPointLightPosition(pointLightPosition_);
+    sphereObject_->SetPointLightIntensity(pointLightIntensity_);
+    sphereObject_->SetSpotLightPosition(spotLightPosition_);
+    sphereObject_->SetSpotLightDirection(spotLightDirection_);
+    sphereObject_->SetSpotLightIntensity(spotLightIntensity_);
     object3dCommon_->SetBlendMode(
         static_cast<BlendMode>(blendModeIndex_));
 
     camera_->Update();
     skybox_->Update(camera_.get());
     object3d_->Update();
+    sphereObject_->Update();
 
     if (emitter_) {
         emitter_->Update(deltaTime);
@@ -216,6 +244,7 @@ void GamePlayScene::Draw() {
 
     object3dCommon_->CommonDrawSetting();
     object3d_->Draw();
+    sphereObject_->Draw();
 
     spriteCommon_->CommonDrawSetting();
     for (auto& s : sprites_) {
@@ -225,6 +254,7 @@ void GamePlayScene::Draw() {
 
 void GamePlayScene::Finalize() {
     emitter_.reset();
+    sphereObject_.reset();
     object3d_.reset();
     skybox_.reset();
     camera_.reset();

@@ -69,11 +69,13 @@ public:
     void SetSpotLightPosition(const Vector3& position);
     void SetSpotLightDirection(const Vector3& direction);
     void SetSpotLightIntensity(float intensity);
+    void SetEnvironmentCoefficient(float coefficient);
 
     // getter
     Vector3 GetScale() const;
     Vector3 GetRotate() const;
     Vector3 GetTranslate() const;
+    float GetEnvironmentCoefficient() const;
 
     void SetModel(const std::string& filePath);
 

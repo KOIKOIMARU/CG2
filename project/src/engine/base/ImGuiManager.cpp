@@ -128,6 +128,7 @@ void ImGuiManager::ShowGamePlayController(
     Math::Vector3& lightDirection,
     float& lightIntensity,
     int& blendModeIndex,
+    float& environmentCoefficient,
     Math::Vector3& pointLightPosition,
     float& pointLightIntensity,
     Math::Vector3& spotLightPosition,
@@ -148,6 +149,12 @@ void ImGuiManager::ShowGamePlayController(
         &blendModeIndex,
         blendItems,
         IM_ARRAYSIZE(blendItems)
+    );
+    ImGui::SliderFloat(
+        "Environment Coefficient",
+        &environmentCoefficient,
+        0.0f,
+        1.0f
     );
 
     ImGui::Separator();
@@ -194,6 +201,7 @@ void ImGuiManager::ShowGamePlayController(
     (void)lightDirection;
     (void)lightIntensity;
     (void)blendModeIndex;
+    (void)environmentCoefficient;
     (void)pointLightPosition;
     (void)pointLightIntensity;
     (void)spotLightPosition;

@@ -375,6 +375,12 @@
     <None Include="resources\plane.gltf">
       <Filter>resources</Filter>
     </None>
+    <None Include="resources\sphere.mtl">
+      <Filter>resources</Filter>
+    </None>
+    <None Include="resources\sphere.obj">
+      <Filter>resources</Filter>
+    </None>
     <None Include="resources\skybox\rostock_laage_airport_4k.dds">
       <Filter>resources\skybox</Filter>
     </None>

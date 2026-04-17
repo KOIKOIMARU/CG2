@@ -17,6 +17,7 @@ public:
 
     // モデル読み込み
     void LoadModel(const std::string& filePath);
+    void SetEnvironmentTexturePath(const std::string& texturePath);
 
     // モデル取得
     Model* FindModel(const std::string& filePath);

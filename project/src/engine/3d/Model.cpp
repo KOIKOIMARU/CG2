@@ -196,6 +196,13 @@ void Model::Draw()
         )
     );
 
+    srvManager->SetGraphicsRootDescriptorTable(
+        4,
+        TextureManager::GetInstance()->GetSrvIndex(
+            modelCommon_->GetEnvironmentTexturePath()
+        )
+    );
+
     commandList->DrawInstanced(
         static_cast<UINT>(modelData_.vertices.size()),
         1, 0, 0
@@ -231,8 +238,19 @@ void Model::CreateMaterial()
     materialData_->color = { 1,1,1,1 };
     materialData_->lightingMode = 2; // Half Lambert
     materialData_->shininess = 64.0f;
+    materialData_->environmentCoefficient = 0.2f;
     materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
     materialData_->uvTransform = MakeIdentity4x4();
+}
+
+void Model::SetEnvironmentCoefficient(float coefficient)
+{
+    materialData_->environmentCoefficient = coefficient;
+}
+
+float Model::GetEnvironmentCoefficient() const
+{
+    return materialData_->environmentCoefficient;
 }
 
 MaterialData Model::LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename)

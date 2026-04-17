@@ -29,6 +29,7 @@ private:
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Object3d> object3d_;
+    std::unique_ptr<Object3d> sphereObject_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
     std::vector<Sprite> sprites_;
@@ -37,6 +38,7 @@ private:
     Math::Vector3 lightDirection_{ 0.0f, -1.0f, 0.0f };
     float lightIntensity_ = 1.0f;
     int blendModeIndex_ = static_cast<int>(BlendMode::Normal);
+    float environmentCoefficient_ = 0.2f;
     Math::Vector3 pointLightPosition_{ 0.0f, 2.0f, 0.0f };
     float pointLightIntensity_ = 1.0f;
     Math::Vector3 spotLightPosition_{ 2.0f, 1.25f, 0.0f };
