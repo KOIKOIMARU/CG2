@@ -13,6 +13,46 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include "engine/3d/ModelManager.h"
+#include "engine/io/Input.h"
+#include <algorithm>
+
+namespace {
+
+Math::Vector3 Add(const Math::Vector3& a, const Math::Vector3& b)
+{
+    return { a.x + b.x, a.y + b.y, a.z + b.z };
+}
+
+Math::Vector3 Subtract(const Math::Vector3& a, const Math::Vector3& b)
+{
+    return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
+
+Math::Vector3 MakeForwardVector(const Math::Vector3& rotate)
+{
+    const float cosPitch = std::cos(rotate.x);
+    const float sinPitch = std::sin(rotate.x);
+    const float cosYaw = std::cos(rotate.y);
+    const float sinYaw = std::sin(rotate.y);
+
+    return Math::Normalize({
+        sinYaw * cosPitch,
+        -sinPitch,
+        cosYaw * cosPitch
+    });
+}
+
+Math::Vector3 MakeRightVector(const Math::Vector3& rotate)
+{
+    const float yaw = rotate.y + (3.14159265358979323846f * 0.5f);
+    return Math::Normalize({
+        std::sin(yaw),
+        0.0f,
+        std::cos(yaw)
+    });
+}
+
+} // namespace
 
 GamePlayScene::GamePlayScene() = default;
 GamePlayScene::~GamePlayScene() = default;
@@ -31,7 +71,7 @@ void GamePlayScene::Initialize() {
     skybox_->Initialize(
         dxCommon_,
         srvManager_,
-        "resources/skybox/rostock_laage_airport_4k.dds"
+        "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds"
     );
 
     ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
@@ -56,6 +96,16 @@ void GamePlayScene::Initialize() {
 }
 
 void GamePlayScene::Update() {
+    const float deltaTime = dxCommon_->GetDeltaTime();
+
+    if (input_ && input_->TriggerKey(DIK_F1)) {
+        isDebugCameraEnabled_ = !isDebugCameraEnabled_;
+    }
+
+    if (isDebugCameraEnabled_) {
+        UpdateDebugCamera(deltaTime);
+    }
+
     imguiManager_->ShowSpriteController(spritePos_);
     imguiManager_->ShowGamePlayController(
         objectRotate_,
@@ -83,8 +133,6 @@ void GamePlayScene::Update() {
     object3dCommon_->SetBlendMode(
         static_cast<BlendMode>(blendModeIndex_));
 
-    float deltaTime = dxCommon_->GetDeltaTime();
-
     camera_->Update();
     skybox_->Update(camera_.get());
     object3d_->Update();
@@ -101,6 +149,64 @@ void GamePlayScene::Update() {
     for (auto& s : sprites_) {
         s.Update();
     }
+}
+
+void GamePlayScene::UpdateDebugCamera(float deltaTime)
+{
+    if (!input_ || !camera_) {
+        return;
+    }
+
+    Math::Vector3 rotate = camera_->GetRotate();
+    Math::Vector3 translate = camera_->GetTranslate();
+
+    const float rotateStep = debugCameraRotateSpeed_ * deltaTime;
+    if (input_->PushKey(DIK_LEFT)) {
+        rotate.y -= rotateStep;
+    }
+    if (input_->PushKey(DIK_RIGHT)) {
+        rotate.y += rotateStep;
+    }
+    if (input_->PushKey(DIK_UP)) {
+        rotate.x -= rotateStep;
+    }
+    if (input_->PushKey(DIK_DOWN)) {
+        rotate.x += rotateStep;
+    }
+
+    rotate.x = std::clamp(rotate.x, -1.4f, 1.4f);
+
+    const Math::Vector3 forward = MakeForwardVector(rotate);
+    const Math::Vector3 right = MakeRightVector(rotate);
+    const Math::Vector3 up = { 0.0f, 1.0f, 0.0f };
+
+    Math::Vector3 move = { 0.0f, 0.0f, 0.0f };
+    if (input_->PushKey(DIK_W)) {
+        move = Add(move, forward);
+    }
+    if (input_->PushKey(DIK_S)) {
+        move = Subtract(move, forward);
+    }
+    if (input_->PushKey(DIK_D)) {
+        move = Add(move, right);
+    }
+    if (input_->PushKey(DIK_A)) {
+        move = Subtract(move, right);
+    }
+    if (input_->PushKey(DIK_SPACE)) {
+        move = Add(move, up);
+    }
+    if (input_->PushKey(DIK_LSHIFT) || input_->PushKey(DIK_RSHIFT)) {
+        move = Subtract(move, up);
+    }
+
+    if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
+        move = Math::Normalize(move) * (debugCameraMoveSpeed_ * deltaTime);
+        translate = Add(translate, move);
+    }
+
+    camera_->SetRotate(rotate);
+    camera_->SetTranslate(translate);
 }
 
 void GamePlayScene::Draw() {

@@ -357,6 +357,15 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
+    <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.hdr">
+      <Filter>resources\skybox</Filter>
+    </None>
+    <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr">
+      <Filter>resources\skybox</Filter>
+    </None>
+    <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k_cube.dds">
+      <Filter>resources\skybox</Filter>
+    </None>
     <None Include="resources\grass.png">
       <Filter>resources</Filter>
     </None>

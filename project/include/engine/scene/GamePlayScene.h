@@ -23,6 +23,8 @@ public:
     void Draw() override;
 
 private:
+    void UpdateDebugCamera(float deltaTime);
+
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Skybox> skybox_;
@@ -40,4 +42,8 @@ private:
     Math::Vector3 spotLightPosition_{ 2.0f, 1.25f, 0.0f };
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
+
+    bool isDebugCameraEnabled_ = false;
+    float debugCameraMoveSpeed_ = 6.0f;
+    float debugCameraRotateSpeed_ = 1.8f;
 };

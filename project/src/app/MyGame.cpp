@@ -24,7 +24,7 @@ void MyGame::Initialize() {
         input_.get()
     );
 
-    SceneManager::GetInstance()->SetNextScene(SceneType::Title);
+    SceneManager::GetInstance()->SetNextScene(SceneType::GamePlay);
 }
 
 void MyGame::Update() {

@@ -334,6 +334,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.hdr" />
+    <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr" />
+    <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k_cube.dds" />
     <None Include="resources\grass.png" />
     <None Include="resources\plane.bin" />
     <None Include="resources\plane.gltf" />
