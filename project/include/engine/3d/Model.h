@@ -43,6 +43,7 @@ class ModelCommon;
 class Model {
 public:
     void Initialize(ModelCommon* modelCommon, const std::string& directoryPath, const std::string& filename);
+    void Initialize(ModelCommon* modelCommon, const ModelData& modelData);
     void Draw();
     void SetEnvironmentCoefficient(float coefficient);
     float GetEnvironmentCoefficient() const;
@@ -55,6 +56,7 @@ public:
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadAssimpFile(const std::string& directoryPath, const std::string& filename);
+    static ModelData CreatePlaneData(float width, float height, const std::string& textureFilePath);
 
 private:
     void CreateVertexBuffer();

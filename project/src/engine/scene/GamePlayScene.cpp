@@ -82,13 +82,19 @@ void GamePlayScene::Initialize() {
     ModelManager::GetInstance()->SetEnvironmentTexturePath(
         environmentTexturePath
     );
-    ModelManager::GetInstance()->LoadModel("plane.gltf");
+    ModelManager::GetInstance()->CreatePlane(
+        "primitive_plane",
+        8.0f,
+        8.0f,
+        "resources/checkerBoard.png"
+    );
     ModelManager::GetInstance()->LoadModel("sphere.obj");
 
     object3d_ = std::make_unique<Object3d>();
     object3d_->Initialize(object3dCommon_.get());
-    object3d_->SetModel("plane.gltf");
+    object3d_->SetModel("primitive_plane");
     object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
+    object3d_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
 
     sphereObject_ = std::make_unique<Object3d>();
     sphereObject_->Initialize(object3dCommon_.get());
@@ -106,8 +112,8 @@ void GamePlayScene::Initialize() {
     emitter_ = std::make_unique<ParticleEmitter>(
         "test",
         Math::Vector3{ 0.0f, 2.0f, 0.0f },
-        0.1f,
-        5
+        0.15f,
+        8
     );
 }
 
@@ -129,6 +135,9 @@ void GamePlayScene::Update() {
         lightIntensity_,
         blendModeIndex_,
         environmentCoefficient_,
+        showPlane_,
+        showSphere_,
+        showParticle_,
         pointLightPosition_,
         pointLightIntensity_,
         spotLightPosition_,
@@ -240,11 +249,17 @@ void GamePlayScene::UpdateDebugCamera(float deltaTime)
 void GamePlayScene::Draw() {
     skybox_->Draw();
 
-    ParticleManager::GetInstance()->Draw();
-
     object3dCommon_->CommonDrawSetting();
-    object3d_->Draw();
-    sphereObject_->Draw();
+    if (showPlane_) {
+        object3d_->Draw();
+    }
+    if (showSphere_) {
+        sphereObject_->Draw();
+    }
+
+    if (showParticle_) {
+        ParticleManager::GetInstance()->Draw();
+    }
 
     spriteCommon_->CommonDrawSetting();
     for (auto& s : sprites_) {

@@ -127,8 +127,22 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
         psoDesc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
 
         psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
+        psoDesc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+        psoDesc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+        psoDesc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+        psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+        psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+        psoDesc.BlendState.RenderTarget[0].BlendOpAlpha =
+            D3D12_BLEND_OP_ADD;
+        psoDesc.BlendState.RenderTarget[0].RenderTargetWriteMask =
+            D3D12_COLOR_WRITE_ENABLE_ALL;
         psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        psoDesc.DepthStencilState.DepthWriteMask =
+            D3D12_DEPTH_WRITE_MASK_ZERO;
+        psoDesc.DepthStencilState.DepthFunc =
+            D3D12_COMPARISON_FUNC_LESS_EQUAL;
         psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
         psoDesc.InputLayout = { inputLayout, _countof(inputLayout) };
@@ -149,7 +163,7 @@ void ParticleManager::Update(
     const Matrix4x4& viewMatrix,
     const Matrix4x4& projectionMatrix
 ) {
-    const float deltaTime = 1.0f / 60.0f;
+    const float deltaTime = dxCommon_->GetDeltaTime();
 
     // 全グループ処理
     for (auto& [name, group] : particleGroups_) {
@@ -186,8 +200,11 @@ void ParticleManager::Update(
             // -------------------------
 
             // World（平行移動のみ）
-            Matrix4x4 world =
-                MakeTranslateMatrix(p.position);
+            Matrix4x4 world = MakeAffineMatrix(
+                p.scale,
+                p.rotate,
+                p.position
+            );
 
             // WVP
             Matrix4x4 wvp =
@@ -323,17 +340,19 @@ void ParticleManager::Emit(
         particle.position = position;
 
         // 仮の速度（あとでランダム化する）
-        particle.velocity = {
+        particle.scale = { 0.05f, RandomFloat(0.4f, 1.5f), 1.0f };
+        particle.rotate = {
             0.0f,
-            1.0f,
-            0.0f
+            0.0f,
+            RandomFloat(-3.14159265f, 3.14159265f)
         };
+        particle.velocity = { 0.0f, 0.0f, 0.0f };
 
         // 加速度（場の影響：今は無し）
         particle.acceleration = { 0.0f, 0.0f, 0.0f };
 
         // 寿命（仮）
-        particle.lifeTime = 1.0f;
+        particle.lifeTime = 0.12f;
 
         // 経過時間
         particle.currentTime = 0.0f;

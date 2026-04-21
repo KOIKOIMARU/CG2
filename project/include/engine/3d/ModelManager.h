@@ -17,6 +17,11 @@ public:
 
     // モデル読み込み
     void LoadModel(const std::string& filePath);
+    void CreatePlane(
+        const std::string& name,
+        float width,
+        float height,
+        const std::string& textureFilePath);
     void SetEnvironmentTexturePath(const std::string& texturePath);
 
     // モデル取得

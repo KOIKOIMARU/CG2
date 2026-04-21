@@ -11,6 +11,8 @@ struct Particle
 {
     // 位置
     Math::Vector3 position{};
+    Math::Vector3 scale{ 1.0f, 1.0f, 1.0f };
+    Math::Vector3 rotate{};
 
     // 速度
     Math::Vector3 velocity{};

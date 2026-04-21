@@ -44,6 +44,9 @@ private:
     Math::Vector3 spotLightPosition_{ 2.0f, 1.25f, 0.0f };
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
+    bool showPlane_ = true;
+    bool showSphere_ = true;
+    bool showParticle_ = true;
 
     bool isDebugCameraEnabled_ = false;
     float debugCameraMoveSpeed_ = 6.0f;

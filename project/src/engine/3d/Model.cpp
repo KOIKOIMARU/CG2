@@ -172,6 +172,20 @@ void Model::Initialize(ModelCommon* modelCommon,
     );
 }
 
+void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
+{
+    assert(modelCommon);
+    modelCommon_ = modelCommon;
+    modelData_ = modelData;
+
+    CreateVertexBuffer();
+    CreateMaterial();
+
+    TextureManager::GetInstance()->LoadTexture(
+        modelData_.material.textureFilePath
+    );
+}
+
 
 void Model::Draw()
 {
@@ -384,6 +398,30 @@ ModelData Model::LoadAssimpFile(
         scene->mRootNode,
         MakeIdentity4x4(),
         modelData);
+
+    return modelData;
+}
+
+ModelData Model::CreatePlaneData(
+    float width,
+    float height,
+    const std::string& textureFilePath)
+{
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float halfWidth = width * 0.5f;
+    const float halfHeight = height * 0.5f;
+    const Vector3 normal = { 0.0f, 0.0f, -1.0f };
+
+    modelData.vertices = {
+        { { -halfWidth, -halfHeight, 0.0f, 1.0f }, { 0.0f, 1.0f }, normal },
+        { { -halfWidth,  halfHeight, 0.0f, 1.0f }, { 0.0f, 0.0f }, normal },
+        { {  halfWidth, -halfHeight, 0.0f, 1.0f }, { 1.0f, 1.0f }, normal },
+        { {  halfWidth, -halfHeight, 0.0f, 1.0f }, { 1.0f, 1.0f }, normal },
+        { { -halfWidth,  halfHeight, 0.0f, 1.0f }, { 0.0f, 0.0f }, normal },
+        { {  halfWidth,  halfHeight, 0.0f, 1.0f }, { 1.0f, 0.0f }, normal },
+    };
 
     return modelData;
 }

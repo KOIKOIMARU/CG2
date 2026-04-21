@@ -43,6 +43,25 @@ void ModelManager::LoadModel(const std::string& filePath)
     models_.insert(std::make_pair(filePath, std::move(model)));
 }
 
+void ModelManager::CreatePlane(
+    const std::string& name,
+    float width,
+    float height,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreatePlaneData(width, height, textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
 void ModelManager::SetEnvironmentTexturePath(const std::string& texturePath)
 {
     if (modelCommon_) {
