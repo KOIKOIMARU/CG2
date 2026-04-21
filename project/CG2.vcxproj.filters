@@ -369,10 +369,16 @@
     <None Include="resources\grass.png">
       <Filter>resources</Filter>
     </None>
+    <None Include="resources\gradationLine.png">
+      <Filter>resources</Filter>
+    </None>
     <None Include="resources\plane.bin">
       <Filter>resources</Filter>
     </None>
     <None Include="resources\plane.gltf">
+      <Filter>resources</Filter>
+    </None>
+    <None Include="resources\circle2.png">
       <Filter>resources</Filter>
     </None>
     <None Include="resources\sphere.mtl">

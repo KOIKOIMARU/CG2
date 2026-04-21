@@ -130,6 +130,7 @@ void ImGuiManager::ShowGamePlayController(
     int& blendModeIndex,
     float& environmentCoefficient,
     bool& showPlane,
+    bool& showRing,
     bool& showSphere,
     bool& showParticle,
     Math::Vector3& pointLightPosition,
@@ -160,6 +161,7 @@ void ImGuiManager::ShowGamePlayController(
         1.0f
     );
     ImGui::Checkbox("Show Plane", &showPlane);
+    ImGui::Checkbox("Show Ring", &showRing);
     ImGui::Checkbox("Show Sphere", &showSphere);
     ImGui::Checkbox("Show Particle", &showParticle);
 
@@ -209,6 +211,7 @@ void ImGuiManager::ShowGamePlayController(
     (void)blendModeIndex;
     (void)environmentCoefficient;
     (void)showPlane;
+    (void)showRing;
     (void)showSphere;
     (void)showParticle;
     (void)pointLightPosition;

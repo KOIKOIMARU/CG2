@@ -22,6 +22,12 @@ public:
         float width,
         float height,
         const std::string& textureFilePath);
+    void CreateRing(
+        const std::string& name,
+        uint32_t divideCount,
+        float outerRadius,
+        float innerRadius,
+        const std::string& textureFilePath);
     void SetEnvironmentTexturePath(const std::string& texturePath);
 
     // モデル取得

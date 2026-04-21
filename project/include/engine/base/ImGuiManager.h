@@ -31,6 +31,7 @@ public:
         int& blendModeIndex,
         float& environmentCoefficient,
         bool& showPlane,
+        bool& showRing,
         bool& showSphere,
         bool& showParticle,
         Math::Vector3& pointLightPosition,

@@ -57,6 +57,11 @@ public:
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadAssimpFile(const std::string& directoryPath, const std::string& filename);
     static ModelData CreatePlaneData(float width, float height, const std::string& textureFilePath);
+    static ModelData CreateRingData(
+        uint32_t divideCount,
+        float outerRadius,
+        float innerRadius,
+        const std::string& textureFilePath);
 
 private:
     void CreateVertexBuffer();

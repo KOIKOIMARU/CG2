@@ -88,6 +88,13 @@ void GamePlayScene::Initialize() {
         8.0f,
         "resources/checkerBoard.png"
     );
+    ModelManager::GetInstance()->CreateRing(
+        "primitive_ring",
+        32,
+        2.0f,
+        1.0f,
+        "resources/gradationLine.png"
+    );
     ModelManager::GetInstance()->LoadModel("sphere.obj");
 
     object3d_ = std::make_unique<Object3d>();
@@ -95,6 +102,13 @@ void GamePlayScene::Initialize() {
     object3d_->SetModel("primitive_plane");
     object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
     object3d_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
+
+    ringObject_ = std::make_unique<Object3d>();
+    ringObject_->Initialize(object3dCommon_.get());
+    ringObject_->SetModel("primitive_ring");
+    ringObject_->SetTranslate({ 0.0f, 0.05f, 0.0f });
+    ringObject_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
+    ringObject_->SetEnvironmentCoefficient(0.0f);
 
     sphereObject_ = std::make_unique<Object3d>();
     sphereObject_->Initialize(object3dCommon_.get());
@@ -106,8 +120,13 @@ void GamePlayScene::Initialize() {
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
     TextureManager::GetInstance()->LoadTexture("resources/checkerBoard.png");
+    TextureManager::GetInstance()->LoadTexture("resources/gradationLine.png");
+    TextureManager::GetInstance()->LoadTexture("resources/circle2.png");
 
-    ParticleManager::GetInstance()->CreateParticleGroup("test", "resources/circle.png");
+    ParticleManager::GetInstance()->CreateParticleGroup(
+        "test",
+        "resources/circle2.png"
+    );
 
     emitter_ = std::make_unique<ParticleEmitter>(
         "test",
@@ -136,6 +155,7 @@ void GamePlayScene::Update() {
         blendModeIndex_,
         environmentCoefficient_,
         showPlane_,
+        showRing_,
         showSphere_,
         showParticle_,
         pointLightPosition_,
@@ -157,6 +177,14 @@ void GamePlayScene::Update() {
     object3d_->SetSpotLightPosition(spotLightPosition_);
     object3d_->SetSpotLightDirection(spotLightDirection_);
     object3d_->SetSpotLightIntensity(spotLightIntensity_);
+    ringObject_->SetRotate({ 1.5707963f, objectRotate_.y, objectRotate_.z });
+    ringObject_->SetDirectionalLightDirection(lightDirection_);
+    ringObject_->SetDirectionalLightIntensity(lightIntensity_);
+    ringObject_->SetPointLightPosition(pointLightPosition_);
+    ringObject_->SetPointLightIntensity(pointLightIntensity_);
+    ringObject_->SetSpotLightPosition(spotLightPosition_);
+    ringObject_->SetSpotLightDirection(spotLightDirection_);
+    ringObject_->SetSpotLightIntensity(spotLightIntensity_);
     sphereObject_->SetRotate(objectRotate_);
     sphereObject_->SetDirectionalLightDirection(lightDirection_);
     sphereObject_->SetDirectionalLightIntensity(lightIntensity_);
@@ -172,6 +200,7 @@ void GamePlayScene::Update() {
     camera_->Update();
     skybox_->Update(camera_.get());
     object3d_->Update();
+    ringObject_->Update();
     sphereObject_->Update();
 
     if (emitter_) {
@@ -253,6 +282,9 @@ void GamePlayScene::Draw() {
     if (showPlane_) {
         object3d_->Draw();
     }
+    if (showRing_) {
+        ringObject_->Draw();
+    }
     if (showSphere_) {
         sphereObject_->Draw();
     }
@@ -269,6 +301,7 @@ void GamePlayScene::Draw() {
 
 void GamePlayScene::Finalize() {
     emitter_.reset();
+    ringObject_.reset();
     sphereObject_.reset();
     object3d_.reset();
     skybox_.reset();

@@ -4,6 +4,7 @@
 #include <sstream>
 #include <cassert>
 #include <filesystem>
+#include <numbers>
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -422,6 +423,70 @@ ModelData Model::CreatePlaneData(
         { { -halfWidth,  halfHeight, 0.0f, 1.0f }, { 0.0f, 0.0f }, normal },
         { {  halfWidth,  halfHeight, 0.0f, 1.0f }, { 1.0f, 0.0f }, normal },
     };
+
+    return modelData;
+}
+
+ModelData Model::CreateRingData(
+    uint32_t divideCount,
+    float outerRadius,
+    float innerRadius,
+    const std::string& textureFilePath)
+{
+    assert(divideCount >= 3);
+    assert(outerRadius > innerRadius);
+    assert(innerRadius >= 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float radianPerDivide =
+        2.0f * std::numbers::pi_v<float> / static_cast<float>(divideCount);
+    const Vector3 normal = { 0.0f, 0.0f, -1.0f };
+
+    for (uint32_t index = 0; index < divideCount; ++index) {
+        const float angle = static_cast<float>(index) * radianPerDivide;
+        const float nextAngle =
+            static_cast<float>(index + 1) * radianPerDivide;
+
+        const float sinValue = std::sin(angle);
+        const float cosValue = std::cos(angle);
+        const float sinNext = std::sin(nextAngle);
+        const float cosNext = std::cos(nextAngle);
+
+        const float u =
+            static_cast<float>(index) / static_cast<float>(divideCount);
+        const float uNext =
+            static_cast<float>(index + 1) / static_cast<float>(divideCount);
+
+        const VertexData outerCurrent = {
+            { -sinValue * outerRadius, cosValue * outerRadius, 0.0f, 1.0f },
+            { u, 0.0f },
+            normal
+        };
+        const VertexData outerNext = {
+            { -sinNext * outerRadius, cosNext * outerRadius, 0.0f, 1.0f },
+            { uNext, 0.0f },
+            normal
+        };
+        const VertexData innerCurrent = {
+            { -sinValue * innerRadius, cosValue * innerRadius, 0.0f, 1.0f },
+            { u, 1.0f },
+            normal
+        };
+        const VertexData innerNext = {
+            { -sinNext * innerRadius, cosNext * innerRadius, 0.0f, 1.0f },
+            { uNext, 1.0f },
+            normal
+        };
+
+        modelData.vertices.push_back(outerCurrent);
+        modelData.vertices.push_back(outerNext);
+        modelData.vertices.push_back(innerCurrent);
+        modelData.vertices.push_back(innerCurrent);
+        modelData.vertices.push_back(outerNext);
+        modelData.vertices.push_back(innerNext);
+    }
 
     return modelData;
 }

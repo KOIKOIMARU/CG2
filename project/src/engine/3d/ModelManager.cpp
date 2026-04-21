@@ -62,6 +62,30 @@ void ModelManager::CreatePlane(
     models_.insert(std::make_pair(name, std::move(model)));
 }
 
+void ModelManager::CreateRing(
+    const std::string& name,
+    uint32_t divideCount,
+    float outerRadius,
+    float innerRadius,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateRingData(
+            divideCount,
+            outerRadius,
+            innerRadius,
+            textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
 void ModelManager::SetEnvironmentTexturePath(const std::string& texturePath)
 {
     if (modelCommon_) {

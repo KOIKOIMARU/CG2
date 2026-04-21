@@ -29,6 +29,7 @@ private:
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Object3d> object3d_;
+    std::unique_ptr<Object3d> ringObject_;
     std::unique_ptr<Object3d> sphereObject_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
@@ -45,6 +46,7 @@ private:
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
     bool showPlane_ = true;
+    bool showRing_ = true;
     bool showSphere_ = true;
     bool showParticle_ = true;
 
