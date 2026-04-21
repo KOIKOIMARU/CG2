@@ -88,6 +88,18 @@ void GamePlayScene::Initialize() {
         8.0f,
         "resources/checkerBoard.png"
     );
+    ModelManager::GetInstance()->CreateTriangle(
+        "primitive_triangle",
+        1.6f,
+        1.6f,
+        "resources/uvChecker.png"
+    );
+    ModelManager::GetInstance()->CreateCircle(
+        "primitive_circle",
+        32,
+        0.9f,
+        "resources/uvChecker.png"
+    );
     ModelManager::GetInstance()->CreateRing(
         "primitive_ring",
         32,
@@ -95,7 +107,43 @@ void GamePlayScene::Initialize() {
         1.0f,
         "resources/gradationLine.png"
     );
-    ModelManager::GetInstance()->LoadModel("sphere.obj");
+    ModelManager::GetInstance()->CreateSphere(
+        "primitive_sphere",
+        16,
+        32,
+        1.0f,
+        "resources/uvChecker.png"
+    );
+    ModelManager::GetInstance()->CreateTorus(
+        "primitive_torus",
+        32,
+        16,
+        0.8f,
+        0.3f,
+        "resources/uvChecker.png"
+    );
+    ModelManager::GetInstance()->CreateCylinder(
+        "primitive_cylinder",
+        32,
+        1.2f,
+        1.2f,
+        2.5f,
+        "resources/gradationLine.png"
+    );
+    ModelManager::GetInstance()->CreateCone(
+        "primitive_cone",
+        32,
+        0.8f,
+        1.6f,
+        "resources/uvChecker.png"
+    );
+    ModelManager::GetInstance()->CreateBox(
+        "primitive_box",
+        1.5f,
+        1.5f,
+        1.5f,
+        "resources/uvChecker.png"
+    );
 
     object3d_ = std::make_unique<Object3d>();
     object3d_->Initialize(object3dCommon_.get());
@@ -110,12 +158,38 @@ void GamePlayScene::Initialize() {
     ringObject_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
     ringObject_->SetEnvironmentCoefficient(0.0f);
 
+    cylinderObject_ = std::make_unique<Object3d>();
+    cylinderObject_->Initialize(object3dCommon_.get());
+    cylinderObject_->SetModel("primitive_cylinder");
+    cylinderObject_->SetTranslate({ 0.0f, 0.0f, 0.0f });
+    cylinderObject_->SetEnvironmentCoefficient(0.0f);
+    cylinderObject_->SetLightingMode(0);
+    cylinderObject_->SetColor(cylinderColor_);
+    cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
+
     sphereObject_ = std::make_unique<Object3d>();
     sphereObject_->Initialize(object3dCommon_.get());
-    sphereObject_->SetModel("sphere.obj");
-    sphereObject_->SetScale({ 1.5f, 1.5f, 1.5f });
-    sphereObject_->SetTranslate({ 0.0f, 1.5f, 0.0f });
+    sphereObject_->SetModel("primitive_sphere");
+    sphereObject_->SetScale({ 1.0f, 1.0f, 1.0f });
+    sphereObject_->SetTranslate({ 0.0f, 1.5f, 3.0f });
     sphereObject_->SetEnvironmentCoefficient(environmentCoefficient_);
+
+    const std::pair<const char*, Math::Vector3> primitiveSamples[] = {
+        { "primitive_triangle", { -4.5f, 1.0f, 3.0f } },
+        { "primitive_circle",   { -2.0f, 1.0f, 3.0f } },
+        { "primitive_box",      { 2.5f, 1.0f, 3.0f } },
+        { "primitive_torus",    { 5.0f, 1.2f, 3.0f } },
+        { "primitive_cone",     { -5.0f, 1.0f, -2.0f } },
+    };
+
+    for (const auto& [modelName, position] : primitiveSamples) {
+        auto primitiveObject = std::make_unique<Object3d>();
+        primitiveObject->Initialize(object3dCommon_.get());
+        primitiveObject->SetModel(modelName);
+        primitiveObject->SetTranslate(position);
+        primitiveObject->SetEnvironmentCoefficient(0.0f);
+        primitiveObjects_.push_back(std::move(primitiveObject));
+    }
 
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
@@ -156,8 +230,12 @@ void GamePlayScene::Update() {
         environmentCoefficient_,
         showPlane_,
         showRing_,
+        showCylinder_,
         showSphere_,
         showParticle_,
+        cylinderColor_,
+        cylinderAlphaReference_,
+        cylinderUVScrollSpeed_,
         pointLightPosition_,
         pointLightIntensity_,
         spotLightPosition_,
@@ -177,6 +255,7 @@ void GamePlayScene::Update() {
     object3d_->SetSpotLightPosition(spotLightPosition_);
     object3d_->SetSpotLightDirection(spotLightDirection_);
     object3d_->SetSpotLightIntensity(spotLightIntensity_);
+
     ringObject_->SetRotate({ 1.5707963f, objectRotate_.y, objectRotate_.z });
     ringObject_->SetDirectionalLightDirection(lightDirection_);
     ringObject_->SetDirectionalLightIntensity(lightIntensity_);
@@ -185,6 +264,23 @@ void GamePlayScene::Update() {
     ringObject_->SetSpotLightPosition(spotLightPosition_);
     ringObject_->SetSpotLightDirection(spotLightDirection_);
     ringObject_->SetSpotLightIntensity(spotLightIntensity_);
+
+    cylinderUVOffset_ += cylinderUVScrollSpeed_ * deltaTime;
+    Matrix4x4 cylinderUVTransform = Multiply(
+        MakeScaleMatrix({ 1.0f, -1.0f, 1.0f }),
+        MakeTranslateMatrix({ cylinderUVOffset_, 1.0f, 0.0f })
+    );
+    cylinderObject_->SetColor(cylinderColor_);
+    cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
+    cylinderObject_->SetUVTransform(cylinderUVTransform);
+    cylinderObject_->SetDirectionalLightDirection(lightDirection_);
+    cylinderObject_->SetDirectionalLightIntensity(lightIntensity_);
+    cylinderObject_->SetPointLightPosition(pointLightPosition_);
+    cylinderObject_->SetPointLightIntensity(pointLightIntensity_);
+    cylinderObject_->SetSpotLightPosition(spotLightPosition_);
+    cylinderObject_->SetSpotLightDirection(spotLightDirection_);
+    cylinderObject_->SetSpotLightIntensity(spotLightIntensity_);
+
     sphereObject_->SetRotate(objectRotate_);
     sphereObject_->SetDirectionalLightDirection(lightDirection_);
     sphereObject_->SetDirectionalLightIntensity(lightIntensity_);
@@ -194,6 +290,18 @@ void GamePlayScene::Update() {
     sphereObject_->SetSpotLightPosition(spotLightPosition_);
     sphereObject_->SetSpotLightDirection(spotLightDirection_);
     sphereObject_->SetSpotLightIntensity(spotLightIntensity_);
+
+    for (auto& primitiveObject : primitiveObjects_) {
+        primitiveObject->SetRotate(objectRotate_);
+        primitiveObject->SetDirectionalLightDirection(lightDirection_);
+        primitiveObject->SetDirectionalLightIntensity(lightIntensity_);
+        primitiveObject->SetPointLightPosition(pointLightPosition_);
+        primitiveObject->SetPointLightIntensity(pointLightIntensity_);
+        primitiveObject->SetSpotLightPosition(spotLightPosition_);
+        primitiveObject->SetSpotLightDirection(spotLightDirection_);
+        primitiveObject->SetSpotLightIntensity(spotLightIntensity_);
+    }
+
     object3dCommon_->SetBlendMode(
         static_cast<BlendMode>(blendModeIndex_));
 
@@ -201,7 +309,11 @@ void GamePlayScene::Update() {
     skybox_->Update(camera_.get());
     object3d_->Update();
     ringObject_->Update();
+    cylinderObject_->Update();
     sphereObject_->Update();
+    for (auto& primitiveObject : primitiveObjects_) {
+        primitiveObject->Update();
+    }
 
     if (emitter_) {
         emitter_->Update(deltaTime);
@@ -285,8 +397,14 @@ void GamePlayScene::Draw() {
     if (showRing_) {
         ringObject_->Draw();
     }
+    if (showCylinder_) {
+        cylinderObject_->Draw();
+    }
     if (showSphere_) {
         sphereObject_->Draw();
+        for (auto& primitiveObject : primitiveObjects_) {
+            primitiveObject->Draw();
+        }
     }
 
     if (showParticle_) {
@@ -301,8 +419,10 @@ void GamePlayScene::Draw() {
 
 void GamePlayScene::Finalize() {
     emitter_.reset();
+    cylinderObject_.reset();
     ringObject_.reset();
     sphereObject_.reset();
+    primitiveObjects_.clear();
     object3d_.reset();
     skybox_.reset();
     camera_.reset();

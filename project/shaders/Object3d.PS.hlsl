@@ -42,6 +42,11 @@ PixelShaderOutput main(VertexShaderOutput input)
     float4 tex = gTexture.Sample(gSampler, uv);
     float3 normal = normalize(input.normal);
 
+    if (tex.a <= gMaterial.alphaReference)
+    {
+        discard;
+    }
+
     if (gMaterial.lightingMode != 0)
     {
         float3 toEye = normalize(gCamera.worldPosition - input.worldPosition);

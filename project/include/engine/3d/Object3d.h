@@ -70,6 +70,10 @@ public:
     void SetSpotLightDirection(const Vector3& direction);
     void SetSpotLightIntensity(float intensity);
     void SetEnvironmentCoefficient(float coefficient);
+    void SetColor(const Vector4& color);
+    void SetAlphaReference(float alphaReference);
+    void SetUVTransform(const Matrix4x4& uvTransform);
+    void SetLightingMode(int32_t lightingMode);
 
     // getter
     Vector3 GetScale() const;

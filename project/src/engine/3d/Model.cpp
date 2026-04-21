@@ -144,6 +144,28 @@ void AppendAssimpNode(
     }
 }
 
+void AppendTriangle(
+    ModelData& modelData,
+    const VertexData& v0,
+    const VertexData& v1,
+    const VertexData& v2)
+{
+    modelData.vertices.push_back(v0);
+    modelData.vertices.push_back(v1);
+    modelData.vertices.push_back(v2);
+}
+
+void AppendQuad(
+    ModelData& modelData,
+    const VertexData& v0,
+    const VertexData& v1,
+    const VertexData& v2,
+    const VertexData& v3)
+{
+    AppendTriangle(modelData, v0, v1, v2);
+    AppendTriangle(modelData, v2, v1, v3);
+}
+
 }
 
 void Model::Initialize(ModelCommon* modelCommon,
@@ -254,6 +276,7 @@ void Model::CreateMaterial()
     materialData_->lightingMode = 2; // Half Lambert
     materialData_->shininess = 64.0f;
     materialData_->environmentCoefficient = 0.2f;
+    materialData_->alphaReference = 0.0f;
     materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
     materialData_->uvTransform = MakeIdentity4x4();
 }
@@ -266,6 +289,26 @@ void Model::SetEnvironmentCoefficient(float coefficient)
 float Model::GetEnvironmentCoefficient() const
 {
     return materialData_->environmentCoefficient;
+}
+
+void Model::SetColor(const Vector4& color)
+{
+    materialData_->color = color;
+}
+
+void Model::SetAlphaReference(float alphaReference)
+{
+    materialData_->alphaReference = alphaReference;
+}
+
+void Model::SetUVTransform(const Matrix4x4& uvTransform)
+{
+    materialData_->uvTransform = uvTransform;
+}
+
+void Model::SetLightingMode(int32_t lightingMode)
+{
+    materialData_->lightingMode = lightingMode;
 }
 
 MaterialData Model::LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename)
@@ -427,6 +470,78 @@ ModelData Model::CreatePlaneData(
     return modelData;
 }
 
+ModelData Model::CreateTriangleData(
+    float width,
+    float height,
+    const std::string& textureFilePath)
+{
+    assert(width > 0.0f);
+    assert(height > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float halfWidth = width * 0.5f;
+    const float halfHeight = height * 0.5f;
+    const Vector3 normal = { 0.0f, 0.0f, -1.0f };
+
+    AppendTriangle(
+        modelData,
+        { { 0.0f, halfHeight, 0.0f, 1.0f }, { 0.5f, 0.0f }, normal },
+        { { -halfWidth, -halfHeight, 0.0f, 1.0f }, { 0.0f, 1.0f }, normal },
+        { { halfWidth, -halfHeight, 0.0f, 1.0f }, { 1.0f, 1.0f }, normal }
+    );
+
+    return modelData;
+}
+
+ModelData Model::CreateCircleData(
+    uint32_t divideCount,
+    float radius,
+    const std::string& textureFilePath)
+{
+    assert(divideCount >= 3);
+    assert(radius > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float radianPerDivide =
+        2.0f * std::numbers::pi_v<float> / static_cast<float>(divideCount);
+    const Vector3 normal = { 0.0f, 0.0f, -1.0f };
+    const VertexData center = {
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.5f, 0.5f },
+        normal
+    };
+
+    for (uint32_t index = 0; index < divideCount; ++index) {
+        const float angle = static_cast<float>(index) * radianPerDivide;
+        const float nextAngle =
+            static_cast<float>(index + 1) * radianPerDivide;
+
+        const float sinValue = std::sin(angle);
+        const float cosValue = std::cos(angle);
+        const float sinNext = std::sin(nextAngle);
+        const float cosNext = std::cos(nextAngle);
+
+        const VertexData current = {
+            { -sinValue * radius, cosValue * radius, 0.0f, 1.0f },
+            { 0.5f - sinValue * 0.5f, 0.5f - cosValue * 0.5f },
+            normal
+        };
+        const VertexData next = {
+            { -sinNext * radius, cosNext * radius, 0.0f, 1.0f },
+            { 0.5f - sinNext * 0.5f, 0.5f - cosNext * 0.5f },
+            normal
+        };
+
+        AppendTriangle(modelData, center, current, next);
+    }
+
+    return modelData;
+}
+
 ModelData Model::CreateRingData(
     uint32_t divideCount,
     float outerRadius,
@@ -487,6 +602,347 @@ ModelData Model::CreateRingData(
         modelData.vertices.push_back(outerNext);
         modelData.vertices.push_back(innerNext);
     }
+
+    return modelData;
+}
+
+ModelData Model::CreateSphereData(
+    uint32_t latDivideCount,
+    uint32_t lonDivideCount,
+    float radius,
+    const std::string& textureFilePath)
+{
+    assert(latDivideCount >= 2);
+    assert(lonDivideCount >= 3);
+    assert(radius > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float pi = std::numbers::pi_v<float>;
+
+    for (uint32_t latIndex = 0; latIndex < latDivideCount; ++latIndex) {
+        const float v0 =
+            static_cast<float>(latIndex) / static_cast<float>(latDivideCount);
+        const float v1 =
+            static_cast<float>(latIndex + 1) / static_cast<float>(latDivideCount);
+        const float theta0 = v0 * pi;
+        const float theta1 = v1 * pi;
+
+        for (uint32_t lonIndex = 0; lonIndex < lonDivideCount; ++lonIndex) {
+            const float u0 =
+                static_cast<float>(lonIndex) / static_cast<float>(lonDivideCount);
+            const float u1 =
+                static_cast<float>(lonIndex + 1) / static_cast<float>(lonDivideCount);
+            const float phi0 = u0 * 2.0f * pi;
+            const float phi1 = u1 * 2.0f * pi;
+
+            auto makeVertex = [&](float theta, float phi, float u, float v) {
+                const float sinTheta = std::sin(theta);
+                const float cosTheta = std::cos(theta);
+                const float sinPhi = std::sin(phi);
+                const float cosPhi = std::cos(phi);
+
+                const Vector3 normal = {
+                    -sinPhi * sinTheta,
+                    cosTheta,
+                    cosPhi * sinTheta
+                };
+
+                return VertexData{
+                    {
+                        normal.x * radius,
+                        normal.y * radius,
+                        normal.z * radius,
+                        1.0f
+                    },
+                    { u, v },
+                    Normalize(normal)
+                };
+            };
+
+            const VertexData v00 = makeVertex(theta0, phi0, u0, v0);
+            const VertexData v01 = makeVertex(theta0, phi1, u1, v0);
+            const VertexData v10 = makeVertex(theta1, phi0, u0, v1);
+            const VertexData v11 = makeVertex(theta1, phi1, u1, v1);
+
+            AppendQuad(modelData, v00, v01, v10, v11);
+        }
+    }
+
+    return modelData;
+}
+
+ModelData Model::CreateTorusData(
+    uint32_t majorDivideCount,
+    uint32_t minorDivideCount,
+    float majorRadius,
+    float minorRadius,
+    const std::string& textureFilePath)
+{
+    assert(majorDivideCount >= 3);
+    assert(minorDivideCount >= 3);
+    assert(majorRadius > 0.0f);
+    assert(minorRadius > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float pi = std::numbers::pi_v<float>;
+
+    for (uint32_t majorIndex = 0; majorIndex < majorDivideCount; ++majorIndex) {
+        const float u0 =
+            static_cast<float>(majorIndex) / static_cast<float>(majorDivideCount);
+        const float u1 =
+            static_cast<float>(majorIndex + 1) / static_cast<float>(majorDivideCount);
+        const float theta0 = u0 * 2.0f * pi;
+        const float theta1 = u1 * 2.0f * pi;
+
+        for (uint32_t minorIndex = 0; minorIndex < minorDivideCount; ++minorIndex) {
+            const float v0 =
+                static_cast<float>(minorIndex) / static_cast<float>(minorDivideCount);
+            const float v1 =
+                static_cast<float>(minorIndex + 1) / static_cast<float>(minorDivideCount);
+            const float phi0 = v0 * 2.0f * pi;
+            const float phi1 = v1 * 2.0f * pi;
+
+            auto makeVertex = [&](float theta, float phi, float u, float v) {
+                const float sinTheta = std::sin(theta);
+                const float cosTheta = std::cos(theta);
+                const float sinPhi = std::sin(phi);
+                const float cosPhi = std::cos(phi);
+
+                const float ringRadius = majorRadius + minorRadius * cosPhi;
+                const Vector3 normal = Normalize({
+                    -cosPhi * sinTheta,
+                    sinPhi,
+                    cosPhi * cosTheta
+                });
+
+                return VertexData{
+                    {
+                        -sinTheta * ringRadius,
+                        sinPhi * minorRadius,
+                        cosTheta * ringRadius,
+                        1.0f
+                    },
+                    { u, v },
+                    normal
+                };
+            };
+
+            const VertexData v00 = makeVertex(theta0, phi0, u0, v0);
+            const VertexData v01 = makeVertex(theta1, phi0, u1, v0);
+            const VertexData v10 = makeVertex(theta0, phi1, u0, v1);
+            const VertexData v11 = makeVertex(theta1, phi1, u1, v1);
+
+            AppendQuad(modelData, v00, v01, v10, v11);
+        }
+    }
+
+    return modelData;
+}
+
+ModelData Model::CreateCylinderData(
+    uint32_t divideCount,
+    float topRadius,
+    float bottomRadius,
+    float height,
+    const std::string& textureFilePath)
+{
+    assert(divideCount >= 3);
+    assert(topRadius >= 0.0f);
+    assert(bottomRadius >= 0.0f);
+    assert(height > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float radianPerDivide =
+        2.0f * std::numbers::pi_v<float> / static_cast<float>(divideCount);
+
+    for (uint32_t index = 0; index < divideCount; ++index) {
+        const float angle = static_cast<float>(index) * radianPerDivide;
+        const float nextAngle =
+            static_cast<float>(index + 1) * radianPerDivide;
+
+        const float sinValue = std::sin(angle);
+        const float cosValue = std::cos(angle);
+        const float sinNext = std::sin(nextAngle);
+        const float cosNext = std::cos(nextAngle);
+
+        const float u =
+            static_cast<float>(index) / static_cast<float>(divideCount);
+        const float uNext =
+            static_cast<float>(index + 1) / static_cast<float>(divideCount);
+
+        const Vector3 normalCurrent =
+            Normalize({ -sinValue, 0.0f, cosValue });
+        const Vector3 normalNext =
+            Normalize({ -sinNext, 0.0f, cosNext });
+
+        const VertexData topCurrent = {
+            { -sinValue * topRadius, height, cosValue * topRadius, 1.0f },
+            { u, 0.0f },
+            normalCurrent
+        };
+        const VertexData topNext = {
+            { -sinNext * topRadius, height, cosNext * topRadius, 1.0f },
+            { uNext, 0.0f },
+            normalNext
+        };
+        const VertexData bottomCurrent = {
+            { -sinValue * bottomRadius, 0.0f, cosValue * bottomRadius, 1.0f },
+            { u, 1.0f },
+            normalCurrent
+        };
+        const VertexData bottomNext = {
+            { -sinNext * bottomRadius, 0.0f, cosNext * bottomRadius, 1.0f },
+            { uNext, 1.0f },
+            normalNext
+        };
+
+        modelData.vertices.push_back(topCurrent);
+        modelData.vertices.push_back(topNext);
+        modelData.vertices.push_back(bottomCurrent);
+        modelData.vertices.push_back(bottomCurrent);
+        modelData.vertices.push_back(topNext);
+        modelData.vertices.push_back(bottomNext);
+    }
+
+    return modelData;
+}
+
+ModelData Model::CreateConeData(
+    uint32_t divideCount,
+    float radius,
+    float height,
+    const std::string& textureFilePath)
+{
+    assert(divideCount >= 3);
+    assert(radius > 0.0f);
+    assert(height > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float radianPerDivide =
+        2.0f * std::numbers::pi_v<float> / static_cast<float>(divideCount);
+    const VertexData apex = {
+        { 0.0f, height, 0.0f, 1.0f },
+        { 0.5f, 0.0f },
+        { 0.0f, 1.0f, 0.0f }
+    };
+
+    for (uint32_t index = 0; index < divideCount; ++index) {
+        const float angle = static_cast<float>(index) * radianPerDivide;
+        const float nextAngle =
+            static_cast<float>(index + 1) * radianPerDivide;
+
+        const float sinValue = std::sin(angle);
+        const float cosValue = std::cos(angle);
+        const float sinNext = std::sin(nextAngle);
+        const float cosNext = std::cos(nextAngle);
+
+        const float u =
+            static_cast<float>(index) / static_cast<float>(divideCount);
+        const float uNext =
+            static_cast<float>(index + 1) / static_cast<float>(divideCount);
+
+        const Vector3 normalCurrent =
+            Normalize({ -sinValue * height, radius, cosValue * height });
+        const Vector3 normalNext =
+            Normalize({ -sinNext * height, radius, cosNext * height });
+
+        const VertexData current = {
+            { -sinValue * radius, 0.0f, cosValue * radius, 1.0f },
+            { u, 1.0f },
+            normalCurrent
+        };
+        const VertexData next = {
+            { -sinNext * radius, 0.0f, cosNext * radius, 1.0f },
+            { uNext, 1.0f },
+            normalNext
+        };
+
+        AppendTriangle(modelData, apex, current, next);
+    }
+
+    return modelData;
+}
+
+ModelData Model::CreateBoxData(
+    float width,
+    float height,
+    float depth,
+    const std::string& textureFilePath)
+{
+    assert(width > 0.0f);
+    assert(height > 0.0f);
+    assert(depth > 0.0f);
+
+    ModelData modelData;
+    modelData.material.textureFilePath = textureFilePath;
+
+    const float halfWidth = width * 0.5f;
+    const float halfHeight = height * 0.5f;
+    const float halfDepth = depth * 0.5f;
+
+    const Vector4 leftTopFront = { -halfWidth, halfHeight, -halfDepth, 1.0f };
+    const Vector4 rightTopFront = { halfWidth, halfHeight, -halfDepth, 1.0f };
+    const Vector4 leftBottomFront = { -halfWidth, -halfHeight, -halfDepth, 1.0f };
+    const Vector4 rightBottomFront = { halfWidth, -halfHeight, -halfDepth, 1.0f };
+    const Vector4 leftTopBack = { -halfWidth, halfHeight, halfDepth, 1.0f };
+    const Vector4 rightTopBack = { halfWidth, halfHeight, halfDepth, 1.0f };
+    const Vector4 leftBottomBack = { -halfWidth, -halfHeight, halfDepth, 1.0f };
+    const Vector4 rightBottomBack = { halfWidth, -halfHeight, halfDepth, 1.0f };
+
+    auto makeVertex = [](const Vector4& position, const Vector2& uv, const Vector3& normal) {
+        return VertexData{ position, uv, normal };
+    };
+
+    AppendQuad(
+        modelData,
+        makeVertex(leftTopFront, { 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }),
+        makeVertex(rightTopFront, { 1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }),
+        makeVertex(leftBottomFront, { 0.0f, 1.0f }, { 0.0f, 0.0f, -1.0f }),
+        makeVertex(rightBottomFront, { 1.0f, 1.0f }, { 0.0f, 0.0f, -1.0f })
+    );
+    AppendQuad(
+        modelData,
+        makeVertex(rightTopBack, { 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }),
+        makeVertex(leftTopBack, { 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }),
+        makeVertex(rightBottomBack, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f }),
+        makeVertex(leftBottomBack, { 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f })
+    );
+    AppendQuad(
+        modelData,
+        makeVertex(leftTopBack, { 0.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }),
+        makeVertex(leftTopFront, { 1.0f, 0.0f }, { -1.0f, 0.0f, 0.0f }),
+        makeVertex(leftBottomBack, { 0.0f, 1.0f }, { -1.0f, 0.0f, 0.0f }),
+        makeVertex(leftBottomFront, { 1.0f, 1.0f }, { -1.0f, 0.0f, 0.0f })
+    );
+    AppendQuad(
+        modelData,
+        makeVertex(rightTopFront, { 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }),
+        makeVertex(rightTopBack, { 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }),
+        makeVertex(rightBottomFront, { 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f }),
+        makeVertex(rightBottomBack, { 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f })
+    );
+    AppendQuad(
+        modelData,
+        makeVertex(leftTopBack, { 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }),
+        makeVertex(rightTopBack, { 1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }),
+        makeVertex(leftTopFront, { 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f }),
+        makeVertex(rightTopFront, { 1.0f, 1.0f }, { 0.0f, 1.0f, 0.0f })
+    );
+    AppendQuad(
+        modelData,
+        makeVertex(leftBottomFront, { 0.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }),
+        makeVertex(rightBottomFront, { 1.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }),
+        makeVertex(leftBottomBack, { 0.0f, 1.0f }, { 0.0f, -1.0f, 0.0f }),
+        makeVertex(rightBottomBack, { 1.0f, 1.0f }, { 0.0f, -1.0f, 0.0f })
+    );
 
     return modelData;
 }

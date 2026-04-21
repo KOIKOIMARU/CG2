@@ -43,6 +43,25 @@ void ModelManager::LoadModel(const std::string& filePath)
     models_.insert(std::make_pair(filePath, std::move(model)));
 }
 
+void ModelManager::CreateTriangle(
+    const std::string& name,
+    float width,
+    float height,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateTriangleData(width, height, textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
 void ModelManager::CreatePlane(
     const std::string& name,
     float width,
@@ -57,6 +76,25 @@ void ModelManager::CreatePlane(
     model->Initialize(
         modelCommon_,
         Model::CreatePlaneData(width, height, textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
+void ModelManager::CreateCircle(
+    const std::string& name,
+    uint32_t divideCount,
+    float radius,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateCircleData(divideCount, radius, textureFilePath)
     );
 
     models_.insert(std::make_pair(name, std::move(model)));
@@ -81,6 +119,122 @@ void ModelManager::CreateRing(
             outerRadius,
             innerRadius,
             textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
+void ModelManager::CreateSphere(
+    const std::string& name,
+    uint32_t latDivideCount,
+    uint32_t lonDivideCount,
+    float radius,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateSphereData(
+            latDivideCount,
+            lonDivideCount,
+            radius,
+            textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
+void ModelManager::CreateTorus(
+    const std::string& name,
+    uint32_t majorDivideCount,
+    uint32_t minorDivideCount,
+    float majorRadius,
+    float minorRadius,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateTorusData(
+            majorDivideCount,
+            minorDivideCount,
+            majorRadius,
+            minorRadius,
+            textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
+void ModelManager::CreateCylinder(
+    const std::string& name,
+    uint32_t divideCount,
+    float topRadius,
+    float bottomRadius,
+    float height,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateCylinderData(
+            divideCount,
+            topRadius,
+            bottomRadius,
+            height,
+            textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
+void ModelManager::CreateCone(
+    const std::string& name,
+    uint32_t divideCount,
+    float radius,
+    float height,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateConeData(divideCount, radius, height, textureFilePath)
+    );
+
+    models_.insert(std::make_pair(name, std::move(model)));
+}
+
+void ModelManager::CreateBox(
+    const std::string& name,
+    float width,
+    float height,
+    float depth,
+    const std::string& textureFilePath)
+{
+    if (models_.contains(name)) {
+        return;
+    }
+
+    auto model = std::make_unique<Model>();
+    model->Initialize(
+        modelCommon_,
+        Model::CreateBoxData(width, height, depth, textureFilePath)
     );
 
     models_.insert(std::make_pair(name, std::move(model)));

@@ -232,6 +232,34 @@ void Object3d::SetEnvironmentCoefficient(float coefficient)
     }
 }
 
+void Object3d::SetColor(const Vector4& color)
+{
+    if (model_) {
+        model_->SetColor(color);
+    }
+}
+
+void Object3d::SetAlphaReference(float alphaReference)
+{
+    if (model_) {
+        model_->SetAlphaReference(alphaReference);
+    }
+}
+
+void Object3d::SetUVTransform(const Matrix4x4& uvTransform)
+{
+    if (model_) {
+        model_->SetUVTransform(uvTransform);
+    }
+}
+
+void Object3d::SetLightingMode(int32_t lightingMode)
+{
+    if (model_) {
+        model_->SetLightingMode(lightingMode);
+    }
+}
+
 // ===== getter =====
 Vector3 Object3d::GetScale() const {
     return transform_.scale;

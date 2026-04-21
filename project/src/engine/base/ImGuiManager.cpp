@@ -131,8 +131,12 @@ void ImGuiManager::ShowGamePlayController(
     float& environmentCoefficient,
     bool& showPlane,
     bool& showRing,
+    bool& showCylinder,
     bool& showSphere,
     bool& showParticle,
+    Math::Vector4& cylinderColor,
+    float& cylinderAlphaReference,
+    float& cylinderUVScrollSpeed,
     Math::Vector3& pointLightPosition,
     float& pointLightIntensity,
     Math::Vector3& spotLightPosition,
@@ -162,6 +166,7 @@ void ImGuiManager::ShowGamePlayController(
     );
     ImGui::Checkbox("Show Plane", &showPlane);
     ImGui::Checkbox("Show Ring", &showRing);
+    ImGui::Checkbox("Show Cylinder", &showCylinder);
     ImGui::Checkbox("Show Sphere", &showSphere);
     ImGui::Checkbox("Show Particle", &showParticle);
 
@@ -172,6 +177,23 @@ void ImGuiManager::ShowGamePlayController(
     ImGui::SliderFloat("Rotate X", &objectRotate.x, -3.14f, 3.14f);
     ImGui::SliderFloat("Rotate Y", &objectRotate.y, -3.14f, 3.14f);
     ImGui::SliderFloat("Rotate Z", &objectRotate.z, -3.14f, 3.14f);
+
+    ImGui::Separator();
+
+    ImGui::Text("Cylinder Effect");
+    ImGui::ColorEdit4("Cylinder Color", &cylinderColor.x);
+    ImGui::SliderFloat(
+        "Cylinder Alpha Ref",
+        &cylinderAlphaReference,
+        0.0f,
+        1.0f
+    );
+    ImGui::SliderFloat(
+        "Cylinder UV Speed",
+        &cylinderUVScrollSpeed,
+        -2.0f,
+        2.0f
+    );
 
     ImGui::Separator();
 
@@ -212,8 +234,12 @@ void ImGuiManager::ShowGamePlayController(
     (void)environmentCoefficient;
     (void)showPlane;
     (void)showRing;
+    (void)showCylinder;
     (void)showSphere;
     (void)showParticle;
+    (void)cylinderColor;
+    (void)cylinderAlphaReference;
+    (void)cylinderUVScrollSpeed;
     (void)pointLightPosition;
     (void)pointLightIntensity;
     (void)spotLightPosition;

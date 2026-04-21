@@ -30,7 +30,9 @@ private:
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Object3d> object3d_;
     std::unique_ptr<Object3d> ringObject_;
+    std::unique_ptr<Object3d> cylinderObject_;
     std::unique_ptr<Object3d> sphereObject_;
+    std::vector<std::unique_ptr<Object3d>> primitiveObjects_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
     std::vector<Sprite> sprites_;
@@ -47,8 +49,13 @@ private:
     float spotLightIntensity_ = 4.0f;
     bool showPlane_ = true;
     bool showRing_ = true;
+    bool showCylinder_ = true;
     bool showSphere_ = true;
     bool showParticle_ = true;
+    Math::Vector4 cylinderColor_{ 0.45f, 0.55f, 1.0f, 0.8f };
+    float cylinderAlphaReference_ = 0.01f;
+    float cylinderUVScrollSpeed_ = 0.35f;
+    float cylinderUVOffset_ = 0.0f;
 
     bool isDebugCameraEnabled_ = false;
     float debugCameraMoveSpeed_ = 6.0f;
