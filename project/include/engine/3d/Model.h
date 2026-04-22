@@ -82,6 +82,7 @@ struct Skeleton {
 
 struct ModelData {
     std::vector<VertexData> vertices;
+    std::vector<uint32_t> indices;
     MaterialData material;
     Node rootNode;
     Animation animation;
@@ -126,8 +127,10 @@ public:
 
     // Object3d が必要になったら使う用（次段階用）
     const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }
+    const D3D12_INDEX_BUFFER_VIEW& GetIBV() const { return indexBufferView_; }
     ID3D12Resource* GetMaterialResource() const { return materialResource_.Get(); }
     size_t GetVertexCount() const { return modelData_.vertices.size(); }
+    size_t GetIndexCount() const { return modelData_.indices.size(); }
 
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
@@ -177,6 +180,7 @@ public:
 
 private:
     void CreateVertexBuffer();
+    void CreateIndexBuffer();
     void CreateMaterial();
 
 private:
@@ -186,6 +190,8 @@ private:
 
     ComPtr<ID3D12Resource> vertexResource_;
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView_{};
+    ComPtr<ID3D12Resource> indexResource_;
+    D3D12_INDEX_BUFFER_VIEW indexBufferView_{};
 
     ComPtr<ID3D12Resource> materialResource_;
     Material* materialData_ = nullptr;

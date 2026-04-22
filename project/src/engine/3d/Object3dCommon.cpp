@@ -271,16 +271,34 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
 	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 
-	// BlendModeごとにPSOを生成
-	for (uint32_t i = 0; i < static_cast<uint32_t>(BlendMode::Count); ++i) {
-		graphicsPipelineStateDesc.BlendState =
-			MakeBlendDesc(static_cast<BlendMode>(i));
+	// DepthDrawMode / BlendMode ごとに PSO を生成
+	for (uint32_t depthModeIndex = 0;
+		depthModeIndex < static_cast<uint32_t>(DepthDrawMode::Count);
+		++depthModeIndex) {
+		if (static_cast<DepthDrawMode>(depthModeIndex) == DepthDrawMode::Overlay) {
+			graphicsPipelineStateDesc.DepthStencilState.DepthWriteMask =
+				D3D12_DEPTH_WRITE_MASK_ZERO;
+			graphicsPipelineStateDesc.DepthStencilState.DepthFunc =
+				D3D12_COMPARISON_FUNC_ALWAYS;
+		} else {
+			graphicsPipelineStateDesc.DepthStencilState.DepthWriteMask =
+				D3D12_DEPTH_WRITE_MASK_ALL;
+			graphicsPipelineStateDesc.DepthStencilState.DepthFunc =
+				D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		}
 
-		hr = device->CreateGraphicsPipelineState(
-			&graphicsPipelineStateDesc,
-			IID_PPV_ARGS(&pipelineStates_[i])
-		);
-		assert(SUCCEEDED(hr));
+		for (uint32_t blendModeIndex = 0;
+			blendModeIndex < static_cast<uint32_t>(BlendMode::Count);
+			++blendModeIndex) {
+			graphicsPipelineStateDesc.BlendState =
+				MakeBlendDesc(static_cast<BlendMode>(blendModeIndex));
+
+			hr = device->CreateGraphicsPipelineState(
+				&graphicsPipelineStateDesc,
+				IID_PPV_ARGS(&pipelineStates_[depthModeIndex][blendModeIndex])
+			);
+			assert(SUCCEEDED(hr));
+		}
 	}
 
 }
@@ -294,7 +312,8 @@ void Object3dCommon::CommonDrawSetting() {
 
 	commandList->SetGraphicsRootSignature(rootSignature_.Get());
 	commandList->SetPipelineState(
-		pipelineStates_[static_cast<size_t>(blendMode_)].Get());
+		pipelineStates_[static_cast<size_t>(depthDrawMode_)]
+			[static_cast<size_t>(blendMode_)].Get());
 	commandList->IASetPrimitiveTopology(
 		D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

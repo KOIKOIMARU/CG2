@@ -273,6 +273,8 @@ void AppendAssimpNode(
         assert(mesh);
         assert(mesh->HasNormals());
 
+        const uint32_t vertexOffset =
+            static_cast<uint32_t>(modelData.vertices.size());
         std::vector<VertexData> originalVertices(mesh->mNumVertices);
         for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex) {
             VertexData vertex = MakeDefaultVertexData();
@@ -329,13 +331,19 @@ void AppendAssimpNode(
             }
         }
 
+        modelData.vertices.insert(
+            modelData.vertices.end(),
+            originalVertices.begin(),
+            originalVertices.end()
+        );
+
         for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
             const aiFace& face = mesh->mFaces[faceIndex];
             assert(face.mNumIndices == 3);
 
             for (uint32_t index = 0; index < face.mNumIndices; ++index) {
                 uint32_t vertexIndex = face.mIndices[index];
-                modelData.vertices.push_back(originalVertices[vertexIndex]);
+                modelData.indices.push_back(vertexOffset + vertexIndex);
             }
         }
     }
@@ -356,9 +364,14 @@ void AppendTriangle(
     const VertexData& v1,
     const VertexData& v2)
 {
+    const uint32_t startIndex =
+        static_cast<uint32_t>(modelData.vertices.size());
     modelData.vertices.push_back(v0);
     modelData.vertices.push_back(v1);
     modelData.vertices.push_back(v2);
+    modelData.indices.push_back(startIndex + 0);
+    modelData.indices.push_back(startIndex + 1);
+    modelData.indices.push_back(startIndex + 2);
 }
 
 void AppendQuad(
@@ -390,18 +403,23 @@ void Model::Initialize(ModelCommon* modelCommon,
     const std::string assetFilename = requestedPath.filename().string();
     const std::string extension = requestedPath.extension().string();
 
-    // OBJは既存の読み込み、glTF系はAssimpで読み込む
     if (extension == ".gltf" || extension == ".glb") {
         modelData_ = LoadAssimpFile(assetDirectory, assetFilename);
     } else {
         modelData_ = LoadObjFile(assetDirectory, assetFilename);
     }
 
-    // GPUリソース作成
+    if (modelData_.indices.empty()) {
+        modelData_.indices.resize(modelData_.vertices.size());
+        for (uint32_t index = 0; index < modelData_.indices.size(); ++index) {
+            modelData_.indices[index] = index;
+        }
+    }
+
     CreateVertexBuffer();
+    CreateIndexBuffer();
     CreateMaterial();
 
-    // ★ テクスチャは「読み込むだけ」
     TextureManager::GetInstance()->LoadTexture(
         modelData_.material.textureFilePath
     );
@@ -413,14 +431,21 @@ void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
     modelCommon_ = modelCommon;
     modelData_ = modelData;
 
+    if (modelData_.indices.empty()) {
+        modelData_.indices.resize(modelData_.vertices.size());
+        for (uint32_t index = 0; index < modelData_.indices.size(); ++index) {
+            modelData_.indices[index] = index;
+        }
+    }
+
     CreateVertexBuffer();
+    CreateIndexBuffer();
     CreateMaterial();
 
     TextureManager::GetInstance()->LoadTexture(
         modelData_.material.textureFilePath
     );
 }
-
 
 void Model::Draw()
 {
@@ -430,6 +455,7 @@ void Model::Draw()
 
     // VB
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
+    commandList->IASetIndexBuffer(&indexBufferView_);
 
     // Material CBV
     commandList->SetGraphicsRootConstantBufferView(
@@ -437,7 +463,7 @@ void Model::Draw()
         materialResource_->GetGPUVirtualAddress()
     );
 
-    // Texture SRV（★ index を使う）
+    // Texture SRV
     srvManager->SetGraphicsRootDescriptorTable(
         3,
         TextureManager::GetInstance()->GetSrvIndex(
@@ -452,13 +478,11 @@ void Model::Draw()
         )
     );
 
-    commandList->DrawInstanced(
-        static_cast<UINT>(modelData_.vertices.size()),
-        1, 0, 0
+    commandList->DrawIndexedInstanced(
+        static_cast<UINT>(modelData_.indices.size()),
+        1, 0, 0, 0
     );
 }
-
-
 
 void Model::CreateVertexBuffer()
 {
@@ -477,6 +501,22 @@ void Model::CreateVertexBuffer()
     vertexBufferView_.StrideInBytes = sizeof(VertexData);
 }
 
+void Model::CreateIndexBuffer()
+{
+    auto dxCommon = modelCommon_->GetDxCommon();
+    const auto& indices = modelData_.indices;
+
+    indexResource_ = dxCommon->CreateBufferResource(sizeof(uint32_t) * indices.size());
+
+    uint32_t* mappedIndex = nullptr;
+    indexResource_->Map(0, nullptr, reinterpret_cast<void**>(&mappedIndex));
+    memcpy(mappedIndex, indices.data(), sizeof(uint32_t) * indices.size());
+    indexResource_->Unmap(0, nullptr);
+
+    indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
+    indexBufferView_.SizeInBytes = UINT(sizeof(uint32_t) * indices.size());
+    indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
+}
 void Model::CreateMaterial()
 {
     auto dxCommon = modelCommon_->GetDxCommon();
@@ -568,20 +608,20 @@ ModelData Model::LoadObjFile(const std::string& directoryPath, const std::string
             s >> p.x >> p.y >> p.z;
             p.w = 1.0f;
 
-            // 右手→左手（Z反転）
+            // 鬯ｮ・ｯ繝ｻ・ｷ郢晢ｽｻ繝ｻ・ｿ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｳ鬯ｮ・ｫ繝ｻ・ｰ驛｢譎｢・ｽ・ｻ髫ｶ蜴・ｽｽ・ｿ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｻ鬯ｮ・ｯ隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｾ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｦ鬯ｮ・ｫ繝ｻ・ｰ驛｢譎｢・ｽ・ｻ驛｢譎｢・ｽ・ｻ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｼ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｻ鬯ｮ・ｯ繝ｻ・ｷ郢晢ｽｻ繝ｻ・ｿ鬮ｯ譎｢・｣・ｰ鬮ｮ諛ｶ・ｽ・｣郢晢ｽｻ繝ｻ・ｽ郢晢ｽｻ繝ｻ・ｻ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・｢鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｻ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｻ
             p.z *= -1.0f;
             positions.push_back(p);
 
         } else if (id == "vt") {
             Vector2 uv{};
             s >> uv.x >> uv.y;
-            uv.y = 1.0f - uv.y; // V反転
+            uv.y = 1.0f - uv.y; // V鬯ｮ・ｯ繝ｻ・ｷ郢晢ｽｻ繝ｻ・ｿ鬮ｯ譎｢・｣・ｰ鬮ｮ諛ｶ・ｽ・｣郢晢ｽｻ繝ｻ・ｽ郢晢ｽｻ繝ｻ・ｻ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・｢
             texcoords.push_back(uv);
 
         } else if (id == "vn") {
             Vector3 n{};
             s >> n.x >> n.y >> n.z;
-            n.z *= -1.0f; // 法線Z反転
+            n.z *= -1.0f; // 鬯ｮ・ｮ闕ｳ・ｻ繝ｻ・｢髦ｮ蜷ｶ繝ｻ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・ｷ鬮ｯ諛ｶ・｣・ｰ髫ｴ蟇よ桶隨翫ｋ蜉代・・ｰ鬮ｮ諛ｶ・ｽ・｣郢晢ｽｻ繝ｻ・ｽ郢晢ｽｻ繝ｻ・ｻ驛｢譎｢・ｽ・ｻ郢晢ｽｻ繝ｻ・｢
             normals.push_back(n);
 
         } else if (id == "f") {

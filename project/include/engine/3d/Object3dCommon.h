@@ -19,6 +19,12 @@ enum class BlendMode : uint32_t {
     Count,
 };
 
+enum class DepthDrawMode : uint32_t {
+    Normal,
+    Overlay,
+    Count,
+};
+
 class Object3dCommon {
 public:
     void Initialize(
@@ -28,7 +34,8 @@ public:
 
     ID3D12RootSignature* GetRootSignature() const { return rootSignature_.Get(); }
     ID3D12PipelineState* GetPipelineState() const {
-        return pipelineStates_[static_cast<size_t>(blendMode_)].Get();
+        return pipelineStates_[static_cast<size_t>(depthDrawMode_)]
+            [static_cast<size_t>(blendMode_)].Get();
     }
 
     DirectXCommon* GetDxCommon() const { return dxCommon_; } // 資料の getter
@@ -36,6 +43,10 @@ public:
     void CommonDrawSetting();
     void SetBlendMode(BlendMode blendMode) { blendMode_ = blendMode; }
     BlendMode GetBlendMode() const { return blendMode_; }
+    void SetDepthDrawMode(DepthDrawMode depthDrawMode) {
+        depthDrawMode_ = depthDrawMode;
+    }
+    DepthDrawMode GetDepthDrawMode() const { return depthDrawMode_; }
 
     void SetDefaultCamera(Camera* camera) {
         defaultCamera_ = camera;
@@ -64,9 +75,12 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
     std::array<
-        Microsoft::WRL::ComPtr<ID3D12PipelineState>,
-        static_cast<size_t>(BlendMode::Count)> pipelineStates_;
+        std::array<
+            Microsoft::WRL::ComPtr<ID3D12PipelineState>,
+            static_cast<size_t>(BlendMode::Count)>,
+        static_cast<size_t>(DepthDrawMode::Count)> pipelineStates_;
     BlendMode blendMode_ = BlendMode::Normal;
+    DepthDrawMode depthDrawMode_ = DepthDrawMode::Normal;
 
     Camera* defaultCamera_ = nullptr;
     std::string environmentTexturePath_;

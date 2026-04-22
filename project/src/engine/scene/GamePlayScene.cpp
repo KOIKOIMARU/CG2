@@ -606,6 +606,8 @@ void GamePlayScene::Draw() {
     }
 
     if (showSkinningSamples_ && showSkeletonDebug_) {
+        object3dCommon_->SetDepthDrawMode(DepthDrawMode::Overlay);
+        object3dCommon_->CommonDrawSetting();
         for (auto& bone : simpleSkinDebug_.bones) {
             bone->Draw();
         }
@@ -624,6 +626,8 @@ void GamePlayScene::Draw() {
         for (auto& joint : humanWalkDebug_.joints) {
             joint->Draw();
         }
+        object3dCommon_->SetDepthDrawMode(DepthDrawMode::Normal);
+        object3dCommon_->CommonDrawSetting();
     }
 
     if (showParticle_) {
@@ -682,7 +686,7 @@ void GamePlayScene::InitializeSkeletonDebugSet(
         auto jointObject = std::make_unique<Object3d>();
         jointObject->Initialize(object3dCommon_.get());
         jointObject->SetModel("debug_joint_sphere");
-        jointObject->SetScale({ 0.045f, 0.045f, 0.045f });
+        jointObject->SetScale({ 0.006f, 0.006f, 0.006f });
         jointObject->SetLightingMode(0);
         jointObject->SetEnvironmentCoefficient(0.0f);
         jointObject->SetColor(color);
@@ -706,6 +710,7 @@ void GamePlayScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
         return;
     }
 
+    const bool isSimpleSkin = debugSet.source == simpleSkinObject_.get();
     const Skeleton& skeleton = debugSet.source->GetSkeleton();
     const Matrix4x4& worldMatrix = debugSet.source->GetWorldMatrix();
 
@@ -717,7 +722,17 @@ void GamePlayScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
         const Math::Vector3 jointPosition = ExtractTranslation(jointWorldMatrix);
 
         debugSet.joints[jointIndex]->SetTranslate(jointPosition);
-        debugSet.joints[jointIndex]->SetColor(debugSet.color);
+        if (isSimpleSkin) {
+            debugSet.joints[jointIndex]->SetScale({ 0.02f, 0.02f, 0.02f });
+            if (jointIndex == 0) {
+                debugSet.joints[jointIndex]->SetColor({ 1.0f, 0.55f, 0.75f, 1.0f });
+            } else {
+                debugSet.joints[jointIndex]->SetColor({ 0.55f, 0.9f, 1.0f, 1.0f });
+            }
+        } else {
+            debugSet.joints[jointIndex]->SetScale({ 0.006f, 0.006f, 0.006f });
+            debugSet.joints[jointIndex]->SetColor(debugSet.color);
+        }
     }
 
     size_t boneIndex = 0;
@@ -743,8 +758,13 @@ void GamePlayScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
             std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
         if (length <= 0.0001f) {
-            debugSet.bones[boneIndex]->SetScale({ 0.01f, 0.01f, 0.01f });
+            if (isSimpleSkin) {
+                debugSet.bones[boneIndex]->SetScale({ 0.0015f, 0.0015f, 0.0015f });
+            } else {
+                debugSet.bones[boneIndex]->SetScale({ 0.002f, 0.002f, 0.002f });
+            }
             debugSet.bones[boneIndex]->SetTranslate(parentPosition);
+            debugSet.bones[boneIndex]->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
             ++boneIndex;
             continue;
         }
@@ -760,10 +780,14 @@ void GamePlayScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
             (jointPosition.z + parentPosition.z) * 0.5f
         };
 
-        debugSet.bones[boneIndex]->SetScale({ 0.05f, 0.05f, length });
+        if (isSimpleSkin) {
+            debugSet.bones[boneIndex]->SetScale({ 0.0025f, 0.0025f, length });
+        } else {
+            debugSet.bones[boneIndex]->SetScale({ 0.006f, 0.006f, length });
+        }
         debugSet.bones[boneIndex]->SetRotate(MakeBoneRotate(direction));
         debugSet.bones[boneIndex]->SetTranslate(center);
-        debugSet.bones[boneIndex]->SetColor(debugSet.color);
+        debugSet.bones[boneIndex]->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
         ++boneIndex;
     }
 }
