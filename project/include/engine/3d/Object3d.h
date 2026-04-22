@@ -61,6 +61,7 @@ public:
     // setter
     void SetScale(const Vector3& scale);
     void SetRotate(const Vector3& rotate);
+    void SetQuaternionRotate(const Quaternion& rotate);
     void SetTranslate(const Vector3& translate);
     void SetDirectionalLightDirection(const Vector3& direction);
     void SetDirectionalLightIntensity(float intensity);
@@ -98,6 +99,8 @@ private:
     Model* model_ = nullptr;
 
     Transform transform_;
+    Quaternion quaternionRotate_{ 0.0f, 0.0f, 0.0f, 1.0f };
+    bool useQuaternionRotate_ = false;
     Camera* camera_ = nullptr;
 
     ComPtr<ID3D12Resource> transformationMatrixResource_;

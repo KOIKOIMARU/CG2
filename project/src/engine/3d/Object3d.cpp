@@ -38,11 +38,20 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
 
 void Object3d::Update() {
     // ワールド行列
-    Matrix4x4 worldMatrix = MakeAffineMatrix(
-        transform_.scale,
-        transform_.rotate,
-        transform_.translate
-    );
+    Matrix4x4 worldMatrix;
+    if (useQuaternionRotate_) {
+        worldMatrix = MakeAffineMatrix(
+            transform_.scale,
+            quaternionRotate_,
+            transform_.translate
+        );
+    } else {
+        worldMatrix = MakeAffineMatrix(
+            transform_.scale,
+            transform_.rotate,
+            transform_.translate
+        );
+    }
 
     Matrix4x4 worldViewProjectionMatrix;
 
@@ -191,6 +200,13 @@ void Object3d::SetScale(const Vector3& scale) {
 
 void Object3d::SetRotate(const Vector3& rotate) {
     transform_.rotate = rotate;
+    useQuaternionRotate_ = false;
+}
+
+void Object3d::SetQuaternionRotate(const Quaternion& rotate)
+{
+    quaternionRotate_ = NormalizeQuaternion(rotate);
+    useQuaternionRotate_ = true;
 }
 
 void Object3d::SetTranslate(const Vector3& translate) {

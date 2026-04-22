@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 #include <wrl.h>
@@ -22,9 +23,36 @@ struct MaterialData {
     std::string textureFilePath;
 };
 
+template <typename T>
+struct Keyframe {
+    float time;
+    T value;
+};
+
+struct NodeAnimation {
+    std::vector<Keyframe<Vector3>> translate;
+    std::vector<Keyframe<Quaternion>> rotate;
+    std::vector<Keyframe<Vector3>> scale;
+};
+
+struct Animation {
+    float duration = 0.0f;
+    float ticksPerSecond = 1.0f;
+    std::map<std::string, NodeAnimation> nodeAnimations;
+};
+
+struct Node {
+    QuaternionTransform transform;
+    Matrix4x4 localMatrix;
+    std::string name;
+    std::vector<Node> children;
+};
+
 struct ModelData {
     std::vector<VertexData> vertices;
     MaterialData material;
+    Node rootNode;
+    Animation animation;
 };
 
 struct Material {
@@ -51,6 +79,12 @@ public:
     void SetAlphaReference(float alphaReference);
     void SetUVTransform(const Matrix4x4& uvTransform);
     void SetLightingMode(int32_t lightingMode);
+    const Animation& GetAnimation() const { return modelData_.animation; }
+    const Node& GetRootNode() const { return modelData_.rootNode; }
+    bool HasAnimation() const
+    {
+        return !modelData_.animation.nodeAnimations.empty();
+    }
 
     // Object3d が必要になったら使う用（次段階用）
     const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }
@@ -60,6 +94,7 @@ public:
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadAssimpFile(const std::string& directoryPath, const std::string& filename);
+    static QuaternionTransform CalculateValue(const NodeAnimation& nodeAnimation, float time);
     static ModelData CreateTriangleData(float width, float height, const std::string& textureFilePath);
     static ModelData CreatePlaneData(float width, float height, const std::string& textureFilePath);
     static ModelData CreateCircleData(

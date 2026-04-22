@@ -2,6 +2,7 @@
 
 #include "engine/3d/Object3dCommon.h"
 #include "engine/3d/Object3d.h"
+#include "engine/3d/Model.h"
 #include "engine/3d/Camera.h"
 #include "engine/2d/Sprite.h"
 #include "engine/2d/SpriteCommon.h"
@@ -144,6 +145,7 @@ void GamePlayScene::Initialize() {
         1.5f,
         "resources/uvChecker.png"
     );
+    ModelManager::GetInstance()->LoadModel("AnimatedCube/AnimatedCube.gltf");
 
     object3d_ = std::make_unique<Object3d>();
     object3d_->Initialize(object3dCommon_.get());
@@ -173,6 +175,13 @@ void GamePlayScene::Initialize() {
     sphereObject_->SetScale({ 1.0f, 1.0f, 1.0f });
     sphereObject_->SetTranslate({ 0.0f, 1.5f, 3.0f });
     sphereObject_->SetEnvironmentCoefficient(environmentCoefficient_);
+
+    animatedCubeObject_ = std::make_unique<Object3d>();
+    animatedCubeObject_->Initialize(object3dCommon_.get());
+    animatedCubeObject_->SetModel("AnimatedCube/AnimatedCube.gltf");
+    animatedCubeObject_->SetTranslate({ 0.0f, 1.5f, -3.5f });
+    animatedCubeObject_->SetScale({ 1.0f, 1.0f, 1.0f });
+    animatedCubeObject_->SetEnvironmentCoefficient(0.0f);
 
     const std::pair<const char*, Math::Vector3> primitiveSamples[] = {
         { "primitive_triangle", { -4.5f, 1.0f, 3.0f } },
@@ -291,6 +300,41 @@ void GamePlayScene::Update() {
     sphereObject_->SetSpotLightDirection(spotLightDirection_);
     sphereObject_->SetSpotLightIntensity(spotLightIntensity_);
 
+    if (Model* animatedCubeModel =
+            ModelManager::GetInstance()->FindModel("AnimatedCube/AnimatedCube.gltf")) {
+        const Animation& animation = animatedCubeModel->GetAnimation();
+        if (animation.duration > 0.0f &&
+            animatedCubeModel->HasAnimation()) {
+            animationTime_ += deltaTime * animation.ticksPerSecond;
+            while (animationTime_ > animation.duration) {
+                animationTime_ -= animation.duration;
+            }
+
+            const std::string& rootNodeName =
+                animatedCubeModel->GetRootNode().name;
+            auto it = animation.nodeAnimations.find(rootNodeName);
+            if (it != animation.nodeAnimations.end()) {
+                const QuaternionTransform transform =
+                    Model::CalculateValue(it->second, animationTime_);
+                animatedCubeObject_->SetScale(transform.scale);
+                animatedCubeObject_->SetQuaternionRotate(transform.rotate);
+                animatedCubeObject_->SetTranslate({
+                    transform.translate.x,
+                    transform.translate.y + 1.5f,
+                    transform.translate.z - 3.5f
+                });
+            }
+        }
+    }
+
+    animatedCubeObject_->SetDirectionalLightDirection(lightDirection_);
+    animatedCubeObject_->SetDirectionalLightIntensity(lightIntensity_);
+    animatedCubeObject_->SetPointLightPosition(pointLightPosition_);
+    animatedCubeObject_->SetPointLightIntensity(pointLightIntensity_);
+    animatedCubeObject_->SetSpotLightPosition(spotLightPosition_);
+    animatedCubeObject_->SetSpotLightDirection(spotLightDirection_);
+    animatedCubeObject_->SetSpotLightIntensity(spotLightIntensity_);
+
     for (auto& primitiveObject : primitiveObjects_) {
         primitiveObject->SetRotate(objectRotate_);
         primitiveObject->SetDirectionalLightDirection(lightDirection_);
@@ -311,6 +355,7 @@ void GamePlayScene::Update() {
     ringObject_->Update();
     cylinderObject_->Update();
     sphereObject_->Update();
+    animatedCubeObject_->Update();
     for (auto& primitiveObject : primitiveObjects_) {
         primitiveObject->Update();
     }
@@ -402,6 +447,7 @@ void GamePlayScene::Draw() {
     }
     if (showSphere_) {
         sphereObject_->Draw();
+        animatedCubeObject_->Draw();
         for (auto& primitiveObject : primitiveObjects_) {
             primitiveObject->Draw();
         }
@@ -422,6 +468,7 @@ void GamePlayScene::Finalize() {
     cylinderObject_.reset();
     ringObject_.reset();
     sphereObject_.reset();
+    animatedCubeObject_.reset();
     primitiveObjects_.clear();
     object3d_.reset();
     skybox_.reset();

@@ -70,6 +70,85 @@ Vector3 TransformNormal(const Vector3& normal, const Matrix4x4& matrix)
     return Normalize({ transformed.x, transformed.y, transformed.z });
 }
 
+Node ReadNode(aiNode* node)
+{
+    assert(node);
+
+    aiVector3D scale;
+    aiQuaternion rotate;
+    aiVector3D translate;
+    node->mTransformation.Decompose(scale, rotate, translate);
+
+    Node result;
+    result.name = node->mName.C_Str();
+    result.transform.scale = { scale.x, scale.y, scale.z };
+    result.transform.rotate = { rotate.x, rotate.y, rotate.z, rotate.w };
+    result.transform.translate = { translate.x, translate.y, translate.z };
+    result.localMatrix = MakeAffineMatrix(
+        result.transform.scale,
+        result.transform.rotate,
+        result.transform.translate
+    );
+
+    result.children.resize(node->mNumChildren);
+    for (uint32_t childIndex = 0; childIndex < node->mNumChildren; ++childIndex) {
+        result.children[childIndex] = ReadNode(node->mChildren[childIndex]);
+    }
+
+    return result;
+}
+
+Animation ReadAnimation(const aiScene* scene)
+{
+    Animation animation;
+    if (!scene || scene->mNumAnimations == 0) {
+        return animation;
+    }
+
+    const aiAnimation* aiAnimation = scene->mAnimations[0];
+    assert(aiAnimation);
+
+    animation.duration = static_cast<float>(aiAnimation->mDuration);
+    animation.ticksPerSecond =
+        aiAnimation->mTicksPerSecond == 0.0 ?
+        1.0f :
+        static_cast<float>(aiAnimation->mTicksPerSecond);
+
+    for (uint32_t channelIndex = 0; channelIndex < aiAnimation->mNumChannels; ++channelIndex) {
+        const aiNodeAnim* nodeAnimation = aiAnimation->mChannels[channelIndex];
+        NodeAnimation animationChannel;
+
+        for (uint32_t keyIndex = 0; keyIndex < nodeAnimation->mNumPositionKeys; ++keyIndex) {
+            const auto& key = nodeAnimation->mPositionKeys[keyIndex];
+            animationChannel.translate.push_back({
+                static_cast<float>(key.mTime),
+                { key.mValue.x, key.mValue.y, key.mValue.z }
+            });
+        }
+
+        for (uint32_t keyIndex = 0; keyIndex < nodeAnimation->mNumRotationKeys; ++keyIndex) {
+            const auto& key = nodeAnimation->mRotationKeys[keyIndex];
+            animationChannel.rotate.push_back({
+                static_cast<float>(key.mTime),
+                { key.mValue.x, key.mValue.y, key.mValue.z, key.mValue.w }
+            });
+        }
+
+        for (uint32_t keyIndex = 0; keyIndex < nodeAnimation->mNumScalingKeys; ++keyIndex) {
+            const auto& key = nodeAnimation->mScalingKeys[keyIndex];
+            animationChannel.scale.push_back({
+                static_cast<float>(key.mTime),
+                { key.mValue.x, key.mValue.y, key.mValue.z }
+            });
+        }
+
+        animation.nodeAnimations[nodeAnimation->mNodeName.C_Str()] =
+            animationChannel;
+    }
+
+    return animation;
+}
+
 std::string GetAssimpTexturePath(
     const aiScene* scene,
     const std::string& directoryPath)
@@ -175,14 +254,20 @@ void Model::Initialize(ModelCommon* modelCommon,
     assert(modelCommon);
     modelCommon_ = modelCommon;
 
-    std::filesystem::path path = filename;
-    std::string extension = path.extension().string();
+    std::filesystem::path requestedPath = filename;
+    std::filesystem::path assetDirectoryPath = directoryPath;
+    if (!requestedPath.parent_path().empty()) {
+        assetDirectoryPath /= requestedPath.parent_path();
+    }
+    const std::string assetDirectory = assetDirectoryPath.string();
+    const std::string assetFilename = requestedPath.filename().string();
+    const std::string extension = requestedPath.extension().string();
 
     // OBJは既存の読み込み、glTF系はAssimpで読み込む
     if (extension == ".gltf" || extension == ".glb") {
-        modelData_ = LoadAssimpFile(directoryPath, filename);
+        modelData_ = LoadAssimpFile(assetDirectory, assetFilename);
     } else {
-        modelData_ = LoadObjFile(directoryPath, filename);
+        modelData_ = LoadObjFile(assetDirectory, assetFilename);
     }
 
     // GPUリソース作成
@@ -436,6 +521,8 @@ ModelData Model::LoadAssimpFile(
 
     modelData.material.textureFilePath =
         GetAssimpTexturePath(scene, directoryPath);
+    modelData.rootNode = ReadNode(scene->mRootNode);
+    modelData.animation = ReadAnimation(scene);
 
     AppendAssimpNode(
         scene,
@@ -444,6 +531,82 @@ ModelData Model::LoadAssimpFile(
         modelData);
 
     return modelData;
+}
+
+QuaternionTransform Model::CalculateValue(
+    const NodeAnimation& nodeAnimation,
+    float time)
+{
+    QuaternionTransform result{
+        { 1.0f, 1.0f, 1.0f },
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 0.0f, 0.0f }
+    };
+
+    auto calculateVector3Value =
+        [time](const std::vector<Keyframe<Vector3>>& keyframes, const Vector3& defaultValue) {
+            if (keyframes.empty()) {
+                return defaultValue;
+            }
+            if (keyframes.size() == 1 || time <= keyframes.front().time) {
+                return keyframes.front().value;
+            }
+
+            for (size_t index = 0; index + 1 < keyframes.size(); ++index) {
+                const auto& current = keyframes[index];
+                const auto& next = keyframes[index + 1];
+                if (time <= next.time) {
+                    const float duration = next.time - current.time;
+                    const float t =
+                        duration == 0.0f ? 0.0f : (time - current.time) / duration;
+                    return Vector3{
+                        current.value.x + (next.value.x - current.value.x) * t,
+                        current.value.y + (next.value.y - current.value.y) * t,
+                        current.value.z + (next.value.z - current.value.z) * t
+                    };
+                }
+            }
+
+            return keyframes.back().value;
+        };
+
+    auto calculateQuaternionValue =
+        [time](const std::vector<Keyframe<Quaternion>>& keyframes, const Quaternion& defaultValue) {
+            if (keyframes.empty()) {
+                return defaultValue;
+            }
+            if (keyframes.size() == 1 || time <= keyframes.front().time) {
+                return NormalizeQuaternion(keyframes.front().value);
+            }
+
+            for (size_t index = 0; index + 1 < keyframes.size(); ++index) {
+                const auto& current = keyframes[index];
+                const auto& next = keyframes[index + 1];
+                if (time <= next.time) {
+                    const float duration = next.time - current.time;
+                    const float t =
+                        duration == 0.0f ? 0.0f : (time - current.time) / duration;
+                    return NormalizeQuaternion(Slerp(current.value, next.value, t));
+                }
+            }
+
+            return NormalizeQuaternion(keyframes.back().value);
+        };
+
+    result.translate = calculateVector3Value(
+        nodeAnimation.translate,
+        result.translate
+    );
+    result.rotate = calculateQuaternionValue(
+        nodeAnimation.rotate,
+        result.rotate
+    );
+    result.scale = calculateVector3Value(
+        nodeAnimation.scale,
+        result.scale
+    );
+
+    return result;
 }
 
 ModelData Model::CreatePlaneData(

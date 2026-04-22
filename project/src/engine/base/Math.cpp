@@ -45,4 +45,15 @@ namespace Math {
         return result;
     }
 
+    Quaternion Slerp(const Quaternion& q0, const Quaternion& q1, float t)
+    {
+        XMVECTOR xmQ0 = XMVectorSet(q0.x, q0.y, q0.z, q0.w);
+        XMVECTOR xmQ1 = XMVectorSet(q1.x, q1.y, q1.z, q1.w);
+        XMVECTOR xmResult = XMQuaternionSlerp(xmQ0, xmQ1, t);
+
+        Quaternion result{};
+        XMStoreFloat4(reinterpret_cast<XMFLOAT4*>(&result), xmResult);
+        return result;
+    }
+
 } // namespace Math

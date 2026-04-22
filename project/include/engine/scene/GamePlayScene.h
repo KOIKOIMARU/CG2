@@ -32,6 +32,7 @@ private:
     std::unique_ptr<Object3d> ringObject_;
     std::unique_ptr<Object3d> cylinderObject_;
     std::unique_ptr<Object3d> sphereObject_;
+    std::unique_ptr<Object3d> animatedCubeObject_;
     std::vector<std::unique_ptr<Object3d>> primitiveObjects_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
@@ -56,6 +57,7 @@ private:
     float cylinderAlphaReference_ = 0.01f;
     float cylinderUVScrollSpeed_ = 0.35f;
     float cylinderUVOffset_ = 0.0f;
+    float animationTime_ = 0.0f;
 
     bool isDebugCameraEnabled_ = false;
     float debugCameraMoveSpeed_ = 6.0f;

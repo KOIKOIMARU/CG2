@@ -16,6 +16,10 @@ namespace Math {
         float x, y, z, w;
     };
 
+    struct Quaternion {
+        float x, y, z, w;
+    };
+
     struct Matrix4x4 {
         float m[4][4];
     };
@@ -23,6 +27,12 @@ namespace Math {
     struct Transform {
         Vector3 scale;
         Vector3 rotate;
+        Vector3 translate;
+    };
+
+    struct QuaternionTransform {
+        Vector3 scale;
+        Quaternion rotate;
         Vector3 translate;
     };
 
@@ -130,6 +140,32 @@ namespace Math {
         return result;
     }
 
+    inline Matrix4x4 MakeRotateMatrix(const Quaternion& q)
+    {
+        Matrix4x4 result = MakeIdentity4x4();
+
+        const float xx = q.x * q.x;
+        const float yy = q.y * q.y;
+        const float zz = q.z * q.z;
+        const float xy = q.x * q.y;
+        const float xz = q.x * q.z;
+        const float yz = q.y * q.z;
+        const float wx = q.w * q.x;
+        const float wy = q.w * q.y;
+        const float wz = q.w * q.z;
+
+        result.m[0][0] = 1.0f - 2.0f * (yy + zz);
+        result.m[0][1] = 2.0f * (xy + wz);
+        result.m[0][2] = 2.0f * (xz - wy);
+        result.m[1][0] = 2.0f * (xy - wz);
+        result.m[1][1] = 1.0f - 2.0f * (xx + zz);
+        result.m[1][2] = 2.0f * (yz + wx);
+        result.m[2][0] = 2.0f * (xz + wy);
+        result.m[2][1] = 2.0f * (yz - wx);
+        result.m[2][2] = 1.0f - 2.0f * (xx + yy);
+        return result;
+    }
+
     inline Matrix4x4 MakeAffineMatrix(
         const Vector3& scale,
         const Vector3& rotate,
@@ -157,6 +193,31 @@ namespace Math {
 
         return result;
     }
+
+    inline Matrix4x4 MakeAffineMatrix(
+        const Vector3& scale,
+        const Quaternion& rotate,
+        const Vector3& translate)
+    {
+        Matrix4x4 result{};
+        Matrix4x4 rotateMatrix = MakeRotateMatrix(rotate);
+
+        result.m[0][0] = scale.x * rotateMatrix.m[0][0];
+        result.m[0][1] = scale.x * rotateMatrix.m[0][1];
+        result.m[0][2] = scale.x * rotateMatrix.m[0][2];
+        result.m[1][0] = scale.y * rotateMatrix.m[1][0];
+        result.m[1][1] = scale.y * rotateMatrix.m[1][1];
+        result.m[1][2] = scale.y * rotateMatrix.m[1][2];
+        result.m[2][0] = scale.z * rotateMatrix.m[2][0];
+        result.m[2][1] = scale.z * rotateMatrix.m[2][1];
+        result.m[2][2] = scale.z * rotateMatrix.m[2][2];
+        result.m[3][0] = translate.x;
+        result.m[3][1] = translate.y;
+        result.m[3][2] = translate.z;
+        result.m[3][3] = 1.0f;
+
+        return result;
+    }
     
     inline Matrix4x4 Transpose(const Matrix4x4& m)
     {
@@ -173,6 +234,14 @@ namespace Math {
         float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
         if (len == 0.0f) return { 0.0f, 0.0f, 0.0f };
         return { v.x / len, v.y / len, v.z / len };
+    }
+
+    inline Quaternion NormalizeQuaternion(const Quaternion& q) {
+        float len = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+        if (len == 0.0f) {
+            return { 0.0f, 0.0f, 0.0f, 1.0f };
+        }
+        return { q.x / len, q.y / len, q.z / len, q.w / len };
     }
 
     inline Matrix4x4 MakePerspectiveFovMatrix(
@@ -205,5 +274,6 @@ namespace Math {
 
     // 4x4行列の逆行列
     Matrix4x4 Inverse(const Matrix4x4& m);
+    Quaternion Slerp(const Quaternion& q0, const Quaternion& q1, float t);
 
 } // namespace Math
