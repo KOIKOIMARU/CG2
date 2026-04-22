@@ -32,6 +32,12 @@ struct Camera
     float padding;
 };
 
+struct WellForGPU
+{
+    float4x4 skeletonSpaceMatrix;
+    float4x4 skeletonSpaceInverseTransposeMatrix;
+};
+
 struct PointLight
 {
     float4 color;

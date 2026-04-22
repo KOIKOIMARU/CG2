@@ -12,6 +12,13 @@ class Camera;
 class ParticleEmitter;
 class Skybox;
 
+struct SkeletonDebugSet {
+    Object3d* source = nullptr;
+    std::vector<std::unique_ptr<Object3d>> joints;
+    std::vector<std::unique_ptr<Object3d>> bones;
+    Math::Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
 class GamePlayScene : public BaseScene {
 public:
     GamePlayScene();
@@ -24,6 +31,11 @@ public:
 
 private:
     void UpdateDebugCamera(float deltaTime);
+    void InitializeSkeletonDebugSet(
+        SkeletonDebugSet& debugSet,
+        Object3d* source,
+        const Math::Vector4& color);
+    void UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet);
 
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
@@ -33,7 +45,13 @@ private:
     std::unique_ptr<Object3d> cylinderObject_;
     std::unique_ptr<Object3d> sphereObject_;
     std::unique_ptr<Object3d> animatedCubeObject_;
+    std::unique_ptr<Object3d> simpleSkinObject_;
+    std::unique_ptr<Object3d> humanSneakObject_;
+    std::unique_ptr<Object3d> humanWalkObject_;
     std::vector<std::unique_ptr<Object3d>> primitiveObjects_;
+    SkeletonDebugSet simpleSkinDebug_;
+    SkeletonDebugSet humanSneakDebug_;
+    SkeletonDebugSet humanWalkDebug_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
     std::vector<Sprite> sprites_;
@@ -58,6 +76,8 @@ private:
     float cylinderUVScrollSpeed_ = 0.35f;
     float cylinderUVOffset_ = 0.0f;
     float animationTime_ = 0.0f;
+    bool showSkinningSamples_ = true;
+    bool showSkeletonDebug_ = true;
 
     bool isDebugCameraEnabled_ = false;
     float debugCameraMoveSpeed_ = 6.0f;

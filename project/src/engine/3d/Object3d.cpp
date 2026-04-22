@@ -1,5 +1,6 @@
 #include <vector>
 #include <fstream>
+#include <algorithm>
 #include <cmath>
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -26,6 +27,7 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
     CreateCameraResource();
     CreatePointLight();
     CreateSpotLight();
+    CreateSkinningPalette();
 
     transform_ = {
         {1.0f, 1.0f, 1.0f},
@@ -52,6 +54,7 @@ void Object3d::Update() {
             transform_.translate
         );
     }
+    worldMatrix_ = worldMatrix;
 
     Matrix4x4 worldViewProjectionMatrix;
 
@@ -77,6 +80,32 @@ void Object3d::Update() {
     }
 }
 
+void Object3d::UpdateAnimation(float deltaTime)
+{
+    if (!model_ || !hasSkeleton_) {
+        if (skinningPaletteData_) {
+            skinningPaletteData_->enableSkinning = 0;
+        }
+        return;
+    }
+
+    const Animation& animation = model_->GetAnimation();
+    if (animation.duration > 0.0f && model_->HasAnimation()) {
+        animationTime_ += deltaTime * animation.ticksPerSecond;
+        while (animationTime_ > animation.duration) {
+            animationTime_ -= animation.duration;
+        }
+        Model::ApplyAnimation(skeleton_, animation, animationTime_);
+    } else {
+        for (Joint& joint : skeleton_.joints) {
+            joint.transform = joint.bindPoseTransform;
+        }
+    }
+
+    Model::UpdateSkeleton(skeleton_);
+    UpdateSkinningPalette();
+}
+
 
 
 void Object3d::Draw()
@@ -99,6 +128,9 @@ void Object3d::Draw()
 
     commandList->SetGraphicsRootConstantBufferView(
         7, spotLightResource_->GetGPUVirtualAddress());
+
+    commandList->SetGraphicsRootConstantBufferView(
+        8, skinningPaletteResource_->GetGPUVirtualAddress());
 
     // Model 描画
     if (model_) {
@@ -193,6 +225,96 @@ void Object3d::CreateSpotLight() {
     spotLightData_->cosFalloffStart = std::cos(3.14159265f / 6.0f);
 }
 
+void Object3d::CreateSkinningPalette()
+{
+    auto dxCommon = object3dCommon_->GetDxCommon();
+
+    skinningPaletteResource_ =
+        dxCommon->CreateBufferResource(sizeof(SkinningPaletteForGPU));
+
+    skinningPaletteResource_->Map(
+        0, nullptr,
+        reinterpret_cast<void**>(&skinningPaletteData_));
+
+    skinningPaletteData_->enableSkinning = 0;
+    for (uint32_t jointIndex = 0; jointIndex < kNumMaxSkeletonJoints; ++jointIndex) {
+        skinningPaletteData_->palette[jointIndex].skeletonSpaceMatrix =
+            MakeIdentity4x4();
+        skinningPaletteData_->palette[jointIndex].skeletonSpaceInverseTransposeMatrix =
+            MakeIdentity4x4();
+    }
+}
+
+void Object3d::InitializeSkinning()
+{
+    hasSkeleton_ = false;
+    inverseBindPoseMatrices_.clear();
+    animationTime_ = 0.0f;
+
+    if (!model_ || !model_->HasSkinCluster()) {
+        if (skinningPaletteData_) {
+            skinningPaletteData_->enableSkinning = 0;
+        }
+        return;
+    }
+
+    skeleton_ = Model::CreateSkeleton(model_->GetRootNode());
+    inverseBindPoseMatrices_.assign(
+        skeleton_.joints.size(),
+        MakeIdentity4x4()
+    );
+
+    const SkinClusterData& skinClusterData = model_->GetSkinClusterData();
+    for (const auto& [jointName, jointWeightData] : skinClusterData.jointWeights) {
+        auto jointIt = skeleton_.jointMap.find(jointName);
+        if (jointIt == skeleton_.jointMap.end()) {
+            continue;
+        }
+
+        inverseBindPoseMatrices_[jointIt->second] =
+            jointWeightData.inverseBindPoseMatrix;
+    }
+
+    Model::UpdateSkeleton(skeleton_);
+    UpdateSkinningPalette();
+    hasSkeleton_ = true;
+}
+
+void Object3d::UpdateSkinningPalette()
+{
+    if (!skinningPaletteData_) {
+        return;
+    }
+
+    if (!hasSkeleton_) {
+        skinningPaletteData_->enableSkinning = 0;
+        return;
+    }
+
+    skinningPaletteData_->enableSkinning = 1;
+    const size_t jointCount =
+        std::min<size_t>(skeleton_.joints.size(), kNumMaxSkeletonJoints);
+
+    for (size_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
+        const Matrix4x4 skinningMatrix = Multiply(
+            inverseBindPoseMatrices_[jointIndex],
+            skeleton_.joints[jointIndex].skeletonSpaceMatrix
+        );
+
+        skinningPaletteData_->palette[jointIndex].skeletonSpaceMatrix =
+            Transpose(skinningMatrix);
+        skinningPaletteData_->palette[jointIndex].skeletonSpaceInverseTransposeMatrix =
+            Transpose(Inverse(skinningMatrix));
+    }
+
+    for (size_t jointIndex = jointCount; jointIndex < kNumMaxSkeletonJoints; ++jointIndex) {
+        skinningPaletteData_->palette[jointIndex].skeletonSpaceMatrix =
+            MakeIdentity4x4();
+        skinningPaletteData_->palette[jointIndex].skeletonSpaceInverseTransposeMatrix =
+            MakeIdentity4x4();
+    }
+}
+
 // ===== setter =====
 void Object3d::SetScale(const Vector3& scale) {
     transform_.scale = scale;
@@ -239,6 +361,12 @@ void Object3d::SetSpotLightDirection(const Vector3& direction) {
 
 void Object3d::SetSpotLightIntensity(float intensity) {
     spotLightData_->intensity = intensity;
+}
+
+void Object3d::SetModel(Model* model)
+{
+    model_ = model;
+    InitializeSkinning();
 }
 
 void Object3d::SetEnvironmentCoefficient(float coefficient)
@@ -300,4 +428,5 @@ float Object3d::GetEnvironmentCoefficient() const
 void Object3d::SetModel(const std::string& filePath)
 {
     model_ = ModelManager::GetInstance()->FindModel(filePath);
+    InitializeSkinning();
 }

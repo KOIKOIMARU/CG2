@@ -92,7 +92,7 @@ void Object3dCommon::CreateRootSignature() {
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	// RootParameter作成
-	D3D12_ROOT_PARAMETER rootParameters[8] = {};
+	D3D12_ROOT_PARAMETER rootParameters[9] = {};
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -144,6 +144,11 @@ void Object3dCommon::CreateRootSignature() {
 	rootParameters[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	rootParameters[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[7].Descriptor.ShaderRegister = 5;
+
+	// b6: SkinningPalette (VertexShader)
+	rootParameters[8].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+	rootParameters[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+	rootParameters[8].Descriptor.ShaderRegister = 6;
 
 	// ルートシグネチャのセットアップ
 	descriptionRootSignature.pParameters = rootParameters;
@@ -203,6 +208,16 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 
 				// NORMAL (float3)
 				{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+					D3D12_APPEND_ALIGNED_ELEMENT,
+					D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+
+				// BLENDWEIGHT (float4)
+				{ "BLENDWEIGHT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+					D3D12_APPEND_ALIGNED_ELEMENT,
+					D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+
+				// BLENDINDICES (uint4)
+				{ "BLENDINDICES", 0, DXGI_FORMAT_R32G32B32A32_UINT, 0,
 					D3D12_APPEND_ALIGNED_ELEMENT,
 					D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};

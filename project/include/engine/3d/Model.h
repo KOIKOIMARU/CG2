@@ -1,5 +1,8 @@
 #pragma once
+#include <array>
+#include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 #include <wrl.h>
@@ -10,6 +13,8 @@
 using Microsoft::WRL::ComPtr;
 using namespace Math;
 
+constexpr uint32_t kNumMaxInfluence = 4;
+
 // ===========================
 //  モデル用データ構造
 // ===========================
@@ -17,6 +22,8 @@ struct VertexData {
     Vector4 position;
     Vector2 texcoord;
     Vector3 normal;
+    Vector4 weight;
+    std::array<uint32_t, kNumMaxInfluence> jointIndices;
 };
 
 struct MaterialData {
@@ -48,11 +55,37 @@ struct Node {
     std::vector<Node> children;
 };
 
+struct JointWeightData {
+    Matrix4x4 inverseBindPoseMatrix;
+};
+
+struct SkinClusterData {
+    std::map<std::string, JointWeightData> jointWeights;
+};
+
+struct Joint {
+    QuaternionTransform transform;
+    QuaternionTransform bindPoseTransform;
+    Matrix4x4 localMatrix;
+    Matrix4x4 skeletonSpaceMatrix;
+    std::string name;
+    std::vector<int32_t> children;
+    std::optional<int32_t> parent;
+    int32_t index;
+};
+
+struct Skeleton {
+    int32_t root = -1;
+    std::map<std::string, int32_t> jointMap;
+    std::vector<Joint> joints;
+};
+
 struct ModelData {
     std::vector<VertexData> vertices;
     MaterialData material;
     Node rootNode;
     Animation animation;
+    SkinClusterData skinClusterData;
 };
 
 struct Material {
@@ -81,9 +114,14 @@ public:
     void SetLightingMode(int32_t lightingMode);
     const Animation& GetAnimation() const { return modelData_.animation; }
     const Node& GetRootNode() const { return modelData_.rootNode; }
+    const SkinClusterData& GetSkinClusterData() const { return modelData_.skinClusterData; }
     bool HasAnimation() const
     {
         return !modelData_.animation.nodeAnimations.empty();
+    }
+    bool HasSkinCluster() const
+    {
+        return !modelData_.skinClusterData.jointWeights.empty();
     }
 
     // Object3d が必要になったら使う用（次段階用）
@@ -95,6 +133,9 @@ public:
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadAssimpFile(const std::string& directoryPath, const std::string& filename);
     static QuaternionTransform CalculateValue(const NodeAnimation& nodeAnimation, float time);
+    static Skeleton CreateSkeleton(const Node& rootNode);
+    static void ApplyAnimation(Skeleton& skeleton, const Animation& animation, float time);
+    static void UpdateSkeleton(Skeleton& skeleton);
     static ModelData CreateTriangleData(float width, float height, const std::string& textureFilePath);
     static ModelData CreatePlaneData(float width, float height, const std::string& textureFilePath);
     static ModelData CreateCircleData(

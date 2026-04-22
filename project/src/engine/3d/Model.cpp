@@ -4,6 +4,7 @@
 #include <sstream>
 #include <cassert>
 #include <filesystem>
+#include <functional>
 #include <numbers>
 
 #include <assimp/Importer.hpp>
@@ -68,6 +69,93 @@ Vector3 TransformNormal(const Vector3& normal, const Matrix4x4& matrix)
     Vector4 transformed =
         TransformPosition({ normal.x, normal.y, normal.z, 0.0f }, matrix);
     return Normalize({ transformed.x, transformed.y, transformed.z });
+}
+
+VertexData MakeDefaultVertexData()
+{
+    return {
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 0.0f },
+        { 0.0f, 1.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f, 0.0f },
+        { 0, 0, 0, 0 }
+    };
+}
+
+void SetVertexInfluence(
+    VertexData& vertex,
+    uint32_t jointIndex,
+    float weight)
+{
+    for (uint32_t influenceIndex = 0; influenceIndex < kNumMaxInfluence; ++influenceIndex) {
+        if (vertex.weight.x == 0.0f && influenceIndex == 0) {
+            vertex.weight.x = weight;
+            vertex.jointIndices[0] = jointIndex;
+            return;
+        }
+        if (vertex.weight.y == 0.0f && influenceIndex == 1) {
+            vertex.weight.y = weight;
+            vertex.jointIndices[1] = jointIndex;
+            return;
+        }
+        if (vertex.weight.z == 0.0f && influenceIndex == 2) {
+            vertex.weight.z = weight;
+            vertex.jointIndices[2] = jointIndex;
+            return;
+        }
+        if (vertex.weight.w == 0.0f && influenceIndex == 3) {
+            vertex.weight.w = weight;
+            vertex.jointIndices[3] = jointIndex;
+            return;
+        }
+    }
+
+    float* weights[] = {
+        &vertex.weight.x,
+        &vertex.weight.y,
+        &vertex.weight.z,
+        &vertex.weight.w,
+    };
+
+    uint32_t minIndex = 0;
+    for (uint32_t i = 1; i < kNumMaxInfluence; ++i) {
+        if (*weights[i] < *weights[minIndex]) {
+            minIndex = i;
+        }
+    }
+
+    if (weight > *weights[minIndex]) {
+        *weights[minIndex] = weight;
+        vertex.jointIndices[minIndex] = jointIndex;
+    }
+}
+
+void NormalizeVertexInfluence(VertexData& vertex)
+{
+    const float totalWeight =
+        vertex.weight.x + vertex.weight.y + vertex.weight.z + vertex.weight.w;
+    if (totalWeight <= 0.0f) {
+        vertex.weight.x = 1.0f;
+        vertex.jointIndices[0] = 0;
+        return;
+    }
+
+    const float inverseTotalWeight = 1.0f / totalWeight;
+    vertex.weight.x *= inverseTotalWeight;
+    vertex.weight.y *= inverseTotalWeight;
+    vertex.weight.z *= inverseTotalWeight;
+    vertex.weight.w *= inverseTotalWeight;
+}
+
+void CollectNodeIndices(
+    const Node& node,
+    std::map<std::string, uint32_t>& nodeIndexMap,
+    uint32_t& nextIndex)
+{
+    nodeIndexMap[node.name] = nextIndex++;
+    for (const Node& child : node.children) {
+        CollectNodeIndices(child, nodeIndexMap, nextIndex);
+    }
 }
 
 Node ReadNode(aiNode* node)
@@ -173,7 +261,8 @@ void AppendAssimpNode(
     const aiScene* scene,
     const aiNode* node,
     const Matrix4x4& parentMatrix,
-    ModelData& modelData)
+    ModelData& modelData,
+    const std::map<std::string, uint32_t>& nodeIndexMap)
 {
     Matrix4x4 localMatrix =
         ConvertAiMatrixToMatrix4x4(node->mTransformation);
@@ -184,32 +273,69 @@ void AppendAssimpNode(
         assert(mesh);
         assert(mesh->HasNormals());
 
+        std::vector<VertexData> originalVertices(mesh->mNumVertices);
+        for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex) {
+            VertexData vertex = MakeDefaultVertexData();
+
+            const aiVector3D& position = mesh->mVertices[vertexIndex];
+            const aiVector3D& normal = mesh->mNormals[vertexIndex];
+
+            if (mesh->HasBones()) {
+                vertex.position = { position.x, position.y, position.z, 1.0f };
+                vertex.normal = Normalize({ normal.x, normal.y, normal.z });
+            } else {
+                vertex.position = TransformPosition(
+                    { position.x, position.y, position.z, 1.0f },
+                    worldMatrix);
+                vertex.normal = TransformNormal(
+                    { normal.x, normal.y, normal.z },
+                    worldMatrix);
+            }
+
+            if (mesh->HasTextureCoords(0)) {
+                const aiVector3D& uv = mesh->mTextureCoords[0][vertexIndex];
+                vertex.texcoord = { uv.x, uv.y };
+            }
+
+            originalVertices[vertexIndex] = vertex;
+        }
+
+        if (mesh->HasBones()) {
+            for (uint32_t boneIndex = 0; boneIndex < mesh->mNumBones; ++boneIndex) {
+                const aiBone* bone = mesh->mBones[boneIndex];
+                assert(bone);
+
+                const std::string jointName = bone->mName.C_Str();
+                auto jointIndexIt = nodeIndexMap.find(jointName);
+                if (jointIndexIt == nodeIndexMap.end()) {
+                    continue;
+                }
+
+                modelData.skinClusterData.jointWeights[jointName].inverseBindPoseMatrix =
+                    ConvertAiMatrixToMatrix4x4(bone->mOffsetMatrix);
+
+                for (uint32_t weightIndex = 0; weightIndex < bone->mNumWeights; ++weightIndex) {
+                    const aiVertexWeight& vertexWeight = bone->mWeights[weightIndex];
+                    SetVertexInfluence(
+                        originalVertices[vertexWeight.mVertexId],
+                        jointIndexIt->second,
+                        vertexWeight.mWeight
+                    );
+                }
+            }
+
+            for (VertexData& vertex : originalVertices) {
+                NormalizeVertexInfluence(vertex);
+            }
+        }
+
         for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
             const aiFace& face = mesh->mFaces[faceIndex];
             assert(face.mNumIndices == 3);
 
             for (uint32_t index = 0; index < face.mNumIndices; ++index) {
                 uint32_t vertexIndex = face.mIndices[index];
-                const aiVector3D& position = mesh->mVertices[vertexIndex];
-                const aiVector3D& normal = mesh->mNormals[vertexIndex];
-
-                Vector2 texcoord{ 0.0f, 0.0f };
-                if (mesh->HasTextureCoords(0)) {
-                    const aiVector3D& uv =
-                        mesh->mTextureCoords[0][vertexIndex];
-                    texcoord = { uv.x, uv.y };
-                }
-
-                VertexData vertex{};
-                vertex.position = TransformPosition(
-                    { position.x, position.y, position.z, 1.0f },
-                    worldMatrix);
-                vertex.texcoord = texcoord;
-                vertex.normal = TransformNormal(
-                    { normal.x, normal.y, normal.z },
-                    worldMatrix);
-
-                modelData.vertices.push_back(vertex);
+                modelData.vertices.push_back(originalVertices[vertexIndex]);
             }
         }
     }
@@ -219,7 +345,8 @@ void AppendAssimpNode(
             scene,
             node->mChildren[childIndex],
             worldMatrix,
-            modelData);
+            modelData,
+            nodeIndexMap);
     }
 }
 
@@ -524,11 +651,16 @@ ModelData Model::LoadAssimpFile(
     modelData.rootNode = ReadNode(scene->mRootNode);
     modelData.animation = ReadAnimation(scene);
 
+    std::map<std::string, uint32_t> nodeIndexMap;
+    uint32_t nextNodeIndex = 0;
+    CollectNodeIndices(modelData.rootNode, nodeIndexMap, nextNodeIndex);
+
     AppendAssimpNode(
         scene,
         scene->mRootNode,
         MakeIdentity4x4(),
-        modelData);
+        modelData,
+        nodeIndexMap);
 
     return modelData;
 }
@@ -607,6 +739,77 @@ QuaternionTransform Model::CalculateValue(
     );
 
     return result;
+}
+
+Skeleton Model::CreateSkeleton(const Node& rootNode)
+{
+    Skeleton skeleton;
+
+    std::function<int32_t(const Node&, std::optional<int32_t>)> createJoint =
+        [&](const Node& node, std::optional<int32_t> parent) -> int32_t {
+        const int32_t jointIndex = static_cast<int32_t>(skeleton.joints.size());
+        Joint joint{};
+        joint.name = node.name;
+        joint.transform = node.transform;
+        joint.bindPoseTransform = node.transform;
+        joint.localMatrix = node.localMatrix;
+        joint.skeletonSpaceMatrix = MakeIdentity4x4();
+        joint.parent = parent;
+        joint.index = jointIndex;
+
+        skeleton.joints.push_back(joint);
+        skeleton.jointMap[node.name] = jointIndex;
+
+        for (const Node& child : node.children) {
+            const int32_t childIndex = createJoint(child, jointIndex);
+            skeleton.joints[jointIndex].children.push_back(childIndex);
+        }
+
+        return jointIndex;
+    };
+
+    skeleton.root = createJoint(rootNode, std::nullopt);
+    return skeleton;
+}
+
+void Model::ApplyAnimation(
+    Skeleton& skeleton,
+    const Animation& animation,
+    float time)
+{
+    for (Joint& joint : skeleton.joints) {
+        joint.transform = joint.bindPoseTransform;
+    }
+
+    for (const auto& [jointName, nodeAnimation] : animation.nodeAnimations) {
+        auto jointIt = skeleton.jointMap.find(jointName);
+        if (jointIt == skeleton.jointMap.end()) {
+            continue;
+        }
+
+        skeleton.joints[jointIt->second].transform =
+            CalculateValue(nodeAnimation, time);
+    }
+}
+
+void Model::UpdateSkeleton(Skeleton& skeleton)
+{
+    for (Joint& joint : skeleton.joints) {
+        joint.localMatrix = MakeAffineMatrix(
+            joint.transform.scale,
+            joint.transform.rotate,
+            joint.transform.translate
+        );
+
+        if (joint.parent.has_value()) {
+            joint.skeletonSpaceMatrix = Multiply(
+                joint.localMatrix,
+                skeleton.joints[*joint.parent].skeletonSpaceMatrix
+            );
+        } else {
+            joint.skeletonSpaceMatrix = joint.localMatrix;
+        }
+    }
 }
 
 ModelData Model::CreatePlaneData(

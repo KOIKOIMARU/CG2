@@ -1,14 +1,15 @@
 #pragma once
+#include <vector>
 #include <wrl.h>
 #include <d3d12.h>
 
 #include "engine/base/Math.h"
+#include "engine/3d/Model.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace Math;
 
 class Object3dCommon;
-class Model;
 class Camera;
 
 struct TransformationMatrix {
@@ -50,13 +51,27 @@ struct SpotLight {
     float padding;
 };
 
+struct WellForGPU {
+    Matrix4x4 skeletonSpaceMatrix;
+    Matrix4x4 skeletonSpaceInverseTransposeMatrix;
+};
+
+constexpr uint32_t kNumMaxSkeletonJoints = 128;
+
+struct SkinningPaletteForGPU {
+    int32_t enableSkinning;
+    float padding[3];
+    WellForGPU palette[kNumMaxSkeletonJoints];
+};
+
 class Object3d {
 public:
     void Initialize(Object3dCommon* object3dCommon);
     void Update();
     void Draw();
+    void UpdateAnimation(float deltaTime);
 
-    void SetModel(Model* model) { model_ = model; }
+    void SetModel(Model* model);
 
     // setter
     void SetScale(const Vector3& scale);
@@ -75,6 +90,9 @@ public:
     void SetAlphaReference(float alphaReference);
     void SetUVTransform(const Matrix4x4& uvTransform);
     void SetLightingMode(int32_t lightingMode);
+    bool HasSkeleton() const { return hasSkeleton_; }
+    const Skeleton& GetSkeleton() const { return skeleton_; }
+    const Matrix4x4& GetWorldMatrix() const { return worldMatrix_; }
 
     // getter
     Vector3 GetScale() const;
@@ -93,6 +111,9 @@ private:
     void CreateCameraResource();
     void CreatePointLight();
     void CreateSpotLight();
+    void CreateSkinningPalette();
+    void InitializeSkinning();
+    void UpdateSkinningPalette();
 
 private:
     Object3dCommon* object3dCommon_ = nullptr;
@@ -102,6 +123,7 @@ private:
     Quaternion quaternionRotate_{ 0.0f, 0.0f, 0.0f, 1.0f };
     bool useQuaternionRotate_ = false;
     Camera* camera_ = nullptr;
+    Matrix4x4 worldMatrix_ = MakeIdentity4x4();
 
     ComPtr<ID3D12Resource> transformationMatrixResource_;
     TransformationMatrix* transformationMatrixData_ = nullptr;
@@ -117,4 +139,11 @@ private:
 
     ComPtr<ID3D12Resource> spotLightResource_;
     SpotLight* spotLightData_ = nullptr;
+
+    ComPtr<ID3D12Resource> skinningPaletteResource_;
+    SkinningPaletteForGPU* skinningPaletteData_ = nullptr;
+    Skeleton skeleton_{};
+    std::vector<Matrix4x4> inverseBindPoseMatrices_;
+    bool hasSkeleton_ = false;
+    float animationTime_ = 0.0f;
 };

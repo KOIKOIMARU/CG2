@@ -53,6 +53,27 @@ Math::Vector3 MakeRightVector(const Math::Vector3& rotate)
     });
 }
 
+Math::Vector3 ExtractTranslation(const Math::Matrix4x4& matrix)
+{
+    return {
+        matrix.m[3][0],
+        matrix.m[3][1],
+        matrix.m[3][2]
+    };
+}
+
+Math::Vector3 MakeBoneRotate(const Math::Vector3& direction)
+{
+    const float horizontalLength =
+        std::sqrt(direction.x * direction.x + direction.z * direction.z);
+
+    return {
+        std::atan2(-direction.y, horizontalLength),
+        std::atan2(direction.x, direction.z),
+        0.0f
+    };
+}
+
 } // namespace
 
 GamePlayScene::GamePlayScene() = default;
@@ -68,8 +89,8 @@ void GamePlayScene::Initialize() {
     object3dCommon_->SetEnvironmentTexturePath(environmentTexturePath);
 
     camera_ = std::make_unique<Camera>();
-    camera_->SetRotate({ 0.3f, 0.0f, 0.0f });
-    camera_->SetTranslate({ 0.0f, 4.0f, -10.0f });
+    camera_->SetRotate({ 0.2f, 0.0f, 0.0f });
+    camera_->SetTranslate({ 0.0f, 6.0f, -24.0f });
     object3dCommon_->SetDefaultCamera(camera_.get());
 
     skybox_ = std::make_unique<Skybox>();
@@ -115,6 +136,13 @@ void GamePlayScene::Initialize() {
         1.0f,
         "resources/uvChecker.png"
     );
+    ModelManager::GetInstance()->CreateSphere(
+        "debug_joint_sphere",
+        16,
+        32,
+        1.0f,
+        "resources/human/white.png"
+    );
     ModelManager::GetInstance()->CreateTorus(
         "primitive_torus",
         32,
@@ -145,7 +173,17 @@ void GamePlayScene::Initialize() {
         1.5f,
         "resources/uvChecker.png"
     );
+    ModelManager::GetInstance()->CreateBox(
+        "debug_bone_box",
+        1.0f,
+        1.0f,
+        1.0f,
+        "resources/human/white.png"
+    );
     ModelManager::GetInstance()->LoadModel("AnimatedCube/AnimatedCube.gltf");
+    ModelManager::GetInstance()->LoadModel("simpleSkin/simpleSkin.gltf");
+    ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
+    ModelManager::GetInstance()->LoadModel("human/walk.gltf");
 
     object3d_ = std::make_unique<Object3d>();
     object3d_->Initialize(object3dCommon_.get());
@@ -182,6 +220,40 @@ void GamePlayScene::Initialize() {
     animatedCubeObject_->SetTranslate({ 0.0f, 1.5f, -3.5f });
     animatedCubeObject_->SetScale({ 1.0f, 1.0f, 1.0f });
     animatedCubeObject_->SetEnvironmentCoefficient(0.0f);
+
+    simpleSkinObject_ = std::make_unique<Object3d>();
+    simpleSkinObject_->Initialize(object3dCommon_.get());
+    simpleSkinObject_->SetModel("simpleSkin/simpleSkin.gltf");
+    simpleSkinObject_->SetTranslate({ -7.0f, 0.0f, 0.0f });
+    simpleSkinObject_->SetEnvironmentCoefficient(0.0f);
+
+    humanSneakObject_ = std::make_unique<Object3d>();
+    humanSneakObject_->Initialize(object3dCommon_.get());
+    humanSneakObject_->SetModel("human/sneakWalk.gltf");
+    humanSneakObject_->SetTranslate({ 0.0f, 0.0f, 0.0f });
+    humanSneakObject_->SetEnvironmentCoefficient(0.0f);
+
+    humanWalkObject_ = std::make_unique<Object3d>();
+    humanWalkObject_->Initialize(object3dCommon_.get());
+    humanWalkObject_->SetModel("human/walk.gltf");
+    humanWalkObject_->SetTranslate({ 7.0f, 0.0f, 0.0f });
+    humanWalkObject_->SetEnvironmentCoefficient(0.0f);
+
+    InitializeSkeletonDebugSet(
+        simpleSkinDebug_,
+        simpleSkinObject_.get(),
+        { 1.0f, 1.0f, 1.0f, 1.0f }
+    );
+    InitializeSkeletonDebugSet(
+        humanSneakDebug_,
+        humanSneakObject_.get(),
+        { 1.0f, 1.0f, 1.0f, 1.0f }
+    );
+    InitializeSkeletonDebugSet(
+        humanWalkDebug_,
+        humanWalkObject_.get(),
+        { 1.0f, 1.0f, 1.0f, 1.0f }
+    );
 
     const std::pair<const char*, Math::Vector3> primitiveSamples[] = {
         { "primitive_triangle", { -4.5f, 1.0f, 3.0f } },
@@ -335,6 +407,45 @@ void GamePlayScene::Update() {
     animatedCubeObject_->SetSpotLightDirection(spotLightDirection_);
     animatedCubeObject_->SetSpotLightIntensity(spotLightIntensity_);
 
+    if (simpleSkinObject_) {
+        simpleSkinObject_->UpdateAnimation(deltaTime);
+        simpleSkinObject_->SetDirectionalLightDirection(lightDirection_);
+        simpleSkinObject_->SetDirectionalLightIntensity(lightIntensity_);
+        simpleSkinObject_->SetPointLightPosition(pointLightPosition_);
+        simpleSkinObject_->SetPointLightIntensity(pointLightIntensity_);
+        simpleSkinObject_->SetSpotLightPosition(spotLightPosition_);
+        simpleSkinObject_->SetSpotLightDirection(spotLightDirection_);
+        simpleSkinObject_->SetSpotLightIntensity(spotLightIntensity_);
+    }
+
+    if (humanSneakObject_) {
+        humanSneakObject_->UpdateAnimation(deltaTime);
+        humanSneakObject_->SetDirectionalLightDirection(lightDirection_);
+        humanSneakObject_->SetDirectionalLightIntensity(lightIntensity_);
+        humanSneakObject_->SetPointLightPosition(pointLightPosition_);
+        humanSneakObject_->SetPointLightIntensity(pointLightIntensity_);
+        humanSneakObject_->SetSpotLightPosition(spotLightPosition_);
+        humanSneakObject_->SetSpotLightDirection(spotLightDirection_);
+        humanSneakObject_->SetSpotLightIntensity(spotLightIntensity_);
+    }
+
+    if (humanWalkObject_) {
+        humanWalkObject_->UpdateAnimation(deltaTime);
+        humanWalkObject_->SetDirectionalLightDirection(lightDirection_);
+        humanWalkObject_->SetDirectionalLightIntensity(lightIntensity_);
+        humanWalkObject_->SetPointLightPosition(pointLightPosition_);
+        humanWalkObject_->SetPointLightIntensity(pointLightIntensity_);
+        humanWalkObject_->SetSpotLightPosition(spotLightPosition_);
+        humanWalkObject_->SetSpotLightDirection(spotLightDirection_);
+        humanWalkObject_->SetSpotLightIntensity(spotLightIntensity_);
+    }
+
+    if (showSkeletonDebug_) {
+        UpdateSkeletonDebugSet(simpleSkinDebug_);
+        UpdateSkeletonDebugSet(humanSneakDebug_);
+        UpdateSkeletonDebugSet(humanWalkDebug_);
+    }
+
     for (auto& primitiveObject : primitiveObjects_) {
         primitiveObject->SetRotate(objectRotate_);
         primitiveObject->SetDirectionalLightDirection(lightDirection_);
@@ -356,6 +467,35 @@ void GamePlayScene::Update() {
     cylinderObject_->Update();
     sphereObject_->Update();
     animatedCubeObject_->Update();
+    if (simpleSkinObject_) {
+        simpleSkinObject_->Update();
+    }
+    if (humanSneakObject_) {
+        humanSneakObject_->Update();
+    }
+    if (humanWalkObject_) {
+        humanWalkObject_->Update();
+    }
+    if (showSkeletonDebug_) {
+        for (auto& joint : simpleSkinDebug_.joints) {
+            joint->Update();
+        }
+        for (auto& bone : simpleSkinDebug_.bones) {
+            bone->Update();
+        }
+        for (auto& joint : humanSneakDebug_.joints) {
+            joint->Update();
+        }
+        for (auto& bone : humanSneakDebug_.bones) {
+            bone->Update();
+        }
+        for (auto& joint : humanWalkDebug_.joints) {
+            joint->Update();
+        }
+        for (auto& bone : humanWalkDebug_.bones) {
+            bone->Update();
+        }
+    }
     for (auto& primitiveObject : primitiveObjects_) {
         primitiveObject->Update();
     }
@@ -453,6 +593,39 @@ void GamePlayScene::Draw() {
         }
     }
 
+    if (showSkinningSamples_) {
+        if (simpleSkinObject_) {
+            simpleSkinObject_->Draw();
+        }
+        if (humanSneakObject_) {
+            humanSneakObject_->Draw();
+        }
+        if (humanWalkObject_) {
+            humanWalkObject_->Draw();
+        }
+    }
+
+    if (showSkinningSamples_ && showSkeletonDebug_) {
+        for (auto& bone : simpleSkinDebug_.bones) {
+            bone->Draw();
+        }
+        for (auto& joint : simpleSkinDebug_.joints) {
+            joint->Draw();
+        }
+        for (auto& bone : humanSneakDebug_.bones) {
+            bone->Draw();
+        }
+        for (auto& joint : humanSneakDebug_.joints) {
+            joint->Draw();
+        }
+        for (auto& bone : humanWalkDebug_.bones) {
+            bone->Draw();
+        }
+        for (auto& joint : humanWalkDebug_.joints) {
+            joint->Draw();
+        }
+    }
+
     if (showParticle_) {
         ParticleManager::GetInstance()->Draw();
     }
@@ -469,6 +642,15 @@ void GamePlayScene::Finalize() {
     ringObject_.reset();
     sphereObject_.reset();
     animatedCubeObject_.reset();
+    simpleSkinObject_.reset();
+    humanSneakObject_.reset();
+    humanWalkObject_.reset();
+    simpleSkinDebug_.joints.clear();
+    simpleSkinDebug_.bones.clear();
+    humanSneakDebug_.joints.clear();
+    humanSneakDebug_.bones.clear();
+    humanWalkDebug_.joints.clear();
+    humanWalkDebug_.bones.clear();
     primitiveObjects_.clear();
     object3d_.reset();
     skybox_.reset();
@@ -476,4 +658,112 @@ void GamePlayScene::Finalize() {
     object3dCommon_.reset();
 
     ModelManager::GetInstance()->Finalize();
+}
+
+void GamePlayScene::InitializeSkeletonDebugSet(
+    SkeletonDebugSet& debugSet,
+    Object3d* source,
+    const Math::Vector4& color)
+{
+    debugSet.source = source;
+    debugSet.color = color;
+    debugSet.joints.clear();
+    debugSet.bones.clear();
+
+    if (!source || !source->HasSkeleton()) {
+        return;
+    }
+
+    const Skeleton& skeleton = source->GetSkeleton();
+    debugSet.joints.reserve(skeleton.joints.size());
+    debugSet.bones.reserve(skeleton.joints.size());
+
+    for (size_t jointIndex = 0; jointIndex < skeleton.joints.size(); ++jointIndex) {
+        auto jointObject = std::make_unique<Object3d>();
+        jointObject->Initialize(object3dCommon_.get());
+        jointObject->SetModel("debug_joint_sphere");
+        jointObject->SetScale({ 0.045f, 0.045f, 0.045f });
+        jointObject->SetLightingMode(0);
+        jointObject->SetEnvironmentCoefficient(0.0f);
+        jointObject->SetColor(color);
+        debugSet.joints.push_back(std::move(jointObject));
+
+        if (skeleton.joints[jointIndex].parent.has_value()) {
+            auto boneObject = std::make_unique<Object3d>();
+            boneObject->Initialize(object3dCommon_.get());
+            boneObject->SetModel("debug_bone_box");
+            boneObject->SetLightingMode(0);
+            boneObject->SetEnvironmentCoefficient(0.0f);
+            boneObject->SetColor(color);
+            debugSet.bones.push_back(std::move(boneObject));
+        }
+    }
+}
+
+void GamePlayScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
+{
+    if (!debugSet.source || !debugSet.source->HasSkeleton()) {
+        return;
+    }
+
+    const Skeleton& skeleton = debugSet.source->GetSkeleton();
+    const Matrix4x4& worldMatrix = debugSet.source->GetWorldMatrix();
+
+    for (size_t jointIndex = 0; jointIndex < skeleton.joints.size(); ++jointIndex) {
+        const Matrix4x4 jointWorldMatrix = Multiply(
+            skeleton.joints[jointIndex].skeletonSpaceMatrix,
+            worldMatrix
+        );
+        const Math::Vector3 jointPosition = ExtractTranslation(jointWorldMatrix);
+
+        debugSet.joints[jointIndex]->SetTranslate(jointPosition);
+        debugSet.joints[jointIndex]->SetColor(debugSet.color);
+    }
+
+    size_t boneIndex = 0;
+    for (size_t jointIndex = 0; jointIndex < skeleton.joints.size(); ++jointIndex) {
+        const auto& joint = skeleton.joints[jointIndex];
+        if (!joint.parent.has_value()) {
+            continue;
+        }
+
+        const Matrix4x4 jointWorldMatrix = Multiply(
+            joint.skeletonSpaceMatrix,
+            worldMatrix
+        );
+        const Matrix4x4 parentWorldMatrix = Multiply(
+            skeleton.joints[*joint.parent].skeletonSpaceMatrix,
+            worldMatrix
+        );
+
+        const Math::Vector3 jointPosition = ExtractTranslation(jointWorldMatrix);
+        const Math::Vector3 parentPosition = ExtractTranslation(parentWorldMatrix);
+        const Math::Vector3 diff = Subtract(jointPosition, parentPosition);
+        const float length =
+            std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+
+        if (length <= 0.0001f) {
+            debugSet.bones[boneIndex]->SetScale({ 0.01f, 0.01f, 0.01f });
+            debugSet.bones[boneIndex]->SetTranslate(parentPosition);
+            ++boneIndex;
+            continue;
+        }
+
+        const Math::Vector3 direction = {
+            diff.x / length,
+            diff.y / length,
+            diff.z / length
+        };
+        const Math::Vector3 center = {
+            (jointPosition.x + parentPosition.x) * 0.5f,
+            (jointPosition.y + parentPosition.y) * 0.5f,
+            (jointPosition.z + parentPosition.z) * 0.5f
+        };
+
+        debugSet.bones[boneIndex]->SetScale({ 0.05f, 0.05f, length });
+        debugSet.bones[boneIndex]->SetRotate(MakeBoneRotate(direction));
+        debugSet.bones[boneIndex]->SetTranslate(center);
+        debugSet.bones[boneIndex]->SetColor(debugSet.color);
+        ++boneIndex;
+    }
 }
