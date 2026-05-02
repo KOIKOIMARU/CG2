@@ -64,6 +64,22 @@ struct SkinningPaletteForGPU {
     WellForGPU palette[kNumMaxSkeletonJoints];
 };
 
+struct SkinningVertexForCompute {
+    Vector4 position;
+    Vector2 texcoord;
+    Vector3 normal;
+};
+
+struct VertexInfluenceForCompute {
+    Vector4 weight;
+    std::array<int32_t, kNumMaxInfluence> jointIndices;
+};
+
+struct SkinningInformationForCompute {
+    uint32_t numVertices;
+    float padding[3];
+};
+
 class Object3d {
 public:
     void Initialize(Object3dCommon* object3dCommon);
@@ -112,8 +128,12 @@ private:
     void CreatePointLight();
     void CreateSpotLight();
     void CreateSkinningPalette();
+    void CreateComputeSkinningPipeline();
     void InitializeSkinning();
     void UpdateSkinningPalette();
+    void InitializeComputeSkinningResources();
+    void ReleaseComputeSkinningResources();
+    void DispatchComputeSkinning();
 
 private:
     Object3dCommon* object3dCommon_ = nullptr;
@@ -142,6 +162,22 @@ private:
 
     ComPtr<ID3D12Resource> skinningPaletteResource_;
     SkinningPaletteForGPU* skinningPaletteData_ = nullptr;
+    ComPtr<ID3D12RootSignature> computeRootSignature_;
+    ComPtr<ID3D12PipelineState> computePipelineState_;
+    ComPtr<ID3D12Resource> computeInputVertexResource_;
+    ComPtr<ID3D12Resource> computeInfluenceResource_;
+    ComPtr<ID3D12Resource> computeMatrixPaletteResource_;
+    ComPtr<ID3D12Resource> computeOutputVertexResource_;
+    ComPtr<ID3D12Resource> computeSkinningInfoResource_;
+    WellForGPU* computeMatrixPaletteData_ = nullptr;
+    SkinningInformationForCompute* computeSkinningInfoData_ = nullptr;
+    D3D12_VERTEX_BUFFER_VIEW computeOutputVertexBufferView_{};
+    D3D12_RESOURCE_STATES computeOutputVertexState_ = D3D12_RESOURCE_STATE_COMMON;
+    uint32_t computePaletteSrvIndex_ = UINT32_MAX;
+    uint32_t computeInputVertexSrvIndex_ = UINT32_MAX;
+    uint32_t computeInfluenceSrvIndex_ = UINT32_MAX;
+    uint32_t computeOutputVertexUavIndex_ = UINT32_MAX;
+    bool enableComputeSkinning_ = false;
     Skeleton skeleton_{};
     std::vector<Matrix4x4> inverseBindPoseMatrices_;
     bool hasSkeleton_ = false;

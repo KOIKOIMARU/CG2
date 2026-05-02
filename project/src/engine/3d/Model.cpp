@@ -447,14 +447,16 @@ void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
     );
 }
 
-void Model::Draw()
+void Model::Draw(const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView)
 {
     auto dxCommon = modelCommon_->GetDxCommon();
     auto commandList = dxCommon->GetCommandList();
     auto srvManager = modelCommon_->GetSrvManager();
 
     // VB
-    commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
+    const D3D12_VERTEX_BUFFER_VIEW* vertexBufferView =
+        overrideVertexBufferView ? overrideVertexBufferView : &vertexBufferView_;
+    commandList->IASetVertexBuffers(0, 1, vertexBufferView);
     commandList->IASetIndexBuffer(&indexBufferView_);
 
     // Material CBV

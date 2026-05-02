@@ -12,6 +12,7 @@
 #include "engine/3d/Model.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Camera.h"
+#include "engine/base/SrvManager.h"
 
 
 
@@ -28,6 +29,7 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
     CreatePointLight();
     CreateSpotLight();
     CreateSkinningPalette();
+    CreateComputeSkinningPipeline();
 
     transform_ = {
         {1.0f, 1.0f, 1.0f},
@@ -133,8 +135,30 @@ void Object3d::Draw()
         8, skinningPaletteResource_->GetGPUVirtualAddress());
 
     // Model 描画
+    if (enableComputeSkinning_) {
+        DispatchComputeSkinning();
+        object3dCommon_->CommonDrawSetting();
+    }
+
+    commandList->SetGraphicsRootConstantBufferView(
+        1, transformationMatrixResource_->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(
+        2, cameraResource_->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(
+        5, directionalLightResource_->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(
+        6, pointLightResource_->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(
+        7, spotLightResource_->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(
+        8, skinningPaletteResource_->GetGPUVirtualAddress());
+
     if (model_) {
-        model_->Draw();
+        if (enableComputeSkinning_) {
+            model_->Draw(&computeOutputVertexBufferView_);
+        } else {
+            model_->Draw();
+        }
     }
 }
 
@@ -245,11 +269,315 @@ void Object3d::CreateSkinningPalette()
     }
 }
 
+void Object3d::CreateComputeSkinningPipeline()
+{
+    auto* device = object3dCommon_->GetDxCommon()->GetDevice();
+    HRESULT hr = S_OK;
+
+    D3D12_DESCRIPTOR_RANGE descriptorRanges[4]{};
+    descriptorRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRanges[0].NumDescriptors = 1;
+    descriptorRanges[0].BaseShaderRegister = 0;
+    descriptorRanges[0].OffsetInDescriptorsFromTableStart =
+        D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    descriptorRanges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRanges[1].NumDescriptors = 1;
+    descriptorRanges[1].BaseShaderRegister = 1;
+    descriptorRanges[1].OffsetInDescriptorsFromTableStart =
+        D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    descriptorRanges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRanges[2].NumDescriptors = 1;
+    descriptorRanges[2].BaseShaderRegister = 2;
+    descriptorRanges[2].OffsetInDescriptorsFromTableStart =
+        D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    descriptorRanges[3].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    descriptorRanges[3].NumDescriptors = 1;
+    descriptorRanges[3].BaseShaderRegister = 0;
+    descriptorRanges[3].OffsetInDescriptorsFromTableStart =
+        D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    D3D12_ROOT_PARAMETER rootParameters[5]{};
+    for (uint32_t parameterIndex = 0; parameterIndex < 4; ++parameterIndex) {
+        rootParameters[parameterIndex].ParameterType =
+            D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameters[parameterIndex].ShaderVisibility =
+            D3D12_SHADER_VISIBILITY_ALL;
+        rootParameters[parameterIndex].DescriptorTable.pDescriptorRanges =
+            &descriptorRanges[parameterIndex];
+        rootParameters[parameterIndex].DescriptorTable.NumDescriptorRanges = 1;
+    }
+
+    rootParameters[4].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[4].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    rootParameters[4].Descriptor.ShaderRegister = 0;
+
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+    rootSignatureDesc.pParameters = rootParameters;
+    rootSignatureDesc.NumParameters = _countof(rootParameters);
+
+    ID3DBlob* signatureBlob = nullptr;
+    ID3DBlob* errorBlob = nullptr;
+    hr = D3D12SerializeRootSignature(
+        &rootSignatureDesc,
+        D3D_ROOT_SIGNATURE_VERSION_1,
+        &signatureBlob,
+        &errorBlob
+    );
+    if (FAILED(hr)) {
+        assert(false);
+    }
+
+    hr = device->CreateRootSignature(
+        0,
+        signatureBlob->GetBufferPointer(),
+        signatureBlob->GetBufferSize(),
+        IID_PPV_ARGS(&computeRootSignature_)
+    );
+    assert(SUCCEEDED(hr));
+
+    auto computeShaderBlob =
+        object3dCommon_->GetDxCommon()->CompileShader(
+            L"shaders/Skinning.CS.hlsl",
+            L"cs_6_0"
+        );
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc{};
+    computePipelineStateDesc.pRootSignature = computeRootSignature_.Get();
+    computePipelineStateDesc.CS = {
+        computeShaderBlob->GetBufferPointer(),
+        computeShaderBlob->GetBufferSize()
+    };
+
+    hr = device->CreateComputePipelineState(
+        &computePipelineStateDesc,
+        IID_PPV_ARGS(&computePipelineState_)
+    );
+    assert(SUCCEEDED(hr));
+}
+
+void Object3d::ReleaseComputeSkinningResources()
+{
+    if (!object3dCommon_) {
+        return;
+    }
+
+    SrvManager* srvManager = object3dCommon_->GetSrvManager();
+    if (srvManager) {
+        if (computePaletteSrvIndex_ != UINT32_MAX) {
+            srvManager->Free(computePaletteSrvIndex_);
+        }
+        if (computeInputVertexSrvIndex_ != UINT32_MAX) {
+            srvManager->Free(computeInputVertexSrvIndex_);
+        }
+        if (computeInfluenceSrvIndex_ != UINT32_MAX) {
+            srvManager->Free(computeInfluenceSrvIndex_);
+        }
+        if (computeOutputVertexUavIndex_ != UINT32_MAX) {
+            srvManager->Free(computeOutputVertexUavIndex_);
+        }
+    }
+
+    computePaletteSrvIndex_ = UINT32_MAX;
+    computeInputVertexSrvIndex_ = UINT32_MAX;
+    computeInfluenceSrvIndex_ = UINT32_MAX;
+    computeOutputVertexUavIndex_ = UINT32_MAX;
+    computeInputVertexResource_.Reset();
+    computeInfluenceResource_.Reset();
+    computeMatrixPaletteResource_.Reset();
+    computeOutputVertexResource_.Reset();
+    computeSkinningInfoResource_.Reset();
+    computeMatrixPaletteData_ = nullptr;
+    computeSkinningInfoData_ = nullptr;
+    computeOutputVertexBufferView_ = {};
+    computeOutputVertexState_ = D3D12_RESOURCE_STATE_COMMON;
+}
+
+void Object3d::InitializeComputeSkinningResources()
+{
+    if (!model_ || !hasSkeleton_) {
+        return;
+    }
+
+    auto* dxCommon = object3dCommon_->GetDxCommon();
+    auto* srvManager = object3dCommon_->GetSrvManager();
+    const auto& vertices = model_->GetVertices();
+    if (vertices.empty()) {
+        return;
+    }
+
+    std::vector<SkinningVertexForCompute> inputVertices(vertices.size());
+    std::vector<VertexInfluenceForCompute> influences(vertices.size());
+    for (size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex) {
+        inputVertices[vertexIndex].position = vertices[vertexIndex].position;
+        inputVertices[vertexIndex].texcoord = vertices[vertexIndex].texcoord;
+        inputVertices[vertexIndex].normal = vertices[vertexIndex].normal;
+        influences[vertexIndex].weight = vertices[vertexIndex].weight;
+        for (uint32_t influenceIndex = 0; influenceIndex < kNumMaxInfluence; ++influenceIndex) {
+            influences[vertexIndex].jointIndices[influenceIndex] =
+                static_cast<int32_t>(vertices[vertexIndex].jointIndices[influenceIndex]);
+        }
+    }
+
+    computeInputVertexResource_ = dxCommon->CreateBufferResource(
+        sizeof(SkinningVertexForCompute) * inputVertices.size());
+    SkinningVertexForCompute* mappedInputVertices = nullptr;
+    computeInputVertexResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&mappedInputVertices)
+    );
+    memcpy(
+        mappedInputVertices,
+        inputVertices.data(),
+        sizeof(SkinningVertexForCompute) * inputVertices.size()
+    );
+    computeInputVertexResource_->Unmap(0, nullptr);
+
+    computeInfluenceResource_ = dxCommon->CreateBufferResource(
+        sizeof(VertexInfluenceForCompute) * influences.size());
+    VertexInfluenceForCompute* mappedInfluences = nullptr;
+    computeInfluenceResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&mappedInfluences)
+    );
+    memcpy(
+        mappedInfluences,
+        influences.data(),
+        sizeof(VertexInfluenceForCompute) * influences.size()
+    );
+    computeInfluenceResource_->Unmap(0, nullptr);
+
+    computeMatrixPaletteResource_ = dxCommon->CreateBufferResource(
+        sizeof(WellForGPU) * kNumMaxSkeletonJoints);
+    computeMatrixPaletteResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&computeMatrixPaletteData_)
+    );
+
+    computeSkinningInfoResource_ = dxCommon->CreateBufferResource(
+        sizeof(SkinningInformationForCompute));
+    computeSkinningInfoResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&computeSkinningInfoData_)
+    );
+    computeSkinningInfoData_->numVertices = static_cast<uint32_t>(vertices.size());
+
+    computeOutputVertexResource_ = dxCommon->CreateBufferResource(
+        sizeof(VertexData) * vertices.size(),
+        D3D12_HEAP_TYPE_DEFAULT,
+        D3D12_RESOURCE_STATE_COMMON,
+        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+    );
+    computeOutputVertexBufferView_.BufferLocation =
+        computeOutputVertexResource_->GetGPUVirtualAddress();
+    computeOutputVertexBufferView_.SizeInBytes =
+        static_cast<UINT>(sizeof(VertexData) * vertices.size());
+    computeOutputVertexBufferView_.StrideInBytes = sizeof(VertexData);
+    computeOutputVertexState_ = D3D12_RESOURCE_STATE_COMMON;
+
+    computePaletteSrvIndex_ = srvManager->Allocate();
+    computeInputVertexSrvIndex_ = srvManager->Allocate();
+    computeInfluenceSrvIndex_ = srvManager->Allocate();
+    computeOutputVertexUavIndex_ = srvManager->Allocate();
+
+    srvManager->CreateSRVforStructuredBuffer(
+        computePaletteSrvIndex_,
+        computeMatrixPaletteResource_.Get(),
+        kNumMaxSkeletonJoints,
+        sizeof(WellForGPU)
+    );
+    srvManager->CreateSRVforStructuredBuffer(
+        computeInputVertexSrvIndex_,
+        computeInputVertexResource_.Get(),
+        static_cast<UINT>(inputVertices.size()),
+        sizeof(SkinningVertexForCompute)
+    );
+    srvManager->CreateSRVforStructuredBuffer(
+        computeInfluenceSrvIndex_,
+        computeInfluenceResource_.Get(),
+        static_cast<UINT>(influences.size()),
+        sizeof(VertexInfluenceForCompute)
+    );
+    srvManager->CreateUAVforStructuredBuffer(
+        computeOutputVertexUavIndex_,
+        computeOutputVertexResource_.Get(),
+        static_cast<UINT>(vertices.size()),
+        sizeof(VertexData)
+    );
+
+    enableComputeSkinning_ = true;
+    UpdateSkinningPalette();
+}
+
+void Object3d::DispatchComputeSkinning()
+{
+    if (!enableComputeSkinning_ || !model_) {
+        return;
+    }
+
+    auto* dxCommon = object3dCommon_->GetDxCommon();
+    auto* srvManager = object3dCommon_->GetSrvManager();
+    auto* commandList = dxCommon->GetCommandList();
+    const uint32_t vertexCount = static_cast<uint32_t>(model_->GetVertexCount());
+    if (vertexCount == 0) {
+        return;
+    }
+
+    srvManager->PreDraw();
+
+    if (computeOutputVertexState_ != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = computeOutputVertexResource_.Get();
+        barrier.Transition.StateBefore = computeOutputVertexState_;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList->ResourceBarrier(1, &barrier);
+        computeOutputVertexState_ = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
+
+    commandList->SetComputeRootSignature(computeRootSignature_.Get());
+    commandList->SetPipelineState(computePipelineState_.Get());
+    srvManager->SetComputeRootDescriptorTable(0, computePaletteSrvIndex_);
+    srvManager->SetComputeRootDescriptorTable(1, computeInputVertexSrvIndex_);
+    srvManager->SetComputeRootDescriptorTable(2, computeInfluenceSrvIndex_);
+    srvManager->SetComputeRootDescriptorTable(3, computeOutputVertexUavIndex_);
+    commandList->SetComputeRootConstantBufferView(
+        4,
+        computeSkinningInfoResource_->GetGPUVirtualAddress()
+    );
+    commandList->Dispatch((vertexCount + 1023u) / 1024u, 1, 1);
+
+    D3D12_RESOURCE_BARRIER uavBarrier{};
+    uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    uavBarrier.UAV.pResource = computeOutputVertexResource_.Get();
+    commandList->ResourceBarrier(1, &uavBarrier);
+
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = computeOutputVertexResource_.Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.StateAfter =
+        D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList->ResourceBarrier(1, &barrier);
+    computeOutputVertexState_ = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+}
+
 void Object3d::InitializeSkinning()
 {
     hasSkeleton_ = false;
+    enableComputeSkinning_ = false;
     inverseBindPoseMatrices_.clear();
     animationTime_ = 0.0f;
+    ReleaseComputeSkinningResources();
 
     if (!model_ || !model_->HasSkinCluster()) {
         if (skinningPaletteData_) {
@@ -278,6 +606,7 @@ void Object3d::InitializeSkinning()
     Model::UpdateSkeleton(skeleton_);
     UpdateSkinningPalette();
     hasSkeleton_ = true;
+    InitializeComputeSkinningResources();
 }
 
 void Object3d::UpdateSkinningPalette()
@@ -291,7 +620,7 @@ void Object3d::UpdateSkinningPalette()
         return;
     }
 
-    skinningPaletteData_->enableSkinning = 1;
+    skinningPaletteData_->enableSkinning = enableComputeSkinning_ ? 0 : 1;
     const size_t jointCount =
         std::min<size_t>(skeleton_.joints.size(), kNumMaxSkeletonJoints);
 
@@ -305,6 +634,13 @@ void Object3d::UpdateSkinningPalette()
             Transpose(skinningMatrix);
         skinningPaletteData_->palette[jointIndex].skeletonSpaceInverseTransposeMatrix =
             Transpose(Inverse(skinningMatrix));
+
+        if (computeMatrixPaletteData_) {
+            computeMatrixPaletteData_[jointIndex].skeletonSpaceMatrix =
+                Transpose(skinningMatrix);
+            computeMatrixPaletteData_[jointIndex].skeletonSpaceInverseTransposeMatrix =
+                Transpose(Inverse(skinningMatrix));
+        }
     }
 
     for (size_t jointIndex = jointCount; jointIndex < kNumMaxSkeletonJoints; ++jointIndex) {
@@ -312,6 +648,13 @@ void Object3d::UpdateSkinningPalette()
             MakeIdentity4x4();
         skinningPaletteData_->palette[jointIndex].skeletonSpaceInverseTransposeMatrix =
             MakeIdentity4x4();
+
+        if (computeMatrixPaletteData_) {
+            computeMatrixPaletteData_[jointIndex].skeletonSpaceMatrix =
+                MakeIdentity4x4();
+            computeMatrixPaletteData_[jointIndex].skeletonSpaceInverseTransposeMatrix =
+                MakeIdentity4x4();
+        }
     }
 }
 

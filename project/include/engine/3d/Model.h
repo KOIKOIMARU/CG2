@@ -106,7 +106,7 @@ class Model {
 public:
     void Initialize(ModelCommon* modelCommon, const std::string& directoryPath, const std::string& filename);
     void Initialize(ModelCommon* modelCommon, const ModelData& modelData);
-    void Draw();
+    void Draw(const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView = nullptr);
     void SetEnvironmentCoefficient(float coefficient);
     float GetEnvironmentCoefficient() const;
     void SetColor(const Vector4& color);
@@ -131,6 +131,7 @@ public:
     ID3D12Resource* GetMaterialResource() const { return materialResource_.Get(); }
     size_t GetVertexCount() const { return modelData_.vertices.size(); }
     size_t GetIndexCount() const { return modelData_.indices.size(); }
+    const std::vector<VertexData>& GetVertices() const { return modelData_.vertices; }
 
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);

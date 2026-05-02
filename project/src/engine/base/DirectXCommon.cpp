@@ -633,6 +633,41 @@ DirectXCommon::CreateBufferResource(size_t sizeInBytes)
 }
 
 Microsoft::WRL::ComPtr<ID3D12Resource>
+DirectXCommon::CreateBufferResource(
+    size_t sizeInBytes,
+    D3D12_HEAP_TYPE heapType,
+    D3D12_RESOURCE_STATES initialState,
+    D3D12_RESOURCE_FLAGS resourceFlags)
+{
+    assert(device_);
+
+    D3D12_HEAP_PROPERTIES heapProps{};
+    heapProps.Type = heapType;
+
+    D3D12_RESOURCE_DESC resDesc{};
+    resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    resDesc.Width = sizeInBytes;
+    resDesc.Height = 1;
+    resDesc.DepthOrArraySize = 1;
+    resDesc.MipLevels = 1;
+    resDesc.SampleDesc.Count = 1;
+    resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    resDesc.Flags = resourceFlags;
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+    HRESULT hr = device_->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &resDesc,
+        initialState,
+        nullptr,
+        IID_PPV_ARGS(&resource));
+    assert(SUCCEEDED(hr));
+
+    return resource;
+}
+
+Microsoft::WRL::ComPtr<ID3D12Resource>
 DirectXCommon::CreateTextureResource(const DirectX::TexMetadata& metadata)
 {
     assert(device_);

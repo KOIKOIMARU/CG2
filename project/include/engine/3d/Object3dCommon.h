@@ -38,7 +38,8 @@ public:
             [static_cast<size_t>(blendMode_)].Get();
     }
 
-    DirectXCommon* GetDxCommon() const { return dxCommon_; } // 資料の getter
+    DirectXCommon* GetDxCommon() const { return dxCommon_; }
+    SrvManager* GetSrvManager() const { return srvManager_; }
 
     void CommonDrawSetting();
     void SetBlendMode(BlendMode blendMode) { blendMode_ = blendMode; }
@@ -69,9 +70,8 @@ private:
     void CreateGraphicsPipelineState();
 
 private:
-    DirectXCommon* dxCommon_ = nullptr; // 借り物。絶対 delete しない
+    DirectXCommon* dxCommon_ = nullptr;
     SrvManager* srvManager_ = nullptr;
-
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
     std::array<

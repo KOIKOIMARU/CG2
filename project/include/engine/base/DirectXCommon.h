@@ -47,6 +47,11 @@ public:
 
     // バッファリソース生成
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(size_t sizeInBytes);
+    Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(
+        size_t sizeInBytes,
+        D3D12_HEAP_TYPE heapType,
+        D3D12_RESOURCE_STATES initialState,
+        D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_NONE);
 
     // テクスチャリソース生成
     Microsoft::WRL::ComPtr<ID3D12Resource>

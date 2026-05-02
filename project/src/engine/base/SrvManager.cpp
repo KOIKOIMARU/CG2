@@ -159,6 +159,31 @@ void SrvManager::CreateSRVforStructuredBuffer(
     );
 }
 
+void SrvManager::CreateUAVforStructuredBuffer(
+    uint32_t srvIndex,
+    ID3D12Resource* resource,
+    UINT numElements,
+    UINT structureByteStride)
+{
+    assert(resource);
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+    uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+    uavDesc.Buffer.FirstElement = 0;
+    uavDesc.Buffer.NumElements = numElements;
+    uavDesc.Buffer.CounterOffsetInBytes = 0;
+    uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+    uavDesc.Buffer.StructureByteStride = structureByteStride;
+
+    directXCommon_->GetDevice()->CreateUnorderedAccessView(
+        resource,
+        nullptr,
+        &uavDesc,
+        GetCPUDescriptorHandle(srvIndex)
+    );
+}
+
 void SrvManager::PreDraw()
 {
     ID3D12DescriptorHeap* heaps[] = { descriptorHeap_.Get() };
@@ -170,6 +195,16 @@ void SrvManager::SetGraphicsRootDescriptorTable(
     uint32_t srvIndex)
 {
     directXCommon_->GetCommandList()->SetGraphicsRootDescriptorTable(
+        rootParameterIndex,
+        GetGPUDescriptorHandle(srvIndex)
+    );
+}
+
+void SrvManager::SetComputeRootDescriptorTable(
+    UINT rootParameterIndex,
+    uint32_t srvIndex)
+{
+    directXCommon_->GetCommandList()->SetComputeRootDescriptorTable(
         rootParameterIndex,
         GetGPUDescriptorHandle(srvIndex)
     );

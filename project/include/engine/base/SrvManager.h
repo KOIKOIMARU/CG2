@@ -45,11 +45,23 @@ public:
         UINT structureByteStride
     );
 
+    void CreateUAVforStructuredBuffer(
+        uint32_t srvIndex,
+        ID3D12Resource* resource,
+        UINT numElements,
+        UINT structureByteStride
+    );
+
     // ===== 描画前処理 =====
     void PreDraw();
 
     // ===== 描画時SRVセット =====
     void SetGraphicsRootDescriptorTable(
+        UINT rootParameterIndex,
+        uint32_t srvIndex
+    );
+
+    void SetComputeRootDescriptorTable(
         UINT rootParameterIndex,
         uint32_t srvIndex
     );
