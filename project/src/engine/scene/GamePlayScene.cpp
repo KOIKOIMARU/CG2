@@ -286,8 +286,8 @@ void GamePlayScene::Initialize() {
     emitter_ = std::make_unique<ParticleEmitter>(
         "test",
         Math::Vector3{ 0.0f, 2.0f, 0.0f },
-        0.15f,
-        8
+        0.5f,
+        10
     );
 }
 

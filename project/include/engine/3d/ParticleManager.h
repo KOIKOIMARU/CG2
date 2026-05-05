@@ -74,6 +74,23 @@ private:
         Math::Matrix4x4 billboardMatrix;
     };
 
+    struct EmitterSphere
+    {
+        Math::Vector3 translate;
+        float radius;
+        uint32_t count;
+        float frequency;
+        float frequencyTime;
+        uint32_t emit;
+    };
+
+    struct PerFrame
+    {
+        float time;
+        float deltaTime;
+        Math::Vector2 padding;
+    };
+
     // ============================
     // パーティクルグループ
     // ============================
@@ -89,11 +106,17 @@ private:
         // --- インスタンシング ---
         uint32_t particleSrvIndex = UINT32_MAX;
         uint32_t particleUavIndex = UINT32_MAX;
+        uint32_t freeCounterUavIndex = UINT32_MAX;
         uint32_t instanceCount = 0;
         bool needsInitialize = true;
+        bool needsEmit = false;
 
         Microsoft::WRL::ComPtr<ID3D12Resource> particleResource;
+        Microsoft::WRL::ComPtr<ID3D12Resource> freeCounterResource;
+        Microsoft::WRL::ComPtr<ID3D12Resource> emitterResource;
+        EmitterSphere* emitterData = nullptr;
         D3D12_RESOURCE_STATES particleResourceState = D3D12_RESOURCE_STATE_COMMON;
+        D3D12_RESOURCE_STATES freeCounterResourceState = D3D12_RESOURCE_STATE_COMMON;
     };
 
 private:
@@ -110,15 +133,22 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> initializeRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> initializePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> emitRootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> emitPipelineState_;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_;
     D3D12_VERTEX_BUFFER_VIEW vbView_{};
     Microsoft::WRL::ComPtr<ID3D12Resource> perViewResource_;
     PerView* perViewData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> perFrameResource_;
+    PerFrame* perFrameData_ = nullptr;
+    float totalTime_ = 0.0f;
 
     static constexpr uint32_t kMaxInstanceCount_ = 1024;
 
     void CreateInitializePipeline();
+    void CreateEmitPipeline();
     void DispatchInitialize(ParticleGroup& group);
+    void DispatchEmit(ParticleGroup& group);
 
 };
