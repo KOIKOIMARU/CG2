@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <random>
+#include <cstdint>
 
 
 
@@ -57,9 +58,20 @@ private:
     // ============================
     // インスタンシング用構造体
     // ============================
-    struct ParticleInstanceData
+    struct ParticleCS
     {
-        Math::Matrix4x4 WVP;
+        Math::Vector3 translate;
+        Math::Vector3 scale;
+        float lifeTime;
+        Math::Vector3 velocity;
+        float currentTime;
+        Math::Vector4 color;
+    };
+
+    struct PerView
+    {
+        Math::Matrix4x4 viewProjection;
+        Math::Matrix4x4 billboardMatrix;
     };
 
     // ============================
@@ -75,11 +87,13 @@ private:
         std::list<Particle> particles;
 
         // --- インスタンシング ---
-        uint32_t instanceSrvIndex = 0;
+        uint32_t particleSrvIndex = UINT32_MAX;
+        uint32_t particleUavIndex = UINT32_MAX;
         uint32_t instanceCount = 0;
+        bool needsInitialize = true;
 
-        Microsoft::WRL::ComPtr<ID3D12Resource> instanceResource;
-        ParticleInstanceData* instanceData = nullptr;
+        Microsoft::WRL::ComPtr<ID3D12Resource> particleResource;
+        D3D12_RESOURCE_STATES particleResourceState = D3D12_RESOURCE_STATE_COMMON;
     };
 
 private:
@@ -94,10 +108,17 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> initializeRootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> initializePipelineState_;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_;
     D3D12_VERTEX_BUFFER_VIEW vbView_{};
+    Microsoft::WRL::ComPtr<ID3D12Resource> perViewResource_;
+    PerView* perViewData_ = nullptr;
 
     static constexpr uint32_t kMaxInstanceCount_ = 1024;
+
+    void CreateInitializePipeline();
+    void DispatchInitialize(ParticleGroup& group);
 
 };

@@ -1,7 +1,8 @@
 #include "engine/3d/ParticleManager.h"
 
-#include <cassert>
 #include <array>
+#include <cassert>
+#include <cstring>
 
 
 #include "engine/base/DirectXCommon.h"
@@ -72,17 +73,28 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     vbView_.SizeInBytes = UINT(sizeof(vertices));
     vbView_.StrideInBytes = UINT(sizeof(ParticleVertex));
 
+    // ===== Viewごとの情報 =====
+    perViewResource_ = dxCommon_->CreateBufferResource(256);
+    perViewResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&perViewData_)
+    );
+    perViewData_->viewProjection = MakeIdentity4x4();
+    perViewData_->billboardMatrix = MakeIdentity4x4();
+
     // ===== RootSignature =====
     {
         CD3DX12_DESCRIPTOR_RANGE rangeTex{};
         rangeTex.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
 
-        CD3DX12_DESCRIPTOR_RANGE rangeInstance{};
-        rangeInstance.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1); // t1
+        CD3DX12_DESCRIPTOR_RANGE rangeParticle{};
+        rangeParticle.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
 
-        CD3DX12_ROOT_PARAMETER rootParams[2]{};
+        CD3DX12_ROOT_PARAMETER rootParams[3]{};
         rootParams[0].InitAsDescriptorTable(1, &rangeTex, D3D12_SHADER_VISIBILITY_PIXEL);
-        rootParams[1].InitAsDescriptorTable(1, &rangeInstance, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParams[1].InitAsDescriptorTable(1, &rangeParticle, D3D12_SHADER_VISIBILITY_VERTEX);
+        rootParams[2].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
 
         CD3DX12_STATIC_SAMPLER_DESC samplerDesc(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
         samplerDesc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -156,75 +168,107 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
         HRESULT hr = dxCommon_->GetDevice()->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState_));
         assert(SUCCEEDED(hr));
     }
+
+    CreateInitializePipeline();
 }
 
+
+void ParticleManager::CreateInitializePipeline()
+{
+    CD3DX12_DESCRIPTOR_RANGE rangeParticle{};
+    rangeParticle.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
+
+    CD3DX12_ROOT_PARAMETER rootParams[1]{};
+    rootParams[0].InitAsDescriptorTable(1, &rangeParticle, D3D12_SHADER_VISIBILITY_ALL);
+
+    CD3DX12_ROOT_SIGNATURE_DESC rsDesc{};
+    rsDesc.Init(_countof(rootParams), rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+    ComPtr<ID3DBlob> sigBlob;
+    ComPtr<ID3DBlob> errBlob;
+    HRESULT hr = D3D12SerializeRootSignature(
+        &rsDesc,
+        D3D_ROOT_SIGNATURE_VERSION_1,
+        &sigBlob,
+        &errBlob
+    );
+    if (FAILED(hr)) {
+        if (errBlob) { Logger::Log(reinterpret_cast<const char*>(errBlob->GetBufferPointer())); }
+        assert(false);
+    }
+
+    hr = dxCommon_->GetDevice()->CreateRootSignature(
+        0,
+        sigBlob->GetBufferPointer(),
+        sigBlob->GetBufferSize(),
+        IID_PPV_ARGS(&initializeRootSignature_)
+    );
+    assert(SUCCEEDED(hr));
+
+    auto cs = dxCommon_->CompileShader(L"shaders/InitializeParticle.CS.hlsl", L"cs_6_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = initializeRootSignature_.Get();
+    psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    hr = dxCommon_->GetDevice()->CreateComputePipelineState(
+        &psoDesc,
+        IID_PPV_ARGS(&initializePipelineState_)
+    );
+    assert(SUCCEEDED(hr));
+}
+
+void ParticleManager::DispatchInitialize(ParticleGroup& group)
+{
+    auto* cl = dxCommon_->GetCommandList();
+
+    if (group.particleResourceState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = group.particleResource.Get();
+        barrier.Transition.StateBefore = group.particleResourceState;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        cl->ResourceBarrier(1, &barrier);
+        group.particleResourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
+
+    cl->SetComputeRootSignature(initializeRootSignature_.Get());
+    cl->SetPipelineState(initializePipelineState_.Get());
+    srvManager_->SetComputeRootDescriptorTable(0, group.particleUavIndex);
+    cl->Dispatch(1, 1, 1);
+
+    D3D12_RESOURCE_BARRIER uavBarrier{};
+    uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    uavBarrier.UAV.pResource = group.particleResource.Get();
+    cl->ResourceBarrier(1, &uavBarrier);
+
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = group.particleResource.Get();
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    cl->ResourceBarrier(1, &barrier);
+
+    group.particleResourceState = D3D12_RESOURCE_STATE_GENERIC_READ;
+    group.needsInitialize = false;
+}
 
 void ParticleManager::Update(
     const Matrix4x4& viewMatrix,
     const Matrix4x4& projectionMatrix
 ) {
-    const float deltaTime = dxCommon_->GetDeltaTime();
-
-    // 全グループ処理
-    for (auto& [name, group] : particleGroups_) {
-
-        uint32_t instanceIndex = 0;
-
-        // パーティクル更新
-        for (auto it = group.particles.begin();
-            it != group.particles.end();) {
-
-            Particle& p = *it;
-
-            // 寿命チェック
-            if (!p.IsAlive()) {
-                it = group.particles.erase(it);
-                continue;
-            }
-
-            if (instanceIndex >= kMaxInstanceCount_) {
-                break; // これ以上は instanceData に書けない
-            }
-
-            // 加速 → 速度
-            p.velocity += p.acceleration * deltaTime;
-
-            // 移動
-            p.position += p.velocity * deltaTime;
-
-            // 経過時間
-            p.currentTime += deltaTime;
-
-            // -------------------------
-            // 行列計算
-            // -------------------------
-
-            // World（平行移動のみ）
-            Matrix4x4 world = MakeAffineMatrix(
-                p.scale,
-                p.rotate,
-                p.position
-            );
-
-            // WVP
-            Matrix4x4 wvp =
-                Multiply(
-                    Multiply(world, viewMatrix),
-                    projectionMatrix
-                );
-
-            // -------------------------
-            // インスタンシングデータ書き込み
-            // -------------------------
-            group.instanceData[instanceIndex].WVP = wvp;
-            instanceIndex++;
-
-            ++it;
-        }
-
-        // 実際に描画するインスタンス数
-        group.instanceCount = instanceIndex;
+    if (!perViewData_) {
+        return;
     }
+
+    // ViewProjectionとBillboardはViewごとの値なので、まとめてConstantBufferへ書く
+    perViewData_->viewProjection = Multiply(viewMatrix, projectionMatrix);
+    perViewData_->billboardMatrix = Inverse(viewMatrix);
+    perViewData_->billboardMatrix.m[3][0] = 0.0f;
+    perViewData_->billboardMatrix.m[3][1] = 0.0f;
+    perViewData_->billboardMatrix.m[3][2] = 0.0f;
 }
 
 void ParticleManager::Draw()
@@ -237,19 +281,24 @@ void ParticleManager::Draw()
     cl->SetPipelineState(pipelineState_.Get());
     cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cl->IASetVertexBuffers(0, 1, &vbView_);
-
-    // ★ 必ず初期化
-    if (!particleGroups_.empty()) {
-        auto& g = particleGroups_.begin()->second;
-        srvManager_->SetGraphicsRootDescriptorTable(0, g.textureSrvIndex);
-        srvManager_->SetGraphicsRootDescriptorTable(1, g.instanceSrvIndex);
-    }
+    cl->SetGraphicsRootConstantBufferView(2, perViewResource_->GetGPUVirtualAddress());
 
     for (auto& [name, group] : particleGroups_) {
+        // GPU Particleの中身はComputeShaderで一度だけ初期化する
+        if (group.needsInitialize) {
+            DispatchInitialize(group);
+
+            cl->SetGraphicsRootSignature(rootSignature_.Get());
+            cl->SetPipelineState(pipelineState_.Get());
+            cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cl->IASetVertexBuffers(0, 1, &vbView_);
+            cl->SetGraphicsRootConstantBufferView(2, perViewResource_->GetGPUVirtualAddress());
+        }
+
         if (group.instanceCount == 0) continue;
 
         srvManager_->SetGraphicsRootDescriptorTable(0, group.textureSrvIndex);
-        srvManager_->SetGraphicsRootDescriptorTable(1, group.instanceSrvIndex);
+        srvManager_->SetGraphicsRootDescriptorTable(1, group.particleSrvIndex);
 
         cl->DrawInstanced(6, group.instanceCount, 0, 0);
     }
@@ -261,13 +310,26 @@ void ParticleManager::Draw()
 // ======================================
 void ParticleManager::Finalize()
 {
-    // インスタンシングバッファを解放
-    for (auto& [name, group] : particleGroups_) {
-        group.instanceResource.Reset();
-        group.instanceData = nullptr;
+    // Particle用SRV/UAVを解放
+    if (srvManager_) {
+        for (auto& [name, group] : particleGroups_) {
+            if (group.particleSrvIndex != UINT32_MAX) {
+                srvManager_->Free(group.particleSrvIndex);
+            }
+            if (group.particleUavIndex != UINT32_MAX) {
+                srvManager_->Free(group.particleUavIndex);
+            }
+        }
     }
 
     particleGroups_.clear();
+    perViewData_ = nullptr;
+    perViewResource_.Reset();
+    vertexResource_.Reset();
+    pipelineState_.Reset();
+    rootSignature_.Reset();
+    initializePipelineState_.Reset();
+    initializeRootSignature_.Reset();
 
     dxCommon_ = nullptr;
     srvManager_ = nullptr;
@@ -291,30 +353,35 @@ void ParticleManager::CreateParticleGroup(
     group.textureSrvIndex =
         TextureManager::GetInstance()->GetSrvIndex(textureFilePath);
 
-    // ④ インスタンシング用 StructuredBuffer 作成
-    const uint32_t kMaxInstanceCount = 1024;
-
-    group.instanceResource =
+    // ④ Particle用 StructuredBuffer 作成
+    group.particleResource =
         dxCommon_->CreateBufferResource(
-            sizeof(ParticleInstanceData) * kMaxInstanceCount
+            sizeof(ParticleCS) * kMaxInstanceCount_,
+            D3D12_HEAP_TYPE_DEFAULT,
+            D3D12_RESOURCE_STATE_COMMON,
+            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
         );
-
-    // CPUマップ
-    group.instanceResource->Map(
-        0, nullptr,
-        reinterpret_cast<void**>(&group.instanceData)
-    );
+    group.particleResourceState = D3D12_RESOURCE_STATE_COMMON;
+    group.instanceCount = kMaxInstanceCount_;
+    group.needsInitialize = true;
 
 
-    // ⑤ SRV 確保
-    group.instanceSrvIndex = srvManager_->Allocate();
+    // ⑤ SRV/UAV 確保
+    group.particleSrvIndex = srvManager_->Allocate();
+    group.particleUavIndex = srvManager_->Allocate();
 
     // ⑥ StructuredBuffer 用 SRV 作成
     srvManager_->CreateSRVforStructuredBuffer(
-        group.instanceSrvIndex,
-        group.instanceResource.Get(),
-        kMaxInstanceCount,
-        sizeof(ParticleInstanceData)
+        group.particleSrvIndex,
+        group.particleResource.Get(),
+        kMaxInstanceCount_,
+        sizeof(ParticleCS)
+    );
+    srvManager_->CreateUAVforStructuredBuffer(
+        group.particleUavIndex,
+        group.particleResource.Get(),
+        kMaxInstanceCount_,
+        sizeof(ParticleCS)
     );
 
     // ⑦ コンテナに登録
@@ -326,40 +393,15 @@ void ParticleManager::Emit(
     const Vector3& position,
     uint32_t count
 ) {
+    (void)position;
+    (void)count;
+
     // ① グループ存在チェック
     auto it = particleGroups_.find(name);
     assert(it != particleGroups_.end());
 
-    ParticleGroup& group = it->second;
-
-    // ② 指定数分パーティクル生成
-    for (uint32_t i = 0; i < count; ++i) {
-        Particle particle{};
-
-        // 初期位置
-        particle.position = position;
-
-        // 仮の速度（あとでランダム化する）
-        particle.scale = { 0.05f, RandomFloat(0.4f, 1.5f), 1.0f };
-        particle.rotate = {
-            0.0f,
-            0.0f,
-            RandomFloat(-3.14159265f, 3.14159265f)
-        };
-        particle.velocity = { 0.0f, 0.0f, 0.0f };
-
-        // 加速度（場の影響：今は無し）
-        particle.acceleration = { 0.0f, 0.0f, 0.0f };
-
-        // 寿命（仮）
-        particle.lifeTime = 0.12f;
-
-        // 経過時間
-        particle.currentTime = 0.0f;
-
-        // ③ グループに登録
-        group.particles.push_back(particle);
-    }
+    // ② 今回はGPU側Resourceに存在している1024個すべてを描画する
+    it->second.instanceCount = kMaxInstanceCount_;
 }
 
 float ParticleManager::RandomFloat(float min, float max)

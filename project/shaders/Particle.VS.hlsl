@@ -8,25 +8,41 @@ struct VertexOut
 {
     float4 position : SV_POSITION;
     float2 texcoord : TEXCOORD;
+    float4 color : COLOR0;
 };
 
-struct InstanceData
+struct Particle
 {
-    float4x4 WVP;
+    float3 translate;
+    float3 scale;
+    float lifeTime;
+    float3 velocity;
+    float currentTime;
+    float4 color;
 };
 
-Texture2D gTexture : register(t0);
-SamplerState gSampler : register(s0);
-
-// t1: StructuredBuffer（ParticleInstanceData配列）
-StructuredBuffer<InstanceData> gInstances : register(t1);
-
-VertexOut main(VertexIn vin, uint instanceId : SV_InstanceID)
+struct PerView
 {
-    VertexOut vout;
-    float4x4 wvp = gInstances[instanceId].WVP;
+    float4x4 viewProjection;
+    float4x4 billboardMatrix;
+};
 
-    vout.position = mul(wvp, vin.position);
-    vout.texcoord = vin.texcoord;
-    return vout;
+StructuredBuffer<Particle> gParticles : register(t0);
+ConstantBuffer<PerView> gPerView : register(b0);
+
+VertexOut main(VertexIn input, uint instanceId : SV_InstanceID)
+{
+    VertexOut output;
+    Particle particle = gParticles[instanceId];
+
+    float4x4 worldMatrix = gPerView.billboardMatrix;
+    worldMatrix[0] *= particle.scale.x;
+    worldMatrix[1] *= particle.scale.y;
+    worldMatrix[2] *= particle.scale.z;
+    worldMatrix[3].xyz = particle.translate;
+
+    output.position = mul(input.position, mul(worldMatrix, gPerView.viewProjection));
+    output.texcoord = input.texcoord;
+    output.color = particle.color;
+    return output;
 }
