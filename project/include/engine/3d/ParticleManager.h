@@ -107,16 +107,19 @@ private:
         uint32_t particleSrvIndex = UINT32_MAX;
         uint32_t particleUavIndex = UINT32_MAX;
         uint32_t freeCounterUavIndex = UINT32_MAX;
+        uint32_t freeListUavIndex = UINT32_MAX;
         uint32_t instanceCount = 0;
         bool needsInitialize = true;
         bool needsEmit = false;
 
         Microsoft::WRL::ComPtr<ID3D12Resource> particleResource;
         Microsoft::WRL::ComPtr<ID3D12Resource> freeCounterResource;
+        Microsoft::WRL::ComPtr<ID3D12Resource> freeListResource;
         Microsoft::WRL::ComPtr<ID3D12Resource> emitterResource;
         EmitterSphere* emitterData = nullptr;
         D3D12_RESOURCE_STATES particleResourceState = D3D12_RESOURCE_STATE_COMMON;
         D3D12_RESOURCE_STATES freeCounterResourceState = D3D12_RESOURCE_STATE_COMMON;
+        D3D12_RESOURCE_STATES freeListResourceState = D3D12_RESOURCE_STATE_COMMON;
     };
 
 private:

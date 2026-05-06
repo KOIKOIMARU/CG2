@@ -60,7 +60,8 @@ class RandomGenerator
 };
 
 RWStructuredBuffer<Particle> gParticles : register(u0);
-RWStructuredBuffer<int> gFreeCounter : register(u1);
+RWStructuredBuffer<int> gFreeListIndex : register(u1);
+RWStructuredBuffer<uint> gFreeList : register(u2);
 ConstantBuffer<EmitterSphere> gEmitter : register(b0);
 ConstantBuffer<PerFrame> gPerFrame : register(b1);
 
@@ -79,11 +80,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     for (uint countIndex = 0; countIndex < gEmitter.count; ++countIndex)
     {
-        int particleIndex;
-        InterlockedAdd(gFreeCounter[0], 1, particleIndex);
+        int freeListIndex;
+        InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
 
-        if (particleIndex < kMaxParticles)
+        if (0 <= freeListIndex && freeListIndex < kMaxParticles)
         {
+            uint particleIndex = gFreeList[freeListIndex];
             float3 randomPosition = generator.Generate3d() * 2.0f - 1.0f;
             float randomScale = 0.12f + generator.Generate1d() * 0.18f;
             float3 randomVelocity = normalize(randomPosition + float3(0.0f, 0.8f, 0.0f));
@@ -98,6 +100,13 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             gParticles[particleIndex].currentTime = 0.0f;
             gParticles[particleIndex].color =
                 float4(generator.Generate3d(), 1.0f);
+        }
+        else
+        {
+            // 空きがないのに減らしてしまった分を戻して、このEmitを終える
+            int unused;
+            InterlockedAdd(gFreeListIndex[0], 1, unused);
+            break;
         }
     }
 }
