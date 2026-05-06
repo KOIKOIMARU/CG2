@@ -135,6 +135,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> initializePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> emitRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> emitPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> updateRootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> updatePipelineState_;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_;
     D3D12_VERTEX_BUFFER_VIEW vbView_{};
@@ -148,7 +150,9 @@ private:
 
     void CreateInitializePipeline();
     void CreateEmitPipeline();
+    void CreateUpdatePipeline();
     void DispatchInitialize(ParticleGroup& group);
     void DispatchEmit(ParticleGroup& group);
+    void DispatchUpdate(ParticleGroup& group);
 
 };

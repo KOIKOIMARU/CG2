@@ -181,6 +181,7 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
 
     CreateInitializePipeline();
     CreateEmitPipeline();
+    CreateUpdatePipeline();
 }
 
 
@@ -284,6 +285,52 @@ void ParticleManager::CreateEmitPipeline()
     assert(SUCCEEDED(hr));
 }
 
+void ParticleManager::CreateUpdatePipeline()
+{
+    CD3DX12_DESCRIPTOR_RANGE rangeParticle{};
+    rangeParticle.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
+
+    CD3DX12_ROOT_PARAMETER rootParams[2]{};
+    rootParams[0].InitAsDescriptorTable(1, &rangeParticle, D3D12_SHADER_VISIBILITY_ALL);
+    rootParams[1].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
+
+    CD3DX12_ROOT_SIGNATURE_DESC rsDesc{};
+    rsDesc.Init(_countof(rootParams), rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+    ComPtr<ID3DBlob> sigBlob;
+    ComPtr<ID3DBlob> errBlob;
+    HRESULT hr = D3D12SerializeRootSignature(
+        &rsDesc,
+        D3D_ROOT_SIGNATURE_VERSION_1,
+        &sigBlob,
+        &errBlob
+    );
+    if (FAILED(hr)) {
+        if (errBlob) { Logger::Log(reinterpret_cast<const char*>(errBlob->GetBufferPointer())); }
+        assert(false);
+    }
+
+    hr = dxCommon_->GetDevice()->CreateRootSignature(
+        0,
+        sigBlob->GetBufferPointer(),
+        sigBlob->GetBufferSize(),
+        IID_PPV_ARGS(&updateRootSignature_)
+    );
+    assert(SUCCEEDED(hr));
+
+    auto cs = dxCommon_->CompileShader(L"shaders/UpdateParticle.CS.hlsl", L"cs_6_0");
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = updateRootSignature_.Get();
+    psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+
+    hr = dxCommon_->GetDevice()->CreateComputePipelineState(
+        &psoDesc,
+        IID_PPV_ARGS(&updatePipelineState_)
+    );
+    assert(SUCCEEDED(hr));
+}
+
 void ParticleManager::DispatchInitialize(ParticleGroup& group)
 {
     auto* cl = dxCommon_->GetCommandList();
@@ -378,16 +425,34 @@ void ParticleManager::DispatchEmit(ParticleGroup& group)
     uavBarriers[1].UAV.pResource = group.freeCounterResource.Get();
     cl->ResourceBarrier(_countof(uavBarriers), uavBarriers);
 
-    D3D12_RESOURCE_BARRIER barrier{};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Transition.pResource = group.particleResource.Get();
-    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    cl->ResourceBarrier(1, &barrier);
-    group.particleResourceState = D3D12_RESOURCE_STATE_GENERIC_READ;
-
     group.needsEmit = false;
+}
+
+void ParticleManager::DispatchUpdate(ParticleGroup& group)
+{
+    auto* cl = dxCommon_->GetCommandList();
+
+    if (group.particleResourceState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = group.particleResource.Get();
+        barrier.Transition.StateBefore = group.particleResourceState;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        cl->ResourceBarrier(1, &barrier);
+        group.particleResourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
+
+    cl->SetComputeRootSignature(updateRootSignature_.Get());
+    cl->SetPipelineState(updatePipelineState_.Get());
+    srvManager_->SetComputeRootDescriptorTable(0, group.particleUavIndex);
+    cl->SetComputeRootConstantBufferView(1, perFrameResource_->GetGPUVirtualAddress());
+    cl->Dispatch(1, 1, 1);
+
+    D3D12_RESOURCE_BARRIER uavBarrier{};
+    uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    uavBarrier.UAV.pResource = group.particleResource.Get();
+    cl->ResourceBarrier(1, &uavBarrier);
 }
 
 void ParticleManager::Update(
@@ -440,6 +505,21 @@ void ParticleManager::Draw()
 
         // CPU側Emitterから射出許可が出ていれば、描画前にGPUでParticleを追加する
         DispatchEmit(group);
+
+        // 射出されたParticleも含め、描画前にGPUでParticleの移動や寿命を更新する
+        DispatchUpdate(group);
+
+        if (group.particleResourceState != D3D12_RESOURCE_STATE_GENERIC_READ) {
+            D3D12_RESOURCE_BARRIER barrier{};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = group.particleResource.Get();
+            barrier.Transition.StateBefore = group.particleResourceState;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            cl->ResourceBarrier(1, &barrier);
+            group.particleResourceState = D3D12_RESOURCE_STATE_GENERIC_READ;
+        }
+
         cl->SetGraphicsRootSignature(rootSignature_.Get());
         cl->SetPipelineState(pipelineState_.Get());
         cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -489,6 +569,8 @@ void ParticleManager::Finalize()
     initializeRootSignature_.Reset();
     emitPipelineState_.Reset();
     emitRootSignature_.Reset();
+    updatePipelineState_.Reset();
+    updateRootSignature_.Reset();
 
     dxCommon_ = nullptr;
     srvManager_ = nullptr;

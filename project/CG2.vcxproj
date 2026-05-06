@@ -349,6 +349,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="shaders\InitializeParticle.CS.hlsl" />
     <None Include="shaders\Object3d.hlsli" />
     <None Include="shaders\Skybox.hlsli" />
+    <None Include="shaders\UpdateParticle.CS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CG2.rc" />

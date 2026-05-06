@@ -402,6 +402,9 @@
     <None Include="shaders\Skybox.hlsli">
       <Filter>shaders</Filter>
     </None>
+    <None Include="shaders\UpdateParticle.CS.hlsl">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="CG2.rc" />
