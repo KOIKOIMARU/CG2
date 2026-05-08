@@ -309,6 +309,7 @@ void GamePlayScene::Update() {
         lightIntensity_,
         blendModeIndex_,
         environmentCoefficient_,
+        showSkybox_,
         showPlane_,
         showRing_,
         showCylinder_,
@@ -573,7 +574,9 @@ void GamePlayScene::UpdateDebugCamera(float deltaTime)
 }
 
 void GamePlayScene::Draw() {
-    skybox_->Draw();
+    if (showSkybox_) {
+        skybox_->Draw();
+    }
 
     object3dCommon_->CommonDrawSetting();
     if (showPlane_) {

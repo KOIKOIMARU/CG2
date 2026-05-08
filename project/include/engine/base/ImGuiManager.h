@@ -30,6 +30,7 @@ public:
         float& lightIntensity,
         int& blendModeIndex,
         float& environmentCoefficient,
+        bool& showSkybox,
         bool& showPlane,
         bool& showRing,
         bool& showCylinder,

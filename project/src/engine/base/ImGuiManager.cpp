@@ -129,6 +129,7 @@ void ImGuiManager::ShowGamePlayController(
     float& lightIntensity,
     int& blendModeIndex,
     float& environmentCoefficient,
+    bool& showSkybox,
     bool& showPlane,
     bool& showRing,
     bool& showCylinder,
@@ -164,6 +165,7 @@ void ImGuiManager::ShowGamePlayController(
         0.0f,
         1.0f
     );
+    ImGui::Checkbox("Show Skybox", &showSkybox);
     ImGui::Checkbox("Show Plane", &showPlane);
     ImGui::Checkbox("Show Ring", &showRing);
     ImGui::Checkbox("Show Cylinder", &showCylinder);
@@ -232,6 +234,7 @@ void ImGuiManager::ShowGamePlayController(
     (void)lightIntensity;
     (void)blendModeIndex;
     (void)environmentCoefficient;
+    (void)showSkybox;
     (void)showPlane;
     (void)showRing;
     (void)showCylinder;

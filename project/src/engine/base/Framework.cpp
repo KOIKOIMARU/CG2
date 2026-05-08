@@ -32,6 +32,7 @@ void Framework::Initialize() {
 
     srvManager_ = std::make_unique<SrvManager>();
     srvManager_->Initialize(dxCommon_.get());
+    dxCommon_->InitializeRenderTexture(srvManager_.get());
 
     imguiManager_ = std::make_unique<ImGuiManager>();
     imguiManager_->Initialize(winApp_.get(), dxCommon_.get(), srvManager_.get());

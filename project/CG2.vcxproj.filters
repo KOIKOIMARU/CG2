@@ -224,6 +224,12 @@
     <FxCompile Include="shaders\Skybox.VS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
+    <FxCompile Include="shaders\CopyImage.PS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="shaders\CopyImage.VS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="externals\imgui\imconfig.h">
@@ -394,6 +400,9 @@
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\InitializeParticle.CS.hlsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\CopyImage.hlsli">
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\Object3d.hlsli">

@@ -6,16 +6,21 @@
 #include <dxcapi.h>
 #include <string>
 #include "engine/base/WinApp.h"
+#include "engine/base/Math.h"
 #include "DirectXTex.h"
 #include <chrono>   // ← 必須
 #include <thread>   // ← sleep_for に必要
 
 // DirectX基盤
+class SrvManager;
+
 class DirectXCommon
 {
 public:
     // ★ バックバッファ数
     static constexpr UINT kBackBufferCount = 2;
+    static constexpr UINT kRenderTextureRTVIndex = kBackBufferCount;
+    static constexpr UINT kRTVDescriptorCount = kBackBufferCount + 1;
 
     // 初期化（全部まとめ）
     void Initialize(WinApp* winApp);
@@ -57,6 +62,15 @@ public:
     Microsoft::WRL::ComPtr<ID3D12Resource>
         CreateTextureResource(const DirectX::TexMetadata& metadata);
 
+    Microsoft::WRL::ComPtr<ID3D12Resource> CreateRenderTextureResource(
+        ID3D12Device* device,
+        uint32_t width,
+        uint32_t height,
+        DXGI_FORMAT format,
+        const Math::Vector4& clearColor);
+
+    void InitializeRenderTexture(SrvManager* srvManager);
+
     // テクスチャデータ転送
     void UploadTextureData(
         const Microsoft::WRL::ComPtr<ID3D12Resource>& texture,
@@ -64,6 +78,7 @@ public:
 
     // 描画前処理
 	void PreDraw();
+    void DrawRenderTextureToSwapChain();
 	// 描画後処理
 	void PostDraw();
 
@@ -103,6 +118,8 @@ private:
     void InitializeViewport();
     void InitializeScissorRect();
     void InitializeDXC();
+    void CreateCopyImageRootSignature();
+    void CreateCopyImagePipelineState();
 
     // 汎用ハンドル取得関数（static／内部用）
     static D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(
@@ -136,10 +153,13 @@ private:
 
     // 深度バッファ
     Microsoft::WRL::ComPtr<ID3D12Resource> depthStencilResource_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> renderTextureResource_;
 
     // 各種デスクリプタヒープ
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap_;
+    uint32_t renderTextureSrvIndex_ = 0;
 
     // 各ヒープのインクリメントサイズ
     UINT rtvDescriptorSize_ = 0;
@@ -158,6 +178,9 @@ private:
     Microsoft::WRL::ComPtr<IDxcUtils>          dxcUtils_;
     Microsoft::WRL::ComPtr<IDxcCompiler3>      dxcCompiler_;
     Microsoft::WRL::ComPtr<IDxcIncludeHandler> dxcIncludeHandler_;
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> copyImageRootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> copyImagePipelineState_;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化

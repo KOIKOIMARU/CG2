@@ -44,6 +44,8 @@ void MyGame::Draw() {
 
     SceneManager::GetInstance()->Draw();
 
+    dxCommon_->DrawRenderTextureToSwapChain();
+
     imguiManager_->Draw();
 
     dxCommon_->PostDraw();
