@@ -45,12 +45,12 @@ void MyGame::Draw() {
 
     SceneManager::GetInstance()->Draw();
 
-    bool useGrayscale = false;
+    int postEffectMode = 0;
     if (auto* gamePlayScene =
             dynamic_cast<GamePlayScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
-        useGrayscale = gamePlayScene->IsGrayscaleEnabled();
+        postEffectMode = gamePlayScene->GetPostEffectMode();
     }
-    dxCommon_->DrawRenderTextureToSwapChain(useGrayscale);
+    dxCommon_->DrawRenderTextureToSwapChain(postEffectMode);
 
     imguiManager_->Draw();
 

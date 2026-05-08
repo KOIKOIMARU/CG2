@@ -130,7 +130,7 @@ void ImGuiManager::ShowGamePlayController(
     int& blendModeIndex,
     float& environmentCoefficient,
     bool& showSkybox,
-    bool& useGrayscale,
+    int& postEffectMode,
     bool& showPlane,
     bool& showRing,
     bool& showCylinder,
@@ -167,7 +167,13 @@ void ImGuiManager::ShowGamePlayController(
         1.0f
     );
     ImGui::Checkbox("Show Skybox", &showSkybox);
-    ImGui::Checkbox("Grayscale", &useGrayscale);
+    const char* postEffectItems[] = { "None", "Grayscale", "Vignette" };
+    ImGui::Combo(
+        "Post Effect",
+        &postEffectMode,
+        postEffectItems,
+        IM_ARRAYSIZE(postEffectItems)
+    );
     ImGui::Checkbox("Show Plane", &showPlane);
     ImGui::Checkbox("Show Ring", &showRing);
     ImGui::Checkbox("Show Cylinder", &showCylinder);
@@ -237,7 +243,7 @@ void ImGuiManager::ShowGamePlayController(
     (void)blendModeIndex;
     (void)environmentCoefficient;
     (void)showSkybox;
-    (void)useGrayscale;
+    (void)postEffectMode;
     (void)showPlane;
     (void)showRing;
     (void)showCylinder;

@@ -78,7 +78,7 @@ public:
 
     // 描画前処理
 	void PreDraw();
-    void DrawRenderTextureToSwapChain(bool useGrayscale);
+    void DrawRenderTextureToSwapChain(int postEffectMode);
 	// 描画後処理
 	void PostDraw();
 
@@ -183,6 +183,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> fullscreenRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> copyImagePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> grayscalePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> vignettePipelineState_;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化

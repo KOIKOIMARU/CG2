@@ -98,12 +98,13 @@ void DirectXCommon::PreDraw() {
     commandList_->RSSetScissorRects(1, &scissorRect_);
 }
 
-void DirectXCommon::DrawRenderTextureToSwapChain(bool useGrayscale)
+void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
 {
     assert(renderTextureResource_);
     assert(fullscreenRootSignature_);
     assert(copyImagePipelineState_);
     assert(grayscalePipelineState_);
+    assert(vignettePipelineState_);
     assert(srvDescriptorHeap_);
 
     D3D12_RESOURCE_BARRIER barrier{};
@@ -128,11 +129,13 @@ void DirectXCommon::DrawRenderTextureToSwapChain(bool useGrayscale)
     ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap_.Get() };
     commandList_->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
     commandList_->SetGraphicsRootSignature(fullscreenRootSignature_.Get());
-    commandList_->SetPipelineState(
-        useGrayscale
-            ? grayscalePipelineState_.Get()
-            : copyImagePipelineState_.Get()
-    );
+    ID3D12PipelineState* pipelineState = copyImagePipelineState_.Get();
+    if (postEffectMode == 1) {
+        pipelineState = grayscalePipelineState_.Get();
+    } else if (postEffectMode == 2) {
+        pipelineState = vignettePipelineState_.Get();
+    }
+    commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
         0,
         GetGPUDescriptorHandle(
@@ -854,6 +857,8 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/CopyImage.PS.hlsl");
     grayscalePipelineState_ =
         CreateFullscreenPipelineState(L"shaders/Grayscale.PS.hlsl");
+    vignettePipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/Vignette.PS.hlsl");
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()

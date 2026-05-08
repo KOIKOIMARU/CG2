@@ -31,7 +31,7 @@ public:
         int& blendModeIndex,
         float& environmentCoefficient,
         bool& showSkybox,
-        bool& useGrayscale,
+        int& postEffectMode,
         bool& showPlane,
         bool& showRing,
         bool& showCylinder,

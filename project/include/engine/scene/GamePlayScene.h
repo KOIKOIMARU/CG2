@@ -29,7 +29,7 @@ public:
     void Update() override;
     void Draw() override;
 
-    bool IsGrayscaleEnabled() const { return useGrayscale_; }
+    int GetPostEffectMode() const { return postEffectMode_; }
 
 private:
     void UpdateDebugCamera(float deltaTime);
@@ -69,7 +69,7 @@ private:
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
     bool showSkybox_ = false;
-    bool useGrayscale_ = true;
+    int postEffectMode_ = 2;
     bool showPlane_ = true;
     bool showRing_ = true;
     bool showCylinder_ = true;
