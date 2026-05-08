@@ -227,7 +227,10 @@
     <FxCompile Include="shaders\CopyImage.PS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
-    <FxCompile Include="shaders\CopyImage.VS.hlsl">
+    <FxCompile Include="shaders\Fullscreen.VS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="shaders\Grayscale.PS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
   </ItemGroup>
@@ -402,7 +405,7 @@
     <None Include="shaders\InitializeParticle.CS.hlsl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\CopyImage.hlsli">
+    <None Include="shaders\Fullscreen.hlsli">
       <Filter>shaders</Filter>
     </None>
     <None Include="shaders\Object3d.hlsli">

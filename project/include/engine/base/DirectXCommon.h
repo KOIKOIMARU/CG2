@@ -78,7 +78,7 @@ public:
 
     // 描画前処理
 	void PreDraw();
-    void DrawRenderTextureToSwapChain();
+    void DrawRenderTextureToSwapChain(bool useGrayscale);
 	// 描画後処理
 	void PostDraw();
 
@@ -118,8 +118,9 @@ private:
     void InitializeViewport();
     void InitializeScissorRect();
     void InitializeDXC();
-    void CreateCopyImageRootSignature();
-    void CreateCopyImagePipelineState();
+    void CreateFullscreenRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateFullscreenPipelineState(
+        const std::wstring& pixelShaderPath);
 
     // 汎用ハンドル取得関数（static／内部用）
     static D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(
@@ -179,8 +180,9 @@ private:
     Microsoft::WRL::ComPtr<IDxcCompiler3>      dxcCompiler_;
     Microsoft::WRL::ComPtr<IDxcIncludeHandler> dxcIncludeHandler_;
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> copyImageRootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> fullscreenRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> copyImagePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> grayscalePipelineState_;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化

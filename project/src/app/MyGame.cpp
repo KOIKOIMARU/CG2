@@ -6,6 +6,7 @@
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/ImGuiManager.h"
 #include "engine/io/Input.h"
+#include "engine/scene/GamePlayScene.h"
 
 MyGame::MyGame() = default;
 MyGame::~MyGame() = default;
@@ -44,7 +45,12 @@ void MyGame::Draw() {
 
     SceneManager::GetInstance()->Draw();
 
-    dxCommon_->DrawRenderTextureToSwapChain();
+    bool useGrayscale = false;
+    if (auto* gamePlayScene =
+            dynamic_cast<GamePlayScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
+        useGrayscale = gamePlayScene->IsGrayscaleEnabled();
+    }
+    dxCommon_->DrawRenderTextureToSwapChain(useGrayscale);
 
     imguiManager_->Draw();
 

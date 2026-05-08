@@ -98,11 +98,12 @@ void DirectXCommon::PreDraw() {
     commandList_->RSSetScissorRects(1, &scissorRect_);
 }
 
-void DirectXCommon::DrawRenderTextureToSwapChain()
+void DirectXCommon::DrawRenderTextureToSwapChain(bool useGrayscale)
 {
     assert(renderTextureResource_);
-    assert(copyImageRootSignature_);
+    assert(fullscreenRootSignature_);
     assert(copyImagePipelineState_);
+    assert(grayscalePipelineState_);
     assert(srvDescriptorHeap_);
 
     D3D12_RESOURCE_BARRIER barrier{};
@@ -126,8 +127,12 @@ void DirectXCommon::DrawRenderTextureToSwapChain()
 
     ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap_.Get() };
     commandList_->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-    commandList_->SetGraphicsRootSignature(copyImageRootSignature_.Get());
-    commandList_->SetPipelineState(copyImagePipelineState_.Get());
+    commandList_->SetGraphicsRootSignature(fullscreenRootSignature_.Get());
+    commandList_->SetPipelineState(
+        useGrayscale
+            ? grayscalePipelineState_.Get()
+            : copyImagePipelineState_.Get()
+    );
     commandList_->SetGraphicsRootDescriptorTable(
         0,
         GetGPUDescriptorHandle(
@@ -844,11 +849,14 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     );
     srvDescriptorHeap_ = srvManager->GetDescriptorHeapComPtr();
 
-    CreateCopyImageRootSignature();
-    CreateCopyImagePipelineState();
+    CreateFullscreenRootSignature();
+    copyImagePipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/CopyImage.PS.hlsl");
+    grayscalePipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/Grayscale.PS.hlsl");
 }
 
-void DirectXCommon::CreateCopyImageRootSignature()
+void DirectXCommon::CreateFullscreenRootSignature()
 {
     D3D12_DESCRIPTOR_RANGE descriptorRange{};
     descriptorRange.BaseShaderRegister = 0;
@@ -900,17 +908,19 @@ void DirectXCommon::CreateCopyImageRootSignature()
         0,
         signatureBlob->GetBufferPointer(),
         signatureBlob->GetBufferSize(),
-        IID_PPV_ARGS(&copyImageRootSignature_)
+        IID_PPV_ARGS(&fullscreenRootSignature_)
     );
     assert(SUCCEEDED(hr));
 }
 
-void DirectXCommon::CreateCopyImagePipelineState()
+Microsoft::WRL::ComPtr<ID3D12PipelineState>
+DirectXCommon::CreateFullscreenPipelineState(
+    const std::wstring& pixelShaderPath)
 {
     auto vertexShaderBlob =
-        CompileShader(L"shaders/CopyImage.VS.hlsl", L"vs_6_0");
+        CompileShader(L"shaders/Fullscreen.VS.hlsl", L"vs_6_0");
     auto pixelShaderBlob =
-        CompileShader(L"shaders/CopyImage.PS.hlsl", L"ps_6_0");
+        CompileShader(pixelShaderPath, L"ps_6_0");
 
     D3D12_BLEND_DESC blendDesc{};
     blendDesc.RenderTarget[0].RenderTargetWriteMask =
@@ -925,7 +935,7 @@ void DirectXCommon::CreateCopyImagePipelineState()
     depthStencilDesc.DepthEnable = false;
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pipelineDesc{};
-    pipelineDesc.pRootSignature = copyImageRootSignature_.Get();
+    pipelineDesc.pRootSignature = fullscreenRootSignature_.Get();
     pipelineDesc.InputLayout.pInputElementDescs = nullptr;
     pipelineDesc.InputLayout.NumElements = 0;
     pipelineDesc.VS = {
@@ -946,11 +956,14 @@ void DirectXCommon::CreateCopyImagePipelineState()
     pipelineDesc.SampleDesc.Count = 1;
     pipelineDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
     HRESULT hr = device_->CreateGraphicsPipelineState(
         &pipelineDesc,
-        IID_PPV_ARGS(&copyImagePipelineState_)
+        IID_PPV_ARGS(&pipelineState)
     );
     assert(SUCCEEDED(hr));
+
+    return pipelineState;
 }
 
 void DirectXCommon::UploadTextureData(

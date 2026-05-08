@@ -310,6 +310,7 @@ void GamePlayScene::Update() {
         blendModeIndex_,
         environmentCoefficient_,
         showSkybox_,
+        useGrayscale_,
         showPlane_,
         showRing_,
         showCylinder_,

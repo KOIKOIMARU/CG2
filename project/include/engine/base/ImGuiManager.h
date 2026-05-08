@@ -31,6 +31,7 @@ public:
         int& blendModeIndex,
         float& environmentCoefficient,
         bool& showSkybox,
+        bool& useGrayscale,
         bool& showPlane,
         bool& showRing,
         bool& showCylinder,
