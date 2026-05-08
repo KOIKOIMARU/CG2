@@ -161,6 +161,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap_;
     uint32_t renderTextureSrvIndex_ = 0;
+    uint32_t depthTextureSrvIndex_ = 0;
 
     // 各ヒープのインクリメントサイズ
     UINT rtvDescriptorSize_ = 0;
@@ -187,6 +188,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> boxFilterPipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> boxFilter5x5PipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> gaussianFilterPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> luminanceOutlinePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> depthOutlinePipelineState_;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化

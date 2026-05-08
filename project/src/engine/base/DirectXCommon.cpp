@@ -108,7 +108,11 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(boxFilterPipelineState_);
     assert(boxFilter5x5PipelineState_);
     assert(gaussianFilterPipelineState_);
+    assert(luminanceOutlinePipelineState_);
+    assert(depthOutlinePipelineState_);
     assert(srvDescriptorHeap_);
+
+    const bool useDepthTexture = postEffectMode == 7;
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -118,6 +122,19 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList_->ResourceBarrier(1, &barrier);
+
+    D3D12_RESOURCE_BARRIER depthBarrier{};
+    if (useDepthTexture) {
+        depthBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        depthBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        depthBarrier.Transition.pResource = depthStencilResource_.Get();
+        depthBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+        depthBarrier.Transition.StateAfter =
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        depthBarrier.Transition.Subresource =
+            D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList_->ResourceBarrier(1, &depthBarrier);
+    }
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = GetCPUDescriptorHandle(
         rtvHeap_,
@@ -143,6 +160,10 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = boxFilter5x5PipelineState_.Get();
     } else if (postEffectMode == 5) {
         pipelineState = gaussianFilterPipelineState_.Get();
+    } else if (postEffectMode == 6) {
+        pipelineState = luminanceOutlinePipelineState_.Get();
+    } else if (postEffectMode == 7) {
+        pipelineState = depthOutlinePipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -155,8 +176,25 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
             renderTextureSrvIndex_
         )
     );
+    commandList_->SetGraphicsRootDescriptorTable(
+        1,
+        GetGPUDescriptorHandle(
+            srvDescriptorHeap_,
+            device_->GetDescriptorHandleIncrementSize(
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+            ),
+            depthTextureSrvIndex_
+        )
+    );
     commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList_->DrawInstanced(3, 1, 0, 0);
+
+    if (useDepthTexture) {
+        depthBarrier.Transition.StateBefore =
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        depthBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+        commandList_->ResourceBarrier(1, &depthBarrier);
+    }
 
     barrier.Transition.StateBefore =
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
@@ -373,7 +411,7 @@ void DirectXCommon::InitializeDepthBuffer()
     resourceDesc.Height = WinApp::kClientHeight;
     resourceDesc.MipLevels = 1;
     resourceDesc.DepthOrArraySize = 1;
-    resourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;         // 深度24bit + ステンシル8bit
+    resourceDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;         // 深度24bit + ステンシル8bit
     resourceDesc.SampleDesc.Count = 1;                                      // MSAAなし
     resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
@@ -859,6 +897,20 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         kRenderTextureFormat,
         1
     );
+
+    depthTextureSrvIndex_ = srvManager->Allocate();
+    D3D12_SHADER_RESOURCE_VIEW_DESC depthSrvDesc{};
+    depthSrvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    depthSrvDesc.Shader4ComponentMapping =
+        D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    depthSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    depthSrvDesc.Texture2D.MipLevels = 1;
+    device_->CreateShaderResourceView(
+        depthStencilResource_.Get(),
+        &depthSrvDesc,
+        srvManager->GetCPUDescriptorHandle(depthTextureSrvIndex_)
+    );
+
     srvDescriptorHeap_ = srvManager->GetDescriptorHeapComPtr();
 
     CreateFullscreenRootSignature();
@@ -874,40 +926,58 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/BoxFilter5x5.PS.hlsl");
     gaussianFilterPipelineState_ =
         CreateFullscreenPipelineState(L"shaders/GaussianFilter.PS.hlsl");
+    luminanceOutlinePipelineState_ =
+        CreateFullscreenPipelineState(
+            L"shaders/LuminanceBasedOutline.PS.hlsl");
+    depthOutlinePipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/DepthBasedOutline.PS.hlsl");
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()
 {
-    D3D12_DESCRIPTOR_RANGE descriptorRange{};
-    descriptorRange.BaseShaderRegister = 0;
-    descriptorRange.NumDescriptors = 1;
-    descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    descriptorRange.OffsetInDescriptorsFromTableStart =
+    D3D12_DESCRIPTOR_RANGE descriptorRanges[2]{};
+    descriptorRanges[0].BaseShaderRegister = 0;
+    descriptorRanges[0].NumDescriptors = 1;
+    descriptorRanges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRanges[0].OffsetInDescriptorsFromTableStart =
+        D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    descriptorRanges[1].BaseShaderRegister = 1;
+    descriptorRanges[1].NumDescriptors = 1;
+    descriptorRanges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRanges[1].OffsetInDescriptorsFromTableStart =
         D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParameter{};
-    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-    rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRange;
-    rootParameter.DescriptorTable.NumDescriptorRanges = 1;
+    D3D12_ROOT_PARAMETER rootParameters[2]{};
+    for (uint32_t index = 0; index < _countof(rootParameters); ++index) {
+        rootParameters[index].ParameterType =
+            D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        rootParameters[index].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        rootParameters[index].DescriptorTable.pDescriptorRanges =
+            &descriptorRanges[index];
+        rootParameters[index].DescriptorTable.NumDescriptorRanges = 1;
+    }
 
-    D3D12_STATIC_SAMPLER_DESC staticSampler{};
-    staticSampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-    staticSampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    staticSampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    staticSampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    staticSampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    staticSampler.MaxLOD = D3D12_FLOAT32_MAX;
-    staticSampler.ShaderRegister = 0;
-    staticSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    D3D12_STATIC_SAMPLER_DESC staticSamplers[2]{};
+    staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+    staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;
+    staticSamplers[0].ShaderRegister = 0;
+    staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    staticSamplers[1] = staticSamplers[0];
+    staticSamplers[1].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    staticSamplers[1].ShaderRegister = 1;
 
     D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{};
     descriptionRootSignature.Flags =
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-    descriptionRootSignature.pParameters = &rootParameter;
-    descriptionRootSignature.NumParameters = 1;
-    descriptionRootSignature.pStaticSamplers = &staticSampler;
-    descriptionRootSignature.NumStaticSamplers = 1;
+    descriptionRootSignature.pParameters = rootParameters;
+    descriptionRootSignature.NumParameters = _countof(rootParameters);
+    descriptionRootSignature.pStaticSamplers = staticSamplers;
+    descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
 
     Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob;
     Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
