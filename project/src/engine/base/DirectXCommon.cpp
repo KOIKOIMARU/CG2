@@ -107,6 +107,7 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(vignettePipelineState_);
     assert(boxFilterPipelineState_);
     assert(boxFilter5x5PipelineState_);
+    assert(gaussianFilterPipelineState_);
     assert(srvDescriptorHeap_);
 
     D3D12_RESOURCE_BARRIER barrier{};
@@ -140,6 +141,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = boxFilterPipelineState_.Get();
     } else if (postEffectMode == 4) {
         pipelineState = boxFilter5x5PipelineState_.Get();
+    } else if (postEffectMode == 5) {
+        pipelineState = gaussianFilterPipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -869,6 +872,8 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/BoxFilter.PS.hlsl");
     boxFilter5x5PipelineState_ =
         CreateFullscreenPipelineState(L"shaders/BoxFilter5x5.PS.hlsl");
+    gaussianFilterPipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/GaussianFilter.PS.hlsl");
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()

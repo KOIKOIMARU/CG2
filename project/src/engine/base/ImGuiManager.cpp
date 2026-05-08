@@ -172,7 +172,8 @@ void ImGuiManager::ShowGamePlayController(
         "Grayscale",
         "Vignette",
         "Box Filter 3x3",
-        "Box Filter 5x5"
+        "Box Filter 5x5",
+        "Gaussian Filter"
     };
     ImGui::Combo(
         "Post Effect",

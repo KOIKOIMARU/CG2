@@ -69,7 +69,7 @@ private:
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
     bool showSkybox_ = false;
-    int postEffectMode_ = 3;
+    int postEffectMode_ = 5;
     bool showPlane_ = true;
     bool showRing_ = true;
     bool showCylinder_ = true;
