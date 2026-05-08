@@ -167,7 +167,13 @@ void ImGuiManager::ShowGamePlayController(
         1.0f
     );
     ImGui::Checkbox("Show Skybox", &showSkybox);
-    const char* postEffectItems[] = { "None", "Grayscale", "Vignette" };
+    const char* postEffectItems[] = {
+        "None",
+        "Grayscale",
+        "Vignette",
+        "Box Filter 3x3",
+        "Box Filter 5x5"
+    };
     ImGui::Combo(
         "Post Effect",
         &postEffectMode,

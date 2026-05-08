@@ -184,6 +184,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> copyImagePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> grayscalePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> vignettePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> boxFilterPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> boxFilter5x5PipelineState_;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化

@@ -105,6 +105,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(copyImagePipelineState_);
     assert(grayscalePipelineState_);
     assert(vignettePipelineState_);
+    assert(boxFilterPipelineState_);
+    assert(boxFilter5x5PipelineState_);
     assert(srvDescriptorHeap_);
 
     D3D12_RESOURCE_BARRIER barrier{};
@@ -134,6 +136,10 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = grayscalePipelineState_.Get();
     } else if (postEffectMode == 2) {
         pipelineState = vignettePipelineState_.Get();
+    } else if (postEffectMode == 3) {
+        pipelineState = boxFilterPipelineState_.Get();
+    } else if (postEffectMode == 4) {
+        pipelineState = boxFilter5x5PipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -859,6 +865,10 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/Grayscale.PS.hlsl");
     vignettePipelineState_ =
         CreateFullscreenPipelineState(L"shaders/Vignette.PS.hlsl");
+    boxFilterPipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/BoxFilter.PS.hlsl");
+    boxFilter5x5PipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/BoxFilter5x5.PS.hlsl");
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()
