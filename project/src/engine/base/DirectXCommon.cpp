@@ -112,16 +112,22 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(depthOutlinePipelineState_);
     assert(radialBlurPipelineState_);
     assert(dissolvePipelineState_);
+    assert(randomPipelineState_);
     assert(srvDescriptorHeap_);
 
     const bool useDepthTexture = postEffectMode == 7;
     const bool useDissolve = postEffectMode == 9;
+    const bool useRandom = postEffectMode == 10;
     if (useDissolve) {
         dissolveThreshold_ += deltaTime_ * 0.25f;
         if (dissolveThreshold_ > 1.0f) {
             dissolveThreshold_ = 0.0f;
         }
         dissolveParameterData_->threshold = dissolveThreshold_;
+    }
+    if (useRandom) {
+        randomTime_ += deltaTime_;
+        randomParameterData_->time = randomTime_;
     }
 
     D3D12_RESOURCE_BARRIER barrier{};
@@ -178,6 +184,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = radialBlurPipelineState_.Get();
     } else if (postEffectMode == 9) {
         pipelineState = dissolvePipelineState_.Get();
+    } else if (postEffectMode == 10) {
+        pipelineState = randomPipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -202,6 +210,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     );
     commandList_->SetGraphicsRootConstantBufferView(
         2,
+        useRandom ?
+        randomParameterResource_->GetGPUVirtualAddress() :
         useDissolve ?
         dissolveParameterResource_->GetGPUVirtualAddress() :
         radialBlurParameterResource_->GetGPUVirtualAddress()
@@ -969,6 +979,8 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/RadialBlur.PS.hlsl");
     dissolvePipelineState_ =
         CreateFullscreenPipelineState(L"shaders/Dissolve.PS.hlsl");
+    randomPipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/Random.PS.hlsl");
 
     radialBlurParameterResource_ =
         CreateBufferResource(sizeof(RadialBlurParameter));
@@ -991,6 +1003,18 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     dissolveParameterData_->threshold = 0.0f;
     dissolveParameterData_->edgeWidth = 0.03f;
     dissolveParameterData_->padding = { 0.0f, 0.0f };
+
+    randomParameterResource_ =
+        CreateBufferResource(sizeof(RandomParameter));
+    randomParameterResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&randomParameterData_)
+    );
+    randomParameterData_->time = randomTime_;
+    randomParameterData_->padding[0] = 0.0f;
+    randomParameterData_->padding[1] = 0.0f;
+    randomParameterData_->padding[2] = 0.0f;
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()

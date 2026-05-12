@@ -177,7 +177,8 @@ void ImGuiManager::ShowGamePlayController(
         "Luminance Outline",
         "Depth Outline",
         "Radial Blur",
-        "Dissolve"
+        "Dissolve",
+        "Random"
     };
     ImGui::Combo(
         "Post Effect",
