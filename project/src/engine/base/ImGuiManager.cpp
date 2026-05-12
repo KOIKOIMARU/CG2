@@ -175,7 +175,8 @@ void ImGuiManager::ShowGamePlayController(
         "Box Filter 5x5",
         "Gaussian Filter",
         "Luminance Outline",
-        "Depth Outline"
+        "Depth Outline",
+        "Radial Blur"
     };
     ImGui::Combo(
         "Post Effect",

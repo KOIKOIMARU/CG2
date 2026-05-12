@@ -110,6 +110,7 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(gaussianFilterPipelineState_);
     assert(luminanceOutlinePipelineState_);
     assert(depthOutlinePipelineState_);
+    assert(radialBlurPipelineState_);
     assert(srvDescriptorHeap_);
 
     const bool useDepthTexture = postEffectMode == 7;
@@ -164,6 +165,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = luminanceOutlinePipelineState_.Get();
     } else if (postEffectMode == 7) {
         pipelineState = depthOutlinePipelineState_.Get();
+    } else if (postEffectMode == 8) {
+        pipelineState = radialBlurPipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -185,6 +188,10 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
             ),
             depthTextureSrvIndex_
         )
+    );
+    commandList_->SetGraphicsRootConstantBufferView(
+        2,
+        radialBlurParameterResource_->GetGPUVirtualAddress()
     );
     commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList_->DrawInstanced(3, 1, 0, 0);
@@ -931,6 +938,19 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
             L"shaders/LuminanceBasedOutline.PS.hlsl");
     depthOutlinePipelineState_ =
         CreateFullscreenPipelineState(L"shaders/DepthBasedOutline.PS.hlsl");
+    radialBlurPipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/RadialBlur.PS.hlsl");
+
+    radialBlurParameterResource_ =
+        CreateBufferResource(sizeof(RadialBlurParameter));
+    radialBlurParameterResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&radialBlurParameterData_)
+    );
+    radialBlurParameterData_->center = { 0.5f, 0.5f };
+    radialBlurParameterData_->blurWidth = 0.01f;
+    radialBlurParameterData_->padding = 0.0f;
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()
@@ -947,8 +967,8 @@ void DirectXCommon::CreateFullscreenRootSignature()
     descriptorRanges[1].OffsetInDescriptorsFromTableStart =
         D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    D3D12_ROOT_PARAMETER rootParameters[2]{};
-    for (uint32_t index = 0; index < _countof(rootParameters); ++index) {
+    D3D12_ROOT_PARAMETER rootParameters[3]{};
+    for (uint32_t index = 0; index < _countof(descriptorRanges); ++index) {
         rootParameters[index].ParameterType =
             D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         rootParameters[index].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -956,6 +976,9 @@ void DirectXCommon::CreateFullscreenRootSignature()
             &descriptorRanges[index];
         rootParameters[index].DescriptorTable.NumDescriptorRanges = 1;
     }
+    rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParameters[2].Descriptor.ShaderRegister = 0;
 
     D3D12_STATIC_SAMPLER_DESC staticSamplers[2]{};
     staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;

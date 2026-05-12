@@ -104,6 +104,12 @@ public:
 
 
 private:
+    struct RadialBlurParameter {
+        Math::Vector2 center;
+        float blurWidth;
+        float padding;
+    };
+
     // --- ここから「Initialize」専用の内部関数たち ---
 
     // 部分初期化（外から呼ばせない）
@@ -190,6 +196,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> gaussianFilterPipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> luminanceOutlinePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> depthOutlinePipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> radialBlurPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> radialBlurParameterResource_;
+    RadialBlurParameter* radialBlurParameterData_ = nullptr;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化
