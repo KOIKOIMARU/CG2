@@ -111,9 +111,18 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(luminanceOutlinePipelineState_);
     assert(depthOutlinePipelineState_);
     assert(radialBlurPipelineState_);
+    assert(dissolvePipelineState_);
     assert(srvDescriptorHeap_);
 
     const bool useDepthTexture = postEffectMode == 7;
+    const bool useDissolve = postEffectMode == 9;
+    if (useDissolve) {
+        dissolveThreshold_ += deltaTime_ * 0.25f;
+        if (dissolveThreshold_ > 1.0f) {
+            dissolveThreshold_ = 0.0f;
+        }
+        dissolveParameterData_->threshold = dissolveThreshold_;
+    }
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -167,6 +176,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = depthOutlinePipelineState_.Get();
     } else if (postEffectMode == 8) {
         pipelineState = radialBlurPipelineState_.Get();
+    } else if (postEffectMode == 9) {
+        pipelineState = dissolvePipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -186,11 +197,13 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
             device_->GetDescriptorHandleIncrementSize(
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
             ),
-            depthTextureSrvIndex_
+            useDissolve ? dissolveMaskTextureSrvIndex_ : depthTextureSrvIndex_
         )
     );
     commandList_->SetGraphicsRootConstantBufferView(
         2,
+        useDissolve ?
+        dissolveParameterResource_->GetGPUVirtualAddress() :
         radialBlurParameterResource_->GetGPUVirtualAddress()
     );
     commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -918,6 +931,20 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         srvManager->GetCPUDescriptorHandle(depthTextureSrvIndex_)
     );
 
+    DirectX::ScratchImage dissolveMaskImage =
+        LoadTexture("resources/noise0.png");
+    const DirectX::TexMetadata& dissolveMaskMetadata =
+        dissolveMaskImage.GetMetadata();
+    dissolveMaskTextureResource_ = CreateTextureResource(dissolveMaskMetadata);
+    UploadTextureData(dissolveMaskTextureResource_, dissolveMaskImage);
+    dissolveMaskTextureSrvIndex_ = srvManager->Allocate();
+    srvManager->CreateSRVforTexture2D(
+        dissolveMaskTextureSrvIndex_,
+        dissolveMaskTextureResource_.Get(),
+        dissolveMaskMetadata.format,
+        static_cast<UINT>(dissolveMaskMetadata.mipLevels)
+    );
+
     srvDescriptorHeap_ = srvManager->GetDescriptorHeapComPtr();
 
     CreateFullscreenRootSignature();
@@ -940,6 +967,8 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/DepthBasedOutline.PS.hlsl");
     radialBlurPipelineState_ =
         CreateFullscreenPipelineState(L"shaders/RadialBlur.PS.hlsl");
+    dissolvePipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/Dissolve.PS.hlsl");
 
     radialBlurParameterResource_ =
         CreateBufferResource(sizeof(RadialBlurParameter));
@@ -951,6 +980,17 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     radialBlurParameterData_->center = { 0.5f, 0.5f };
     radialBlurParameterData_->blurWidth = 0.01f;
     radialBlurParameterData_->padding = 0.0f;
+
+    dissolveParameterResource_ =
+        CreateBufferResource(sizeof(DissolveParameter));
+    dissolveParameterResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&dissolveParameterData_)
+    );
+    dissolveParameterData_->threshold = 0.0f;
+    dissolveParameterData_->edgeWidth = 0.03f;
+    dissolveParameterData_->padding = { 0.0f, 0.0f };
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()

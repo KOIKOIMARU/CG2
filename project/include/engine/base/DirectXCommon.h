@@ -110,6 +110,12 @@ private:
         float padding;
     };
 
+    struct DissolveParameter {
+        float threshold;
+        float edgeWidth;
+        Math::Vector2 padding;
+    };
+
     // --- ここから「Initialize」専用の内部関数たち ---
 
     // 部分初期化（外から呼ばせない）
@@ -168,6 +174,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap_;
     uint32_t renderTextureSrvIndex_ = 0;
     uint32_t depthTextureSrvIndex_ = 0;
+    uint32_t dissolveMaskTextureSrvIndex_ = 0;
 
     // 各ヒープのインクリメントサイズ
     UINT rtvDescriptorSize_ = 0;
@@ -197,8 +204,13 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> luminanceOutlinePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> depthOutlinePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> radialBlurPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> dissolvePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12Resource> radialBlurParameterResource_;
     RadialBlurParameter* radialBlurParameterData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> dissolveParameterResource_;
+    DissolveParameter* dissolveParameterData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> dissolveMaskTextureResource_;
+    float dissolveThreshold_ = 0.0f;
 
     // ==== FPS 固定用 ====
   // FPS 固定の初期化
