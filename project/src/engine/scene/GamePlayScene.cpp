@@ -16,8 +16,78 @@
 #include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
 #include <algorithm>
+#include <fstream>
+#include <regex>
+#include <sstream>
 
 namespace {
+
+constexpr const char* kInspectorModelItems[] = {
+    "primitive_plane",
+    "primitive_ring",
+    "primitive_cylinder",
+    "primitive_sphere",
+    "primitive_triangle",
+    "primitive_circle",
+    "primitive_box",
+    "primitive_torus",
+    "primitive_cone",
+    "AnimatedCube/AnimatedCube.gltf",
+    "simpleSkin/simpleSkin.gltf",
+    "human/sneakWalk.gltf",
+    "human/walk.gltf"
+};
+
+bool ExtractJsonVector3(
+    const std::string& source,
+    const char* key,
+    Math::Vector3& out)
+{
+    const std::regex pattern(
+        std::string("\"") + key +
+        "\"\\s*:\\s*\\[\\s*([-+0-9.eE]+)\\s*,\\s*([-+0-9.eE]+)\\s*,\\s*([-+0-9.eE]+)\\s*\\]"
+    );
+    std::smatch match;
+    if (!std::regex_search(source, match, pattern)) {
+        return false;
+    }
+
+    out.x = std::stof(match[1].str());
+    out.y = std::stof(match[2].str());
+    out.z = std::stof(match[3].str());
+    return true;
+}
+
+bool ExtractJsonInt(const std::string& source, const char* key, int& out)
+{
+    const std::regex pattern(
+        std::string("\"") + key + "\"\\s*:\\s*(-?[0-9]+)"
+    );
+    std::smatch match;
+    if (!std::regex_search(source, match, pattern)) {
+        return false;
+    }
+
+    out = std::stoi(match[1].str());
+    return true;
+}
+
+bool ExtractJsonString(
+    const std::string& source,
+    const char* key,
+    std::string& out)
+{
+    const std::regex pattern(
+        std::string("\"") + key + "\"\\s*:\\s*\"([^\"]*)\""
+    );
+    std::smatch match;
+    if (!std::regex_search(source, match, pattern)) {
+        return false;
+    }
+
+    out = match[1].str();
+    return true;
+}
 
 Math::Vector3 Add(const Math::Vector3& a, const Math::Vector3& b)
 {
@@ -255,20 +325,27 @@ void GamePlayScene::Initialize() {
         { 1.0f, 1.0f, 1.0f, 1.0f }
     );
 
-    const std::pair<const char*, Math::Vector3> primitiveSamples[] = {
-        { "primitive_triangle", { -4.5f, 1.0f, 3.0f } },
-        { "primitive_circle",   { -2.0f, 1.0f, 3.0f } },
-        { "primitive_box",      { 2.5f, 1.0f, 3.0f } },
-        { "primitive_torus",    { 5.0f, 1.2f, 3.0f } },
-        { "primitive_cone",     { -5.0f, 1.0f, -2.0f } },
+    struct PrimitiveSample {
+        const char* modelName;
+        Math::Vector3 position;
+        int modelIndex;
+    };
+    const PrimitiveSample primitiveSamples[] = {
+        { "primitive_triangle", { -4.5f, 1.0f, 3.0f }, 4 },
+        { "primitive_circle",   { -2.0f, 1.0f, 3.0f }, 5 },
+        { "primitive_box",      { 2.5f, 1.0f, 3.0f }, 6 },
+        { "primitive_torus",    { 5.0f, 1.2f, 3.0f }, 7 },
+        { "primitive_cone",     { -5.0f, 1.0f, -2.0f }, 8 },
     };
 
-    for (const auto& [modelName, position] : primitiveSamples) {
+    for (const auto& sample : primitiveSamples) {
         auto primitiveObject = std::make_unique<Object3d>();
         primitiveObject->Initialize(object3dCommon_.get());
-        primitiveObject->SetModel(modelName);
-        primitiveObject->SetTranslate(position);
+        primitiveObject->SetModel(sample.modelName);
+        primitiveObject->SetTranslate(sample.position);
         primitiveObject->SetEnvironmentCoefficient(0.0f);
+        primitiveObjectNames_.push_back(sample.modelName);
+        primitiveObjectModelIndices_.push_back(sample.modelIndex);
         primitiveObjects_.push_back(std::move(primitiveObject));
     }
 
@@ -291,6 +368,73 @@ void GamePlayScene::Initialize() {
     );
 }
 
+bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
+    if (!path) {
+        return false;
+    }
+
+    std::ifstream file(path);
+    if (!file) {
+        return false;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const std::string json = buffer.str();
+
+    primitiveObjects_.clear();
+    primitiveObjectNames_.clear();
+    primitiveObjectModelIndices_.clear();
+
+    const std::regex primitivePattern(
+        "\\{[^{}]*\"primitive\"\\s*:\\s*true[^{}]*\\}"
+    );
+    const auto begin =
+        std::sregex_iterator(json.begin(), json.end(), primitivePattern);
+    const auto end = std::sregex_iterator();
+    for (auto iterator = begin; iterator != end; ++iterator) {
+        const std::string objectJson = iterator->str();
+
+        int modelIndex = 0;
+        Math::Vector3 translate{};
+        Math::Vector3 rotate{};
+        Math::Vector3 scale{ 1.0f, 1.0f, 1.0f };
+        if (!ExtractJsonInt(objectJson, "modelIndex", modelIndex) ||
+            !ExtractJsonVector3(objectJson, "translate", translate) ||
+            !ExtractJsonVector3(objectJson, "rotate", rotate) ||
+            !ExtractJsonVector3(objectJson, "scale", scale)) {
+            continue;
+        }
+
+        const int modelItemCount =
+            static_cast<int>(
+                sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
+        if (modelIndex < 0 || modelItemCount <= modelIndex) {
+            continue;
+        }
+
+        std::string objectName;
+        if (!ExtractJsonString(objectJson, "name", objectName)) {
+            objectName = kInspectorModelItems[modelIndex];
+        }
+
+        auto primitiveObject = std::make_unique<Object3d>();
+        primitiveObject->Initialize(object3dCommon_.get());
+        primitiveObject->SetModel(kInspectorModelItems[modelIndex]);
+        primitiveObject->SetTranslate(translate);
+        primitiveObject->SetRotate(rotate);
+        primitiveObject->SetScale(scale);
+        primitiveObject->SetEnvironmentCoefficient(0.0f);
+
+        primitiveObjectNames_.push_back(objectName);
+        primitiveObjectModelIndices_.push_back(modelIndex);
+        primitiveObjects_.push_back(std::move(primitiveObject));
+    }
+
+    selectedInspectObjectIndex_ = 0;
+    return true;
+}
+
 void GamePlayScene::Update() {
     const float deltaTime = dxCommon_->GetDeltaTime();
 
@@ -303,28 +447,124 @@ void GamePlayScene::Update() {
     }
 
     imguiManager_->ShowSpriteController(spritePos_);
-    imguiManager_->ShowGamePlayController(
-        objectRotate_,
-        lightDirection_,
-        lightIntensity_,
-        blendModeIndex_,
-        environmentCoefficient_,
-        showSkybox_,
-        postEffectMode_,
-        showPlane_,
-        showRing_,
-        showCylinder_,
-        showSphere_,
-        showParticle_,
-        cylinderColor_,
-        cylinderAlphaReference_,
-        cylinderUVScrollSpeed_,
-        pointLightPosition_,
-        pointLightIntensity_,
-        spotLightPosition_,
-        spotLightDirection_,
-        spotLightIntensity_
-    );
+
+    std::vector<ImGuiManager::InspectableObject> inspectObjects{
+        { "Plane", object3d_.get(), &inspectObjectModelIndices_[0], nullptr },
+        { "Ring", ringObject_.get(), &inspectObjectModelIndices_[1], nullptr },
+        { "Cylinder", cylinderObject_.get(), &inspectObjectModelIndices_[2], nullptr },
+        { "Sphere", sphereObject_.get(), &inspectObjectModelIndices_[3], nullptr },
+        { "Animated Cube", animatedCubeObject_.get(), &inspectObjectModelIndices_[4], nullptr },
+        { "Simple Skin", simpleSkinObject_.get(), &inspectObjectModelIndices_[5], nullptr },
+        { "Human Sneak", humanSneakObject_.get(), &inspectObjectModelIndices_[6], nullptr },
+        { "Human Walk", humanWalkObject_.get(), &inspectObjectModelIndices_[7], nullptr }
+    };
+    const size_t editablePrimitiveCount = (std::min)(
+        primitiveObjects_.size(),
+        (std::min)(
+            primitiveObjectNames_.size(),
+            primitiveObjectModelIndices_.size()));
+    for (size_t index = 0; index < editablePrimitiveCount; ++index) {
+        inspectObjects.push_back({
+            primitiveObjectNames_[index].c_str(),
+            primitiveObjects_[index].get(),
+            &primitiveObjectModelIndices_[index],
+            &primitiveObjectNames_[index]
+        });
+    }
+    const int inspectObjectCount = static_cast<int>(inspectObjects.size());
+    if (selectedInspectObjectIndex_ < 0 ||
+        selectedInspectObjectIndex_ >= inspectObjectCount) {
+        selectedInspectObjectIndex_ = 0;
+    }
+
+    ImGuiManager::GamePlayDebugSettings debugSettings{
+        {
+            blendModeIndex_,
+            environmentCoefficient_,
+            showSkybox_,
+            postEffectMode_
+        },
+        {
+            objectRotate_,
+            showPlane_,
+            showRing_,
+            showCylinder_,
+            showSphere_,
+            showParticle_
+        },
+        {
+            cylinderColor_,
+            cylinderAlphaReference_,
+            cylinderUVScrollSpeed_
+        },
+        {
+            lightDirection_,
+            lightIntensity_,
+            pointLightPosition_,
+            pointLightIntensity_,
+            spotLightPosition_,
+            spotLightDirection_,
+            spotLightIntensity_
+        },
+        {
+            inspectObjects.data(),
+            inspectObjectCount,
+            selectedInspectObjectIndex_,
+            addPrimitiveModelIndex_,
+            requestAddPrimitive_,
+            requestRemovePrimitive_,
+            requestLoadPrimitiveObjects_,
+            "resources/scene_debug_transforms.json"
+        }
+    };
+    imguiManager_->ShowGamePlayController(debugSettings);
+
+    if (requestLoadPrimitiveObjects_) {
+        requestLoadPrimitiveObjects_ = false;
+        LoadPrimitiveObjectsFromSceneFile("resources/scene_debug_transforms.json");
+    }
+
+    if (requestRemovePrimitive_) {
+        requestRemovePrimitive_ = false;
+        constexpr int kBaseInspectObjectCount = 8;
+        const int primitiveIndex =
+            selectedInspectObjectIndex_ - kBaseInspectObjectCount;
+        if (0 <= primitiveIndex &&
+            primitiveIndex < static_cast<int>(primitiveObjects_.size())) {
+            primitiveObjects_.erase(
+                primitiveObjects_.begin() + primitiveIndex);
+            primitiveObjectNames_.erase(
+                primitiveObjectNames_.begin() + primitiveIndex);
+            primitiveObjectModelIndices_.erase(
+                primitiveObjectModelIndices_.begin() + primitiveIndex);
+            selectedInspectObjectIndex_ = 0;
+        }
+    }
+
+    if (requestAddPrimitive_) {
+        requestAddPrimitive_ = false;
+        const int modelItemCount =
+            static_cast<int>(
+                sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
+        if (0 <= addPrimitiveModelIndex_ &&
+            addPrimitiveModelIndex_ < modelItemCount) {
+            auto primitiveObject = std::make_unique<Object3d>();
+            primitiveObject->Initialize(object3dCommon_.get());
+            primitiveObject->SetModel(kInspectorModelItems[addPrimitiveModelIndex_]);
+            primitiveObject->SetTranslate({
+                0.0f,
+                1.0f,
+                static_cast<float>(primitiveObjects_.size()) + 5.0f
+            });
+            primitiveObject->SetEnvironmentCoefficient(0.0f);
+
+            primitiveObjectNames_.push_back(
+                "Added Primitive " +
+                std::to_string(primitiveObjects_.size() + 1));
+            primitiveObjectModelIndices_.push_back(addPrimitiveModelIndex_);
+            primitiveObjects_.push_back(std::move(primitiveObject));
+        }
+    }
 
     for (auto& sprite : sprites_) {
         sprite.SetPosition(spritePos_);

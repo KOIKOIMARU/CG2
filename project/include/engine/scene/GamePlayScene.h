@@ -1,6 +1,8 @@
 #pragma once
 #include "engine/scene/BaseScene.h"
+#include <array>
 #include <memory>
+#include <string>
 #include <vector>
 #include "engine/base/Math.h"
 #include "engine/2d/Sprite.h"
@@ -38,6 +40,7 @@ private:
         Object3d* source,
         const Math::Vector4& color);
     void UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet);
+    bool LoadPrimitiveObjectsFromSceneFile(const char* path);
 
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
@@ -51,6 +54,8 @@ private:
     std::unique_ptr<Object3d> humanSneakObject_;
     std::unique_ptr<Object3d> humanWalkObject_;
     std::vector<std::unique_ptr<Object3d>> primitiveObjects_;
+    std::vector<std::string> primitiveObjectNames_;
+    std::vector<int> primitiveObjectModelIndices_;
     SkeletonDebugSet simpleSkinDebug_;
     SkeletonDebugSet humanSneakDebug_;
     SkeletonDebugSet humanWalkDebug_;
@@ -82,6 +87,14 @@ private:
     float animationTime_ = 0.0f;
     bool showSkinningSamples_ = true;
     bool showSkeletonDebug_ = true;
+    int selectedInspectObjectIndex_ = 0;
+    std::array<int, 8> inspectObjectModelIndices_{
+        0, 1, 2, 3, 9, 10, 11, 12
+    };
+    int addPrimitiveModelIndex_ = 2;
+    bool requestAddPrimitive_ = false;
+    bool requestRemovePrimitive_ = false;
+    bool requestLoadPrimitiveObjects_ = false;
 
     bool isDebugCameraEnabled_ = false;
     float debugCameraMoveSpeed_ = 6.0f;
