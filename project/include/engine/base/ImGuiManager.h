@@ -51,11 +51,28 @@ public:
         float& spotLightIntensity;
     };
 
+    struct EditorPanelSettings {
+        bool& renderingOpen;
+        bool& objectsOpen;
+        bool& inspectorOpen;
+        bool& materialOpen;
+        bool& cylinderOpen;
+        bool& lightingOpen;
+    };
+
+    enum class InspectableType {
+        Object3d,
+        DirectionalLight,
+        PointLight,
+        SpotLight
+    };
+
     struct InspectableObject {
         const char* name;
-        Object3d* object;
-        int* selectedModelIndex;
-        std::string* editableName;
+        InspectableType type = InspectableType::Object3d;
+        Object3d* object = nullptr;
+        int* selectedModelIndex = nullptr;
+        std::string* editableName = nullptr;
     };
 
     struct ObjectInspectorSettings {
@@ -63,10 +80,24 @@ public:
         int objectCount;
         int& selectedObjectIndex;
         int& addModelIndex;
+        int& gizmoMode;
+        bool& isPlayMode;
         bool& requestAddObject;
         bool& requestRemoveObject;
+        bool& requestDuplicateObject;
+        bool& requestSavePrefab;
+        bool& requestInstantiatePrefab;
+        bool& requestSaveObjects;
         bool& requestLoadObjects;
+        bool& requestUndo;
+        bool& requestRedo;
         const char* saveFilePath;
+        const char* const* sceneFileItems;
+        int sceneFileItemCount;
+        int& sceneFileIndex;
+        const char* const* prefabFileItems;
+        int prefabFileItemCount;
+        int& prefabFileIndex;
     };
 
     struct GamePlayDebugSettings {
@@ -74,6 +105,7 @@ public:
         ObjectDebugSettings objects;
         CylinderEffectDebugSettings cylinder;
         LightingDebugSettings lighting;
+        EditorPanelSettings panels;
         ObjectInspectorSettings inspector;
     };
 

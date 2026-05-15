@@ -3,14 +3,10 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include "engine/3d/Object3d.h"
+#include "engine/scene/SceneSerializer.h"
 
 #include <cassert>
 #include <cstdio>
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <regex>
-#include <sstream>
 
 namespace {
 
@@ -42,27 +38,6 @@ void FreeImGuiSrvDescriptor(
 }
 
 #endif
-
-bool ExtractJsonVector3(
-    const std::string& source,
-    const char* key,
-    Math::Vector3& out)
-{
-    const std::regex pattern(
-        std::string("\"") + key +
-        "\"\\s*:\\s*\\[\\s*([-+0-9.eE]+)\\s*,\\s*([-+0-9.eE]+)\\s*,\\s*([-+0-9.eE]+)\\s*\\]"
-    );
-    std::smatch match;
-    if (!std::regex_search(source, match, pattern)) {
-        return false;
-    }
-
-    out.x = std::stof(match[1].str());
-    out.y = std::stof(match[2].str());
-    out.z = std::stof(match[3].str());
-    return true;
-}
-
 }
 
 bool ImGuiManager::SaveInspectorTransforms(
@@ -73,49 +48,34 @@ bool ImGuiManager::SaveInspectorTransforms(
         return false;
     }
 
-    std::filesystem::path path(inspector.saveFilePath);
-    if (path.has_parent_path()) {
-        std::filesystem::create_directories(path.parent_path());
-    }
-
-    std::ofstream file(path);
-    if (!file) {
-        inspectorStatus_ = "Save failed: cannot open file";
-        return false;
-    }
-
-    file << std::fixed << std::setprecision(6);
-    file << "{\n";
-    file << "  \"objects\": [\n";
+    std::vector<SceneSerializer::ObjectRecord> records;
     for (int index = 0; index < inspector.objectCount; ++index) {
         Object3d* object = inspector.objects[index].object;
         if (!object) {
             continue;
         }
 
-        const Math::Vector3 translate = object->GetTranslate();
-        const Math::Vector3 rotate = object->GetRotate();
-        const Math::Vector3 scale = object->GetScale();
-        const bool isPrimitive = index >= 8;
-        const int modelIndex =
+        SceneSerializer::ObjectRecord record{};
+        record.name = inspector.objects[index].name;
+        record.primitive = index >= 8;
+        record.modelIndex =
             inspector.objects[index].selectedModelIndex ?
             *inspector.objects[index].selectedModelIndex :
             -1;
-
-        file << "    {\n";
-        file << "      \"name\": \"" << inspector.objects[index].name << "\",\n";
-        file << "      \"primitive\": " << (isPrimitive ? "true" : "false") << ",\n";
-        file << "      \"modelIndex\": " << modelIndex << ",\n";
-        file << "      \"translate\": [" << translate.x << ", "
-            << translate.y << ", " << translate.z << "],\n";
-        file << "      \"rotate\": [" << rotate.x << ", "
-            << rotate.y << ", " << rotate.z << "],\n";
-        file << "      \"scale\": [" << scale.x << ", "
-            << scale.y << ", " << scale.z << "]\n";
-        file << "    }" << (index + 1 < inspector.objectCount ? "," : "") << "\n";
+        record.translate = object->GetTranslate();
+        record.rotate = object->GetRotate();
+        record.scale = object->GetScale();
+        record.color = object->GetColor();
+        record.alphaReference = object->GetAlphaReference();
+        record.lightingMode = object->GetLightingMode();
+        record.textureFilePath = object->GetTextureFilePath();
+        records.push_back(record);
     }
-    file << "  ]\n";
-    file << "}\n";
+
+    if (!SceneSerializer::SaveObjects(inspector.saveFilePath, records)) {
+        inspectorStatus_ = "Save failed: cannot write file";
+        return false;
+    }
 
     inspectorStatus_ = std::string("Saved: ") + inspector.saveFilePath;
     return true;
@@ -129,15 +89,11 @@ bool ImGuiManager::LoadInspectorTransforms(
         return false;
     }
 
-    std::ifstream file(inspector.saveFilePath);
-    if (!file) {
+    std::vector<SceneSerializer::ObjectRecord> records;
+    if (!SceneSerializer::LoadObjects(inspector.saveFilePath, records)) {
         inspectorStatus_ = "Load failed: file not found";
         return false;
     }
-
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    const std::string json = buffer.str();
 
     int loadedCount = 0;
     for (int index = 0; index < inspector.objectCount; ++index) {
@@ -146,28 +102,23 @@ bool ImGuiManager::LoadInspectorTransforms(
             continue;
         }
 
-        const std::regex objectPattern(
-            std::string("\\{[^{}]*\"name\"\\s*:\\s*\"") +
-            inspector.objects[index].name + "\"[^{}]*\\}"
-        );
-        std::smatch objectMatch;
-        if (!std::regex_search(json, objectMatch, objectPattern)) {
+        const SceneSerializer::ObjectRecord* record =
+            SceneSerializer::FindObjectByName(
+                records,
+                inspector.objects[index].name);
+        if (!record) {
             continue;
         }
 
-        const std::string objectJson = objectMatch[0].str();
-        Math::Vector3 translate{};
-        Math::Vector3 rotate{};
-        Math::Vector3 scale{};
-        if (!ExtractJsonVector3(objectJson, "translate", translate) ||
-            !ExtractJsonVector3(objectJson, "rotate", rotate) ||
-            !ExtractJsonVector3(objectJson, "scale", scale)) {
-            continue;
+        object->SetTranslate(record->translate);
+        object->SetRotate(record->rotate);
+        object->SetScale(record->scale);
+        object->SetColor(record->color);
+        object->SetAlphaReference(record->alphaReference);
+        object->SetLightingMode(record->lightingMode);
+        if (!record->textureFilePath.empty()) {
+            object->SetTextureFilePath(record->textureFilePath);
         }
-
-        object->SetTranslate(translate);
-        object->SetRotate(rotate);
-        object->SetScale(scale);
         ++loadedCount;
     }
 
@@ -267,6 +218,7 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     auto& objects = settings.objects;
     auto& cylinder = settings.cylinder;
     auto& lighting = settings.lighting;
+    auto& panels = settings.panels;
     auto& inspector = settings.inspector;
 #ifdef USE_IMGUI
     ImGui::SetNextWindowSize(ImVec2(260, 360), ImGuiCond_Once);
@@ -285,7 +237,24 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     ImGui::Begin("GamePlay Controller", nullptr,
         ImGuiWindowFlags_NoCollapse);
 
-    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (inspector.isPlayMode) {
+        if (ImGui::Button("Stop")) {
+            inspector.isPlayMode = false;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Play Mode");
+    } else {
+        if (ImGui::Button("Play")) {
+            inspector.isPlayMode = true;
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Edit Mode");
+    }
+    ImGui::Separator();
+
+    ImGui::SetNextItemOpen(panels.renderingOpen, ImGuiCond_Always);
+    panels.renderingOpen = ImGui::CollapsingHeader("Rendering");
+    if (panels.renderingOpen) {
     // 3DモデルのBlendModeを切り替え
     const char* blendItems[] = {
         "None", "Normal", "Add", "Subtract", "Multiply", "Screen"
@@ -324,7 +293,10 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     );
     }
 
-    if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::SetNextItemOpen(panels.objectsOpen, ImGuiCond_Always);
+    panels.objectsOpen = ImGui::CollapsingHeader("Objects");
+    if (panels.objectsOpen) {
+    ImGui::BeginDisabled(inspector.isPlayMode);
     ImGui::Checkbox("Show Plane", &objects.showPlane);
     ImGui::Checkbox("Show Ring", &objects.showRing);
     ImGui::Checkbox("Show Cylinder", &objects.showCylinder);
@@ -338,11 +310,14 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     ImGui::SliderFloat("Rotate X", &objects.objectRotate.x, -3.14f, 3.14f);
     ImGui::SliderFloat("Rotate Y", &objects.objectRotate.y, -3.14f, 3.14f);
     ImGui::SliderFloat("Rotate Z", &objects.objectRotate.z, -3.14f, 3.14f);
+    ImGui::EndDisabled();
     }
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Object Inspector", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::SetNextItemOpen(panels.inspectorOpen, ImGuiCond_Always);
+    panels.inspectorOpen = ImGui::CollapsingHeader("Object Inspector");
+    if (panels.inspectorOpen) {
         if (0 <= inspector.selectedObjectIndex &&
             inspector.selectedObjectIndex < inspector.objectCount) {
             Object3d* selectedObject =
@@ -350,6 +325,7 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
             if (selectedObject) {
                 ImGui::TextUnformatted(
                     inspector.objects[inspector.selectedObjectIndex].name);
+                ImGui::BeginDisabled(inspector.isPlayMode);
                 std::string* editableName =
                     inspector.objects[inspector.selectedObjectIndex]
                     .editableName;
@@ -398,6 +374,17 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
                 Math::Vector3 rotate = selectedObject->GetRotate();
                 Math::Vector3 translate = selectedObject->GetTranslate();
 
+                const char* gizmoModeItems[] = {
+                    "Translate",
+                    "Rotate",
+                    "Scale"
+                };
+                ImGui::Combo(
+                    "Gizmo Mode",
+                    &inspector.gizmoMode,
+                    gizmoModeItems,
+                    IM_ARRAYSIZE(gizmoModeItems));
+
                 if (ImGui::DragFloat3("Translate", &translate.x, 0.05f)) {
                     selectedObject->SetTranslate(translate);
                 }
@@ -407,6 +394,121 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
                 if (ImGui::DragFloat3("Scale", &scale.x, 0.02f, 0.01f, 20.0f)) {
                     selectedObject->SetScale(scale);
                 }
+
+                const float translateStep = 0.1f;
+                const float rotateStep = 0.05f;
+                const float scaleStep = 0.1f;
+                Math::Vector3* activeTransform = &translate;
+                float step = translateStep;
+                if (inspector.gizmoMode == 1) {
+                    activeTransform = &rotate;
+                    step = rotateStep;
+                } else if (inspector.gizmoMode == 2) {
+                    activeTransform = &scale;
+                    step = scaleStep;
+                }
+
+                auto applyGizmoTransform = [&]() {
+                    if (inspector.gizmoMode == 0) {
+                        selectedObject->SetTranslate(translate);
+                    } else if (inspector.gizmoMode == 1) {
+                        selectedObject->SetRotate(rotate);
+                    } else {
+                        scale.x = scale.x < 0.01f ? 0.01f : scale.x;
+                        scale.y = scale.y < 0.01f ? 0.01f : scale.y;
+                        scale.z = scale.z < 0.01f ? 0.01f : scale.z;
+                        selectedObject->SetScale(scale);
+                    }
+                };
+
+                ImGui::TextUnformatted("Gizmo Nudge");
+                if (ImGui::Button("-X")) {
+                    activeTransform->x -= step;
+                    applyGizmoTransform();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("+X")) {
+                    activeTransform->x += step;
+                    applyGizmoTransform();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("-Y")) {
+                    activeTransform->y -= step;
+                    applyGizmoTransform();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("+Y")) {
+                    activeTransform->y += step;
+                    applyGizmoTransform();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("-Z")) {
+                    activeTransform->z -= step;
+                    applyGizmoTransform();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("+Z")) {
+                    activeTransform->z += step;
+                    applyGizmoTransform();
+                }
+
+                ImGui::SetNextItemOpen(panels.materialOpen, ImGuiCond_Always);
+                panels.materialOpen = ImGui::CollapsingHeader("Material");
+                if (panels.materialOpen) {
+                    Math::Vector4 color = selectedObject->GetColor();
+                    if (ImGui::ColorEdit4("Color", &color.x)) {
+                        selectedObject->SetColor(color);
+                    }
+
+                    float alphaReference = selectedObject->GetAlphaReference();
+                    if (ImGui::SliderFloat(
+                        "Alpha Ref",
+                        &alphaReference,
+                        0.0f,
+                        1.0f)) {
+                        selectedObject->SetAlphaReference(alphaReference);
+                    }
+
+                    const char* lightingItems[] = {
+                        "None",
+                        "Lambert",
+                        "Half Lambert"
+                    };
+                    int lightingMode = selectedObject->GetLightingMode();
+                    if (ImGui::Combo(
+                        "Lighting##MaterialLighting",
+                        &lightingMode,
+                        lightingItems,
+                        IM_ARRAYSIZE(lightingItems))) {
+                        selectedObject->SetLightingMode(lightingMode);
+                    }
+
+                    const char* textureItems[] = {
+                        "resources/uvChecker.png",
+                        "resources/checkerBoard.png",
+                        "resources/gradationLine.png",
+                        "resources/circle2.png",
+                        "resources/monsterBall.png",
+                        "resources/human/white.png"
+                    };
+                    int textureIndex = 0;
+                    const std::string& texturePath =
+                        selectedObject->GetTextureFilePath();
+                    for (int index = 0; index < IM_ARRAYSIZE(textureItems); ++index) {
+                        if (texturePath == textureItems[index]) {
+                            textureIndex = index;
+                            break;
+                        }
+                    }
+                    if (ImGui::Combo(
+                        "Texture",
+                        &textureIndex,
+                        textureItems,
+                        IM_ARRAYSIZE(textureItems))) {
+                        selectedObject->SetTextureFilePath(textureItems[textureIndex]);
+                    }
+                }
+                ImGui::EndDisabled();
             }
         }
 
@@ -426,6 +528,21 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
             "human/walk.gltf"
         };
         ImGui::Separator();
+        if (inspector.sceneFileItems && inspector.sceneFileItemCount > 0) {
+            ImGui::Combo(
+                "Scene Slot",
+                &inspector.sceneFileIndex,
+                inspector.sceneFileItems,
+                inspector.sceneFileItemCount);
+        }
+        if (inspector.prefabFileItems && inspector.prefabFileItemCount > 0) {
+            ImGui::Combo(
+                "Prefab Slot",
+                &inspector.prefabFileIndex,
+                inspector.prefabFileItems,
+                inspector.prefabFileItemCount);
+        }
+        ImGui::BeginDisabled(inspector.isPlayMode);
         ImGui::Combo(
             "Add Model",
             &inspector.addModelIndex,
@@ -436,21 +553,43 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
             inspector.requestAddObject = true;
         }
 
+        if (ImGui::Button("Undo Transform")) {
+            inspector.requestUndo = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Redo Transform")) {
+            inspector.requestRedo = true;
+        }
+
         if (ImGui::Button("Save Transforms")) {
-            SaveInspectorTransforms(inspector);
+            inspector.requestSaveObjects = true;
+            inspectorStatus_ = std::string("Save requested: ") +
+                inspector.saveFilePath;
         }
         ImGui::SameLine();
         if (ImGui::Button("Load Transforms")) {
-            if (LoadInspectorTransforms(inspector)) {
-                inspector.requestLoadObjects = true;
-            }
+            inspector.requestLoadObjects = true;
+            inspectorStatus_ = std::string("Load requested: ") +
+                inspector.saveFilePath;
         }
         if (inspector.selectedObjectIndex >= 8) {
+            ImGui::SameLine();
+            if (ImGui::Button("Duplicate Selected")) {
+                inspector.requestDuplicateObject = true;
+            }
             ImGui::SameLine();
             if (ImGui::Button("Remove Selected")) {
                 inspector.requestRemoveObject = true;
             }
+            if (ImGui::Button("Save Prefab")) {
+                inspector.requestSavePrefab = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Instantiate Prefab")) {
+                inspector.requestInstantiatePrefab = true;
+            }
         }
+        ImGui::EndDisabled();
         if (!inspectorStatus_.empty()) {
             ImGui::TextUnformatted(inspectorStatus_.c_str());
         }
@@ -458,7 +597,10 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Cylinder Effect")) {
+    ImGui::SetNextItemOpen(panels.cylinderOpen, ImGuiCond_Always);
+    panels.cylinderOpen = ImGui::CollapsingHeader("Cylinder Effect");
+    if (panels.cylinderOpen) {
+    ImGui::BeginDisabled(inspector.isPlayMode);
     ImGui::Text("Cylinder Effect");
     ImGui::ColorEdit4("Cylinder Color", &cylinder.cylinderColor.x);
     ImGui::SliderFloat(
@@ -473,12 +615,16 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
         -2.0f,
         2.0f
     );
+    ImGui::EndDisabled();
 
     }
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Lighting", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::SetNextItemOpen(panels.lightingOpen, ImGuiCond_Always);
+    panels.lightingOpen = ImGui::CollapsingHeader("Lighting");
+    if (panels.lightingOpen) {
+    ImGui::BeginDisabled(inspector.isPlayMode);
     // DirectionalLightの向きと強さを調整
     ImGui::Text("Directional Light");
     ImGui::SliderFloat("Light X", &lighting.lightDirection.x, -1.0f, 1.0f);
@@ -506,6 +652,7 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     ImGui::SliderFloat("Spot Dir Y", &lighting.spotLightDirection.y, -1.0f, 1.0f);
     ImGui::SliderFloat("Spot Dir Z", &lighting.spotLightDirection.z, -1.0f, 1.0f);
     ImGui::SliderFloat("Spot Intensity", &lighting.spotLightIntensity, 0.0f, 20.0f);
+    ImGui::EndDisabled();
     }
 
     ImGui::End();
@@ -514,6 +661,7 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     (void)objects;
     (void)cylinder;
     (void)lighting;
+    (void)panels;
     (void)inspector;
 #endif
 }

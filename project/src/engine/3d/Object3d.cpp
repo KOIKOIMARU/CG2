@@ -11,6 +11,7 @@
 #include "engine/3d/Object3d.h"
 #include "engine/3d/Model.h"
 #include "engine/3d/ModelManager.h"
+#include "engine/3d/TextureManager.h"
 #include "engine/3d/Camera.h"
 #include "engine/base/SrvManager.h"
 
@@ -28,6 +29,7 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
     CreateCameraResource();
     CreatePointLight();
     CreateSpotLight();
+    CreateMaterialOverride();
     CreateSkinningPalette();
     CreateComputeSkinningPipeline();
 
@@ -155,9 +157,15 @@ void Object3d::Draw()
 
     if (model_) {
         if (enableComputeSkinning_) {
-            model_->Draw(&computeOutputVertexBufferView_);
+            model_->Draw(
+                &computeOutputVertexBufferView_,
+                materialResource_.Get(),
+                &textureFilePath_);
         } else {
-            model_->Draw();
+            model_->Draw(
+                nullptr,
+                materialResource_.Get(),
+                &textureFilePath_);
         }
     }
 }
@@ -247,6 +255,27 @@ void Object3d::CreateSpotLight() {
     spotLightData_->decay = 2.0f;
     spotLightData_->cosAngle = std::cos(3.14159265f / 3.0f);
     spotLightData_->cosFalloffStart = std::cos(3.14159265f / 6.0f);
+}
+
+void Object3d::CreateMaterialOverride()
+{
+    auto dxCommon = object3dCommon_->GetDxCommon();
+
+    materialResource_ =
+        dxCommon->CreateBufferResource(sizeof(Material));
+
+    materialResource_->Map(
+        0, nullptr,
+        reinterpret_cast<void**>(&materialData_));
+
+    materialData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    materialData_->lightingMode = 2;
+    materialData_->shininess = 64.0f;
+    materialData_->environmentCoefficient = 0.2f;
+    materialData_->alphaReference = 0.0f;
+    materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
+    materialData_->uvTransform = MakeIdentity4x4();
+    textureFilePath_ = "resources/uvChecker.png";
 }
 
 void Object3d::CreateSkinningPalette()
@@ -709,41 +738,53 @@ void Object3d::SetSpotLightIntensity(float intensity) {
 void Object3d::SetModel(Model* model)
 {
     model_ = model;
+    if (model_ && materialData_) {
+        *materialData_ = model_->GetMaterial();
+        textureFilePath_ = model_->GetTextureFilePath();
+    }
     InitializeSkinning();
 }
 
 void Object3d::SetEnvironmentCoefficient(float coefficient)
 {
-    if (model_) {
-        model_->SetEnvironmentCoefficient(coefficient);
+    if (materialData_) {
+        materialData_->environmentCoefficient = coefficient;
     }
 }
 
 void Object3d::SetColor(const Vector4& color)
 {
-    if (model_) {
-        model_->SetColor(color);
+    if (materialData_) {
+        materialData_->color = color;
     }
 }
 
 void Object3d::SetAlphaReference(float alphaReference)
 {
-    if (model_) {
-        model_->SetAlphaReference(alphaReference);
+    if (materialData_) {
+        materialData_->alphaReference = alphaReference;
     }
 }
 
 void Object3d::SetUVTransform(const Matrix4x4& uvTransform)
 {
-    if (model_) {
-        model_->SetUVTransform(uvTransform);
+    if (materialData_) {
+        materialData_->uvTransform = uvTransform;
     }
 }
 
 void Object3d::SetLightingMode(int32_t lightingMode)
 {
-    if (model_) {
-        model_->SetLightingMode(lightingMode);
+    if (materialData_) {
+        materialData_->lightingMode = lightingMode;
+    }
+}
+
+void Object3d::SetTextureFilePath(const std::string& textureFilePath)
+{
+    if (!textureFilePath.empty()) {
+        textureFilePath_ = textureFilePath;
+        TextureManager::GetInstance()->LoadTexture(textureFilePath_);
     }
 }
 
@@ -762,14 +803,47 @@ Vector3 Object3d::GetTranslate() const {
 
 float Object3d::GetEnvironmentCoefficient() const
 {
-    if (model_) {
-        return model_->GetEnvironmentCoefficient();
+    if (materialData_) {
+        return materialData_->environmentCoefficient;
     }
     return 0.0f;
+}
+
+Vector4 Object3d::GetColor() const
+{
+    if (materialData_) {
+        return materialData_->color;
+    }
+    return { 1.0f, 1.0f, 1.0f, 1.0f };
+}
+
+float Object3d::GetAlphaReference() const
+{
+    if (materialData_) {
+        return materialData_->alphaReference;
+    }
+    return 0.0f;
+}
+
+int32_t Object3d::GetLightingMode() const
+{
+    if (materialData_) {
+        return materialData_->lightingMode;
+    }
+    return 0;
+}
+
+const std::string& Object3d::GetTextureFilePath() const
+{
+    return textureFilePath_;
 }
 
 void Object3d::SetModel(const std::string& filePath)
 {
     model_ = ModelManager::GetInstance()->FindModel(filePath);
+    if (model_ && materialData_) {
+        *materialData_ = model_->GetMaterial();
+        textureFilePath_ = model_->GetTextureFilePath();
+    }
     InitializeSkinning();
 }

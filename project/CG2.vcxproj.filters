@@ -180,6 +180,12 @@
     <ClCompile Include="src\engine\scene\GamePlayScene.cpp">
       <Filter>src\engine\scene</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\scene\SceneSerializer.cpp">
+      <Filter>src\engine\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\editor\EditorManager.cpp">
+      <Filter>src\engine\editor</Filter>
+    </ClCompile>
     <ClCompile Include="src\engine\scene\BaseScene.cpp">
       <Filter>src\engine\scene</Filter>
     </ClCompile>
@@ -367,6 +373,12 @@
     </ClInclude>
     <ClInclude Include="include\engine\scene\GamePlayScene.h">
       <Filter>include\engine\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\SceneSerializer.h">
+      <Filter>include\engine\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\editor\EditorManager.h">
+      <Filter>include\engine\editor</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\BaseScene.h">
       <Filter>include\engine\scene</Filter>

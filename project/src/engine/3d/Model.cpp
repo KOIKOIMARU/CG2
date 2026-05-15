@@ -447,7 +447,10 @@ void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
     );
 }
 
-void Model::Draw(const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView)
+void Model::Draw(
+    const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView,
+    ID3D12Resource* overrideMaterialResource,
+    const std::string* overrideTextureFilePath)
 {
     auto dxCommon = modelCommon_->GetDxCommon();
     auto commandList = dxCommon->GetCommandList();
@@ -460,16 +463,21 @@ void Model::Draw(const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView)
     commandList->IASetIndexBuffer(&indexBufferView_);
 
     // Material CBV
+    ID3D12Resource* materialResource =
+        overrideMaterialResource ? overrideMaterialResource : materialResource_.Get();
     commandList->SetGraphicsRootConstantBufferView(
         0,
-        materialResource_->GetGPUVirtualAddress()
+        materialResource->GetGPUVirtualAddress()
     );
 
     // Texture SRV
+    const std::string& textureFilePath =
+        overrideTextureFilePath ? *overrideTextureFilePath :
+        modelData_.material.textureFilePath;
     srvManager->SetGraphicsRootDescriptorTable(
         3,
         TextureManager::GetInstance()->GetSrvIndex(
-            modelData_.material.textureFilePath
+            textureFilePath
         )
     );
 
@@ -550,9 +558,19 @@ void Model::SetColor(const Vector4& color)
     materialData_->color = color;
 }
 
+Vector4 Model::GetColor() const
+{
+    return materialData_->color;
+}
+
 void Model::SetAlphaReference(float alphaReference)
 {
     materialData_->alphaReference = alphaReference;
+}
+
+float Model::GetAlphaReference() const
+{
+    return materialData_->alphaReference;
 }
 
 void Model::SetUVTransform(const Matrix4x4& uvTransform)
@@ -563,6 +581,22 @@ void Model::SetUVTransform(const Matrix4x4& uvTransform)
 void Model::SetLightingMode(int32_t lightingMode)
 {
     materialData_->lightingMode = lightingMode;
+}
+
+int32_t Model::GetLightingMode() const
+{
+    return materialData_->lightingMode;
+}
+
+void Model::SetTextureFilePath(const std::string& textureFilePath)
+{
+    modelData_.material.textureFilePath = textureFilePath;
+    TextureManager::GetInstance()->LoadTexture(textureFilePath);
+}
+
+const std::string& Model::GetTextureFilePath() const
+{
+    return modelData_.material.textureFilePath;
 }
 
 MaterialData Model::LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename)

@@ -106,6 +106,7 @@ public:
     void SetAlphaReference(float alphaReference);
     void SetUVTransform(const Matrix4x4& uvTransform);
     void SetLightingMode(int32_t lightingMode);
+    void SetTextureFilePath(const std::string& textureFilePath);
     bool HasSkeleton() const { return hasSkeleton_; }
     const Skeleton& GetSkeleton() const { return skeleton_; }
     const Matrix4x4& GetWorldMatrix() const { return worldMatrix_; }
@@ -115,6 +116,10 @@ public:
     Vector3 GetRotate() const;
     Vector3 GetTranslate() const;
     float GetEnvironmentCoefficient() const;
+    Vector4 GetColor() const;
+    float GetAlphaReference() const;
+    int32_t GetLightingMode() const;
+    const std::string& GetTextureFilePath() const;
 
     void SetModel(const std::string& filePath);
 
@@ -127,6 +132,7 @@ private:
     void CreateCameraResource();
     void CreatePointLight();
     void CreateSpotLight();
+    void CreateMaterialOverride();
     void CreateSkinningPalette();
     void CreateComputeSkinningPipeline();
     void InitializeSkinning();
@@ -159,6 +165,10 @@ private:
 
     ComPtr<ID3D12Resource> spotLightResource_;
     SpotLight* spotLightData_ = nullptr;
+
+    ComPtr<ID3D12Resource> materialResource_;
+    Material* materialData_ = nullptr;
+    std::string textureFilePath_;
 
     ComPtr<ID3D12Resource> skinningPaletteResource_;
     SkinningPaletteForGPU* skinningPaletteData_ = nullptr;

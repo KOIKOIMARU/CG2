@@ -7,6 +7,9 @@
 #include "engine/base/Math.h"
 #include "engine/2d/Sprite.h"
 #include "engine/3d/Object3dCommon.h"
+#include "engine/base/ImGuiManager.h"
+#include "engine/editor/EditorManager.h"
+#include "engine/scene/SceneSerializer.h"
 
 class Object3dCommon;
 class Object3d;
@@ -19,6 +22,13 @@ struct SkeletonDebugSet {
     std::vector<std::unique_ptr<Object3d>> joints;
     std::vector<std::unique_ptr<Object3d>> bones;
     Math::Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
+};
+
+// エディタ上で扱う追加オブジェクト
+struct EditorObject {
+    std::string name;
+    std::unique_ptr<Object3d> object;
+    int modelIndex = 0;
 };
 
 class GamePlayScene : public BaseScene {
@@ -34,6 +44,16 @@ public:
     int GetPostEffectMode() const { return postEffectMode_; }
 
 private:
+    struct TransformHistoryRecord {
+        Object3d* object = nullptr;
+        Math::Vector3 beforeTranslate{};
+        Math::Vector3 beforeRotate{};
+        Math::Vector3 beforeScale{ 1.0f, 1.0f, 1.0f };
+        Math::Vector3 afterTranslate{};
+        Math::Vector3 afterRotate{};
+        Math::Vector3 afterScale{ 1.0f, 1.0f, 1.0f };
+    };
+
     void UpdateDebugCamera(float deltaTime);
     void InitializeSkeletonDebugSet(
         SkeletonDebugSet& debugSet,
@@ -41,6 +61,26 @@ private:
         const Math::Vector4& color);
     void UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet);
     bool LoadPrimitiveObjectsFromSceneFile(const char* path);
+    bool SaveSceneToFile(const char* path) const;
+    void AddEditorPrimitive(int modelIndex);
+    void DuplicateSelectedEditorObject();
+    void SaveSelectedEditorObjectAsPrefab();
+    void InstantiatePrefab();
+    void RemoveSelectedEditorObject();
+    void BuildInspectableObjects(
+        std::vector<ImGuiManager::InspectableObject>& inspectObjects);
+    void ProcessEditorRequests();
+    void ApplyLightingToObject(Object3d* object);
+    void UpdateAnimations(float deltaTime);
+    void LoadEditorSettings();
+    void SaveEditorSettings() const;
+    std::vector<SceneSerializer::ObjectRecord> BuildSceneObjectRecords() const;
+    SceneSerializer::SceneSettings BuildSceneSettings() const;
+    void ApplySceneSettings(const SceneSerializer::SceneSettings& settings);
+    void TrackTransformHistory(
+        const std::vector<ImGuiManager::InspectableObject>& inspectObjects);
+    void ClearTransformHistory();
+    void ApplyTransformHistory(const TransformHistoryRecord& record, bool useAfter);
 
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
@@ -53,9 +93,7 @@ private:
     std::unique_ptr<Object3d> simpleSkinObject_;
     std::unique_ptr<Object3d> humanSneakObject_;
     std::unique_ptr<Object3d> humanWalkObject_;
-    std::vector<std::unique_ptr<Object3d>> primitiveObjects_;
-    std::vector<std::string> primitiveObjectNames_;
-    std::vector<int> primitiveObjectModelIndices_;
+    std::vector<EditorObject> editorObjects_;
     SkeletonDebugSet simpleSkinDebug_;
     SkeletonDebugSet humanSneakDebug_;
     SkeletonDebugSet humanWalkDebug_;
@@ -87,14 +125,22 @@ private:
     float animationTime_ = 0.0f;
     bool showSkinningSamples_ = true;
     bool showSkeletonDebug_ = true;
-    int selectedInspectObjectIndex_ = 0;
+    bool renderingPanelOpen_ = true;
+    bool objectsPanelOpen_ = true;
+    bool inspectorPanelOpen_ = true;
+    bool materialPanelOpen_ = true;
+    bool cylinderPanelOpen_ = false;
+    bool lightingPanelOpen_ = true;
+    std::vector<TransformHistoryRecord> undoStack_;
+    std::vector<TransformHistoryRecord> redoStack_;
+    int lastTransformHistoryObjectIndex_ = -1;
+    Math::Vector3 lastObservedTranslate_{};
+    Math::Vector3 lastObservedRotate_{};
+    Math::Vector3 lastObservedScale_{ 1.0f, 1.0f, 1.0f };
     std::array<int, 8> inspectObjectModelIndices_{
         0, 1, 2, 3, 9, 10, 11, 12
     };
-    int addPrimitiveModelIndex_ = 2;
-    bool requestAddPrimitive_ = false;
-    bool requestRemovePrimitive_ = false;
-    bool requestLoadPrimitiveObjects_ = false;
+    EditorManager editorManager_;
 
     bool isDebugCameraEnabled_ = false;
     float debugCameraMoveSpeed_ = 6.0f;

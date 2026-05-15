@@ -13,9 +13,12 @@
 #include "engine/base/ImGuiManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
+#include "engine/scene/SceneSerializer.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
 #include <algorithm>
+#include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -38,7 +41,66 @@ constexpr const char* kInspectorModelItems[] = {
     "human/walk.gltf"
 };
 
-bool ExtractJsonVector3(
+constexpr const char* kSceneFilePath =
+"resources/scene_debug_transforms.json";
+constexpr const char* kEditorSettingsPath =
+"resources/editor_settings.json";
+constexpr size_t kMaxTransformHistoryCount = 64;
+constexpr float kTransformHistoryEpsilon = 0.0001f;
+
+bool IsSameVector3(const Math::Vector3& lhs, const Math::Vector3& rhs)
+{
+    return std::fabs(lhs.x - rhs.x) <= kTransformHistoryEpsilon &&
+        std::fabs(lhs.y - rhs.y) <= kTransformHistoryEpsilon &&
+        std::fabs(lhs.z - rhs.z) <= kTransformHistoryEpsilon;
+}
+
+bool ExtractSettingsInt(const std::string& source, const char* key, int& out)
+{
+    const std::regex pattern(
+        std::string("\"") + key + "\"\\s*:\\s*(-?[0-9]+)"
+    );
+    std::smatch match;
+    if (!std::regex_search(source, match, pattern)) {
+        return false;
+    }
+
+    out = std::stoi(match[1].str());
+    return true;
+}
+
+bool ExtractSettingsFloat(
+    const std::string& source,
+    const char* key,
+    float& out)
+{
+    const std::regex pattern(
+        std::string("\"") + key + "\"\\s*:\\s*([-+0-9.eE]+)"
+    );
+    std::smatch match;
+    if (!std::regex_search(source, match, pattern)) {
+        return false;
+    }
+
+    out = std::stof(match[1].str());
+    return true;
+}
+
+bool ExtractSettingsBool(const std::string& source, const char* key, bool& out)
+{
+    const std::regex pattern(
+        std::string("\"") + key + "\"\\s*:\\s*(true|false)"
+    );
+    std::smatch match;
+    if (!std::regex_search(source, match, pattern)) {
+        return false;
+    }
+
+    out = match[1].str() == "true";
+    return true;
+}
+
+bool ExtractSettingsVector3(
     const std::string& source,
     const char* key,
     Math::Vector3& out)
@@ -55,37 +117,6 @@ bool ExtractJsonVector3(
     out.x = std::stof(match[1].str());
     out.y = std::stof(match[2].str());
     out.z = std::stof(match[3].str());
-    return true;
-}
-
-bool ExtractJsonInt(const std::string& source, const char* key, int& out)
-{
-    const std::regex pattern(
-        std::string("\"") + key + "\"\\s*:\\s*(-?[0-9]+)"
-    );
-    std::smatch match;
-    if (!std::regex_search(source, match, pattern)) {
-        return false;
-    }
-
-    out = std::stoi(match[1].str());
-    return true;
-}
-
-bool ExtractJsonString(
-    const std::string& source,
-    const char* key,
-    std::string& out)
-{
-    const std::regex pattern(
-        std::string("\"") + key + "\"\\s*:\\s*\"([^\"]*)\""
-    );
-    std::smatch match;
-    if (!std::regex_search(source, match, pattern)) {
-        return false;
-    }
-
-    out = match[1].str();
     return true;
 }
 
@@ -344,10 +375,17 @@ void GamePlayScene::Initialize() {
         primitiveObject->SetModel(sample.modelName);
         primitiveObject->SetTranslate(sample.position);
         primitiveObject->SetEnvironmentCoefficient(0.0f);
-        primitiveObjectNames_.push_back(sample.modelName);
-        primitiveObjectModelIndices_.push_back(sample.modelIndex);
-        primitiveObjects_.push_back(std::move(primitiveObject));
+
+        EditorObject editorObject{};
+        editorObject.name = sample.modelName;
+        editorObject.modelIndex = sample.modelIndex;
+        editorObject.object = std::move(primitiveObject);
+        editorObjects_.push_back(std::move(editorObject));
     }
+
+    editorManager_.SetSceneFilePath(kSceneFilePath);
+    LoadEditorSettings();
+    LoadPrimitiveObjectsFromSceneFile(editorManager_.GetSceneFilePath());
 
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
@@ -369,70 +407,589 @@ void GamePlayScene::Initialize() {
 }
 
 bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
-    if (!path) {
+    std::vector<SceneSerializer::ObjectRecord> records;
+    SceneSerializer::SceneSettings settings{};
+    if (!SceneSerializer::LoadScene(path, records, settings)) {
         return false;
     }
 
-    std::ifstream file(path);
-    if (!file) {
-        return false;
+    ApplySceneSettings(settings);
+    ClearTransformHistory();
+
+    struct BaseObjectBinding {
+        const char* name;
+        Object3d* object;
+        int modelIndexSlot;
+    };
+    const BaseObjectBinding baseObjects[] = {
+        { "Plane", object3d_.get(), 0 },
+        { "Ring", ringObject_.get(), 1 },
+        { "Cylinder", cylinderObject_.get(), 2 },
+        { "Sphere", sphereObject_.get(), 3 },
+        { "Animated Cube", animatedCubeObject_.get(), 4 },
+        { "Simple Skin", simpleSkinObject_.get(), 5 },
+        { "Human Sneak", humanSneakObject_.get(), 6 },
+        { "Human Walk", humanWalkObject_.get(), 7 }
+    };
+    const int modelItemCount =
+        static_cast<int>(
+            sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
+    for (const BaseObjectBinding& binding : baseObjects) {
+        if (!binding.object) {
+            continue;
+        }
+
+        const SceneSerializer::ObjectRecord* record =
+            SceneSerializer::FindObjectByName(records, binding.name);
+        if (!record) {
+            continue;
+        }
+
+        if (0 <= record->modelIndex && record->modelIndex < modelItemCount) {
+            binding.object->SetModel(kInspectorModelItems[record->modelIndex]);
+            inspectObjectModelIndices_[binding.modelIndexSlot] =
+                record->modelIndex;
+        }
+        binding.object->SetTranslate(record->translate);
+        binding.object->SetRotate(record->rotate);
+        binding.object->SetScale(record->scale);
+        binding.object->SetColor(record->color);
+        binding.object->SetAlphaReference(record->alphaReference);
+        binding.object->SetLightingMode(record->lightingMode);
+        if (!record->textureFilePath.empty()) {
+            binding.object->SetTextureFilePath(record->textureFilePath);
+        }
     }
 
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-    const std::string json = buffer.str();
+    editorObjects_.clear();
 
-    primitiveObjects_.clear();
-    primitiveObjectNames_.clear();
-    primitiveObjectModelIndices_.clear();
-
-    const std::regex primitivePattern(
-        "\\{[^{}]*\"primitive\"\\s*:\\s*true[^{}]*\\}"
-    );
-    const auto begin =
-        std::sregex_iterator(json.begin(), json.end(), primitivePattern);
-    const auto end = std::sregex_iterator();
-    for (auto iterator = begin; iterator != end; ++iterator) {
-        const std::string objectJson = iterator->str();
-
-        int modelIndex = 0;
-        Math::Vector3 translate{};
-        Math::Vector3 rotate{};
-        Math::Vector3 scale{ 1.0f, 1.0f, 1.0f };
-        if (!ExtractJsonInt(objectJson, "modelIndex", modelIndex) ||
-            !ExtractJsonVector3(objectJson, "translate", translate) ||
-            !ExtractJsonVector3(objectJson, "rotate", rotate) ||
-            !ExtractJsonVector3(objectJson, "scale", scale)) {
+    for (const SceneSerializer::ObjectRecord& record : records) {
+        if (!record.primitive) {
             continue;
         }
 
-        const int modelItemCount =
-            static_cast<int>(
-                sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
-        if (modelIndex < 0 || modelItemCount <= modelIndex) {
+        if (record.modelIndex < 0 || modelItemCount <= record.modelIndex) {
             continue;
-        }
-
-        std::string objectName;
-        if (!ExtractJsonString(objectJson, "name", objectName)) {
-            objectName = kInspectorModelItems[modelIndex];
         }
 
         auto primitiveObject = std::make_unique<Object3d>();
         primitiveObject->Initialize(object3dCommon_.get());
-        primitiveObject->SetModel(kInspectorModelItems[modelIndex]);
-        primitiveObject->SetTranslate(translate);
-        primitiveObject->SetRotate(rotate);
-        primitiveObject->SetScale(scale);
+        primitiveObject->SetModel(kInspectorModelItems[record.modelIndex]);
+        primitiveObject->SetTranslate(record.translate);
+        primitiveObject->SetRotate(record.rotate);
+        primitiveObject->SetScale(record.scale);
+        primitiveObject->SetColor(record.color);
+        primitiveObject->SetAlphaReference(record.alphaReference);
+        primitiveObject->SetLightingMode(record.lightingMode);
+        if (!record.textureFilePath.empty()) {
+            primitiveObject->SetTextureFilePath(record.textureFilePath);
+        }
         primitiveObject->SetEnvironmentCoefficient(0.0f);
 
-        primitiveObjectNames_.push_back(objectName);
-        primitiveObjectModelIndices_.push_back(modelIndex);
-        primitiveObjects_.push_back(std::move(primitiveObject));
+        EditorObject editorObject{};
+        editorObject.name = record.name.empty() ?
+            kInspectorModelItems[record.modelIndex] :
+            record.name;
+        editorObject.modelIndex = record.modelIndex;
+        editorObject.object = std::move(primitiveObject);
+        editorObjects_.push_back(std::move(editorObject));
     }
 
-    selectedInspectObjectIndex_ = 0;
+    editorManager_.ResetSelectedObjectIndex();
     return true;
+}
+
+bool GamePlayScene::SaveSceneToFile(const char* path) const
+{
+    return SceneSerializer::SaveScene(
+        path,
+        BuildSceneObjectRecords(),
+        BuildSceneSettings());
+}
+
+void GamePlayScene::AddEditorPrimitive(int modelIndex)
+{
+    const int modelItemCount =
+        static_cast<int>(
+            sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
+
+    if (modelIndex < 0 || modelIndex >= modelItemCount) {
+        return;
+    }
+
+    auto primitiveObject = std::make_unique<Object3d>();
+    primitiveObject->Initialize(object3dCommon_.get());
+    primitiveObject->SetModel(kInspectorModelItems[modelIndex]);
+    primitiveObject->SetTranslate({
+        0.0f,
+        1.0f,
+        static_cast<float>(editorObjects_.size()) + 5.0f
+        });
+    primitiveObject->SetEnvironmentCoefficient(0.0f);
+
+    EditorObject editorObject{};
+    editorObject.name =
+        "Added Primitive " + std::to_string(editorObjects_.size() + 1);
+    editorObject.modelIndex = modelIndex;
+    editorObject.object = std::move(primitiveObject);
+
+    editorObjects_.push_back(std::move(editorObject));
+    ClearTransformHistory();
+}
+
+void GamePlayScene::RemoveSelectedEditorObject()
+{
+    constexpr int kBaseInspectObjectCount = 8;
+
+    const int primitiveIndex =
+        editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
+
+    if (primitiveIndex < 0 ||
+        primitiveIndex >= static_cast<int>(editorObjects_.size())) {
+        return;
+    }
+
+    editorObjects_.erase(editorObjects_.begin() + primitiveIndex);
+    editorManager_.ResetSelectedObjectIndex();
+    ClearTransformHistory();
+}
+
+void GamePlayScene::DuplicateSelectedEditorObject()
+{
+    constexpr int kBaseInspectObjectCount = 8;
+
+    const int primitiveIndex =
+        editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
+
+    if (primitiveIndex < 0 ||
+        primitiveIndex >= static_cast<int>(editorObjects_.size())) {
+        return;
+    }
+
+    const EditorObject& source = editorObjects_[primitiveIndex];
+    auto duplicatedObject = std::make_unique<Object3d>();
+    duplicatedObject->Initialize(object3dCommon_.get());
+    duplicatedObject->SetModel(kInspectorModelItems[source.modelIndex]);
+
+    Math::Vector3 translate = source.object->GetTranslate();
+    translate.x += 1.0f;
+    translate.z += 1.0f;
+    duplicatedObject->SetTranslate(translate);
+    duplicatedObject->SetRotate(source.object->GetRotate());
+    duplicatedObject->SetScale(source.object->GetScale());
+    duplicatedObject->SetColor(source.object->GetColor());
+    duplicatedObject->SetAlphaReference(source.object->GetAlphaReference());
+    duplicatedObject->SetLightingMode(source.object->GetLightingMode());
+    duplicatedObject->SetTextureFilePath(source.object->GetTextureFilePath());
+    duplicatedObject->SetEnvironmentCoefficient(
+        source.object->GetEnvironmentCoefficient());
+
+    EditorObject duplicatedEditorObject{};
+    duplicatedEditorObject.name = source.name + " Copy";
+    duplicatedEditorObject.modelIndex = source.modelIndex;
+    duplicatedEditorObject.object = std::move(duplicatedObject);
+    editorObjects_.push_back(std::move(duplicatedEditorObject));
+    ClearTransformHistory();
+}
+
+void GamePlayScene::SaveSelectedEditorObjectAsPrefab()
+{
+    constexpr int kBaseInspectObjectCount = 8;
+
+    const int primitiveIndex =
+        editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
+
+    if (primitiveIndex < 0 ||
+        primitiveIndex >= static_cast<int>(editorObjects_.size())) {
+        return;
+    }
+
+    const EditorObject& source = editorObjects_[primitiveIndex];
+    SceneSerializer::ObjectRecord record{};
+    record.name = source.name;
+    record.primitive = true;
+    record.modelIndex = source.modelIndex;
+    record.translate = source.object->GetTranslate();
+    record.rotate = source.object->GetRotate();
+    record.scale = source.object->GetScale();
+    record.color = source.object->GetColor();
+    record.alphaReference = source.object->GetAlphaReference();
+    record.lightingMode = source.object->GetLightingMode();
+    record.textureFilePath = source.object->GetTextureFilePath();
+
+    SceneSerializer::SaveObjects(editorManager_.GetPrefabFilePath(), { record });
+}
+
+void GamePlayScene::InstantiatePrefab()
+{
+    std::vector<SceneSerializer::ObjectRecord> records;
+    if (!SceneSerializer::LoadObjects(editorManager_.GetPrefabFilePath(), records) ||
+        records.empty()) {
+        return;
+    }
+
+    const SceneSerializer::ObjectRecord& record = records.front();
+    const int modelItemCount =
+        static_cast<int>(
+            sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
+    if (record.modelIndex < 0 || modelItemCount <= record.modelIndex) {
+        return;
+    }
+
+    auto object = std::make_unique<Object3d>();
+    object->Initialize(object3dCommon_.get());
+    object->SetModel(kInspectorModelItems[record.modelIndex]);
+    Math::Vector3 translate = record.translate;
+    translate.x += 1.5f;
+    translate.z += 1.5f;
+    object->SetTranslate(translate);
+    object->SetRotate(record.rotate);
+    object->SetScale(record.scale);
+    object->SetColor(record.color);
+    object->SetAlphaReference(record.alphaReference);
+    object->SetLightingMode(record.lightingMode);
+    if (!record.textureFilePath.empty()) {
+        object->SetTextureFilePath(record.textureFilePath);
+    }
+    object->SetEnvironmentCoefficient(0.0f);
+
+    EditorObject editorObject{};
+    editorObject.name = record.name.empty() ?
+        "Prefab Instance" :
+        record.name + " Instance";
+    editorObject.modelIndex = record.modelIndex;
+    editorObject.object = std::move(object);
+    editorObjects_.push_back(std::move(editorObject));
+    ClearTransformHistory();
+}
+
+void GamePlayScene::BuildInspectableObjects(
+    std::vector<ImGuiManager::InspectableObject>& inspectObjects)
+{
+    inspectObjects = {
+        { "Plane", ImGuiManager::InspectableType::Object3d, object3d_.get(), &inspectObjectModelIndices_[0], nullptr },
+        { "Ring", ImGuiManager::InspectableType::Object3d, ringObject_.get(), &inspectObjectModelIndices_[1], nullptr },
+        { "Cylinder", ImGuiManager::InspectableType::Object3d, cylinderObject_.get(), &inspectObjectModelIndices_[2], nullptr },
+        { "Sphere", ImGuiManager::InspectableType::Object3d, sphereObject_.get(), &inspectObjectModelIndices_[3], nullptr },
+        { "Animated Cube", ImGuiManager::InspectableType::Object3d, animatedCubeObject_.get(), &inspectObjectModelIndices_[4], nullptr },
+        { "Simple Skin", ImGuiManager::InspectableType::Object3d, simpleSkinObject_.get(), &inspectObjectModelIndices_[5], nullptr },
+        { "Human Sneak", ImGuiManager::InspectableType::Object3d, humanSneakObject_.get(), &inspectObjectModelIndices_[6], nullptr },
+        { "Human Walk", ImGuiManager::InspectableType::Object3d, humanWalkObject_.get(), &inspectObjectModelIndices_[7], nullptr }
+    };
+
+    for (auto& editorObject : editorObjects_) {
+        inspectObjects.push_back({
+     editorObject.name.c_str(),
+     ImGuiManager::InspectableType::Object3d,
+     editorObject.object.get(),
+     &editorObject.modelIndex,
+     &editorObject.name
+            });
+    }
+}
+
+std::vector<SceneSerializer::ObjectRecord> GamePlayScene::BuildSceneObjectRecords() const
+{
+    std::vector<SceneSerializer::ObjectRecord> records;
+
+    auto appendObject =
+        [&records](
+            const char* name,
+            const Object3d* object,
+            bool primitive,
+            int modelIndex) {
+            if (!object) {
+                return;
+            }
+
+            SceneSerializer::ObjectRecord record{};
+            record.name = name ? name : "";
+            record.primitive = primitive;
+            record.modelIndex = modelIndex;
+            record.translate = object->GetTranslate();
+            record.rotate = object->GetRotate();
+            record.scale = object->GetScale();
+            record.color = object->GetColor();
+            record.alphaReference = object->GetAlphaReference();
+            record.lightingMode = object->GetLightingMode();
+            record.textureFilePath = object->GetTextureFilePath();
+            records.push_back(record);
+        };
+
+    appendObject("Plane", object3d_.get(), false, inspectObjectModelIndices_[0]);
+    appendObject("Ring", ringObject_.get(), false, inspectObjectModelIndices_[1]);
+    appendObject(
+        "Cylinder",
+        cylinderObject_.get(),
+        false,
+        inspectObjectModelIndices_[2]);
+    appendObject("Sphere", sphereObject_.get(), false, inspectObjectModelIndices_[3]);
+    appendObject(
+        "Animated Cube",
+        animatedCubeObject_.get(),
+        false,
+        inspectObjectModelIndices_[4]);
+    appendObject(
+        "Simple Skin",
+        simpleSkinObject_.get(),
+        false,
+        inspectObjectModelIndices_[5]);
+    appendObject(
+        "Human Sneak",
+        humanSneakObject_.get(),
+        false,
+        inspectObjectModelIndices_[6]);
+    appendObject(
+        "Human Walk",
+        humanWalkObject_.get(),
+        false,
+        inspectObjectModelIndices_[7]);
+
+    for (const EditorObject& editorObject : editorObjects_) {
+        appendObject(
+            editorObject.name.c_str(),
+            editorObject.object.get(),
+            true,
+            editorObject.modelIndex);
+    }
+
+    return records;
+}
+
+SceneSerializer::SceneSettings GamePlayScene::BuildSceneSettings() const
+{
+    SceneSerializer::SceneSettings settings{};
+    if (camera_) {
+        settings.hasCamera = true;
+        settings.cameraTranslate = camera_->GetTranslate();
+        settings.cameraRotate = camera_->GetRotate();
+    }
+
+    settings.hasLighting = true;
+    settings.lightDirection = lightDirection_;
+    settings.lightIntensity = lightIntensity_;
+    settings.pointLightPosition = pointLightPosition_;
+    settings.pointLightIntensity = pointLightIntensity_;
+    settings.spotLightPosition = spotLightPosition_;
+    settings.spotLightDirection = spotLightDirection_;
+    settings.spotLightIntensity = spotLightIntensity_;
+    return settings;
+}
+
+void GamePlayScene::ApplySceneSettings(
+    const SceneSerializer::SceneSettings& settings)
+{
+    if (settings.hasCamera && camera_) {
+        camera_->SetTranslate(settings.cameraTranslate);
+        camera_->SetRotate(settings.cameraRotate);
+    }
+
+    if (settings.hasLighting) {
+        lightDirection_ = settings.lightDirection;
+        lightIntensity_ = settings.lightIntensity;
+        pointLightPosition_ = settings.pointLightPosition;
+        pointLightIntensity_ = settings.pointLightIntensity;
+        spotLightPosition_ = settings.spotLightPosition;
+        spotLightDirection_ = settings.spotLightDirection;
+        spotLightIntensity_ = settings.spotLightIntensity;
+    }
+}
+
+void GamePlayScene::ProcessEditorRequests()
+{
+    if (editorManager_.IsPlayMode()) {
+        return;
+    }
+
+    if (editorManager_.ConsumeUndoRequest() && !undoStack_.empty()) {
+        const TransformHistoryRecord record = undoStack_.back();
+        undoStack_.pop_back();
+        ApplyTransformHistory(record, false);
+        redoStack_.push_back(record);
+        lastTransformHistoryObjectIndex_ = -1;
+    }
+
+    if (editorManager_.ConsumeRedoRequest() && !redoStack_.empty()) {
+        const TransformHistoryRecord record = redoStack_.back();
+        redoStack_.pop_back();
+        ApplyTransformHistory(record, true);
+        undoStack_.push_back(record);
+        lastTransformHistoryObjectIndex_ = -1;
+    }
+
+    if (editorManager_.ConsumeSaveObjectsRequest()) {
+        SaveSceneToFile(editorManager_.GetSceneFilePath());
+    }
+
+    if (editorManager_.ConsumeLoadObjectsRequest()) {
+        LoadPrimitiveObjectsFromSceneFile(editorManager_.GetSceneFilePath());
+    }
+
+    if (editorManager_.ConsumeRemoveObjectRequest()) {
+        RemoveSelectedEditorObject();
+    }
+
+    if (editorManager_.ConsumeDuplicateObjectRequest()) {
+        DuplicateSelectedEditorObject();
+    }
+
+    if (editorManager_.ConsumeSavePrefabRequest()) {
+        SaveSelectedEditorObjectAsPrefab();
+    }
+
+    if (editorManager_.ConsumeInstantiatePrefabRequest()) {
+        InstantiatePrefab();
+    }
+
+    if (editorManager_.ConsumeAddObjectRequest()) {
+        AddEditorPrimitive(editorManager_.GetAddModelIndex());
+    }
+}
+
+void GamePlayScene::TrackTransformHistory(
+    const std::vector<ImGuiManager::InspectableObject>& inspectObjects)
+{
+    if (editorManager_.IsPlayMode()) {
+        return;
+    }
+
+    const int selectedIndex = editorManager_.GetSelectedObjectIndex();
+    if (selectedIndex < 0 ||
+        selectedIndex >= static_cast<int>(inspectObjects.size())) {
+        lastTransformHistoryObjectIndex_ = -1;
+        return;
+    }
+
+    Object3d* object = inspectObjects[selectedIndex].object;
+    if (!object) {
+        lastTransformHistoryObjectIndex_ = -1;
+        return;
+    }
+
+    const Math::Vector3 translate = object->GetTranslate();
+    const Math::Vector3 rotate = object->GetRotate();
+    const Math::Vector3 scale = object->GetScale();
+
+    if (lastTransformHistoryObjectIndex_ != selectedIndex) {
+        lastTransformHistoryObjectIndex_ = selectedIndex;
+        lastObservedTranslate_ = translate;
+        lastObservedRotate_ = rotate;
+        lastObservedScale_ = scale;
+        return;
+    }
+
+    if (IsSameVector3(lastObservedTranslate_, translate) &&
+        IsSameVector3(lastObservedRotate_, rotate) &&
+        IsSameVector3(lastObservedScale_, scale)) {
+        return;
+    }
+
+    TransformHistoryRecord record{};
+    record.object = object;
+    record.beforeTranslate = lastObservedTranslate_;
+    record.beforeRotate = lastObservedRotate_;
+    record.beforeScale = lastObservedScale_;
+    record.afterTranslate = translate;
+    record.afterRotate = rotate;
+    record.afterScale = scale;
+    undoStack_.push_back(record);
+    if (undoStack_.size() > kMaxTransformHistoryCount) {
+        undoStack_.erase(undoStack_.begin());
+    }
+    redoStack_.clear();
+
+    lastObservedTranslate_ = translate;
+    lastObservedRotate_ = rotate;
+    lastObservedScale_ = scale;
+}
+
+void GamePlayScene::ClearTransformHistory()
+{
+    undoStack_.clear();
+    redoStack_.clear();
+    lastTransformHistoryObjectIndex_ = -1;
+}
+
+void GamePlayScene::ApplyTransformHistory(
+    const TransformHistoryRecord& record,
+    bool useAfter)
+{
+    if (!record.object) {
+        return;
+    }
+
+    record.object->SetTranslate(
+        useAfter ? record.afterTranslate : record.beforeTranslate);
+    record.object->SetRotate(
+        useAfter ? record.afterRotate : record.beforeRotate);
+    record.object->SetScale(
+        useAfter ? record.afterScale : record.beforeScale);
+}
+
+void GamePlayScene::ApplyLightingToObject(Object3d* object)
+{
+    if (!object) {
+        return;
+    }
+
+    object->SetDirectionalLightDirection(lightDirection_);
+    object->SetDirectionalLightIntensity(lightIntensity_);
+    object->SetPointLightPosition(pointLightPosition_);
+    object->SetPointLightIntensity(pointLightIntensity_);
+    object->SetSpotLightPosition(spotLightPosition_);
+    object->SetSpotLightDirection(spotLightDirection_);
+    object->SetSpotLightIntensity(spotLightIntensity_);
+}
+
+void GamePlayScene::UpdateAnimations(float deltaTime)
+{
+    if (Model* animatedCubeModel =
+        ModelManager::GetInstance()->FindModel("AnimatedCube/AnimatedCube.gltf")) {
+        const Animation& animation = animatedCubeModel->GetAnimation();
+
+        if (animation.duration > 0.0f &&
+            animatedCubeModel->HasAnimation()) {
+            animationTime_ += deltaTime * animation.ticksPerSecond;
+
+            while (animationTime_ > animation.duration) {
+                animationTime_ -= animation.duration;
+            }
+
+            const std::string& rootNodeName =
+                animatedCubeModel->GetRootNode().name;
+            auto it = animation.nodeAnimations.find(rootNodeName);
+
+            if (it != animation.nodeAnimations.end()) {
+                const QuaternionTransform transform =
+                    Model::CalculateValue(it->second, animationTime_);
+
+                animatedCubeObject_->SetScale(transform.scale);
+                animatedCubeObject_->SetQuaternionRotate(transform.rotate);
+                animatedCubeObject_->SetTranslate({
+                    transform.translate.x,
+                    transform.translate.y + 1.5f,
+                    transform.translate.z - 3.5f
+                    });
+            }
+        }
+    }
+
+    ApplyLightingToObject(animatedCubeObject_.get());
+
+    if (simpleSkinObject_) {
+        simpleSkinObject_->UpdateAnimation(deltaTime);
+        ApplyLightingToObject(simpleSkinObject_.get());
+    }
+
+    if (humanSneakObject_) {
+        humanSneakObject_->UpdateAnimation(deltaTime);
+        ApplyLightingToObject(humanSneakObject_.get());
+    }
+
+    if (humanWalkObject_) {
+        humanWalkObject_->UpdateAnimation(deltaTime);
+        ApplyLightingToObject(humanWalkObject_.get());
+    }
 }
 
 void GamePlayScene::Update() {
@@ -448,34 +1005,11 @@ void GamePlayScene::Update() {
 
     imguiManager_->ShowSpriteController(spritePos_);
 
-    std::vector<ImGuiManager::InspectableObject> inspectObjects{
-        { "Plane", object3d_.get(), &inspectObjectModelIndices_[0], nullptr },
-        { "Ring", ringObject_.get(), &inspectObjectModelIndices_[1], nullptr },
-        { "Cylinder", cylinderObject_.get(), &inspectObjectModelIndices_[2], nullptr },
-        { "Sphere", sphereObject_.get(), &inspectObjectModelIndices_[3], nullptr },
-        { "Animated Cube", animatedCubeObject_.get(), &inspectObjectModelIndices_[4], nullptr },
-        { "Simple Skin", simpleSkinObject_.get(), &inspectObjectModelIndices_[5], nullptr },
-        { "Human Sneak", humanSneakObject_.get(), &inspectObjectModelIndices_[6], nullptr },
-        { "Human Walk", humanWalkObject_.get(), &inspectObjectModelIndices_[7], nullptr }
-    };
-    const size_t editablePrimitiveCount = (std::min)(
-        primitiveObjects_.size(),
-        (std::min)(
-            primitiveObjectNames_.size(),
-            primitiveObjectModelIndices_.size()));
-    for (size_t index = 0; index < editablePrimitiveCount; ++index) {
-        inspectObjects.push_back({
-            primitiveObjectNames_[index].c_str(),
-            primitiveObjects_[index].get(),
-            &primitiveObjectModelIndices_[index],
-            &primitiveObjectNames_[index]
-        });
-    }
+    std::vector<ImGuiManager::InspectableObject> inspectObjects;
+    BuildInspectableObjects(inspectObjects);
+
     const int inspectObjectCount = static_cast<int>(inspectObjects.size());
-    if (selectedInspectObjectIndex_ < 0 ||
-        selectedInspectObjectIndex_ >= inspectObjectCount) {
-        selectedInspectObjectIndex_ = 0;
-    }
+    editorManager_.ValidateSelectedObjectIndex(inspectObjectCount);
 
     ImGuiManager::GamePlayDebugSettings debugSettings{
         {
@@ -507,86 +1041,30 @@ void GamePlayScene::Update() {
             spotLightIntensity_
         },
         {
+            renderingPanelOpen_,
+            objectsPanelOpen_,
+            inspectorPanelOpen_,
+            materialPanelOpen_,
+            cylinderPanelOpen_,
+            lightingPanelOpen_
+        },
+        editorManager_.CreateInspectorSettings(
             inspectObjects.data(),
-            inspectObjectCount,
-            selectedInspectObjectIndex_,
-            addPrimitiveModelIndex_,
-            requestAddPrimitive_,
-            requestRemovePrimitive_,
-            requestLoadPrimitiveObjects_,
-            "resources/scene_debug_transforms.json"
-        }
+            inspectObjectCount)
     };
     imguiManager_->ShowGamePlayController(debugSettings);
 
-    if (requestLoadPrimitiveObjects_) {
-        requestLoadPrimitiveObjects_ = false;
-        LoadPrimitiveObjectsFromSceneFile("resources/scene_debug_transforms.json");
-    }
-
-    if (requestRemovePrimitive_) {
-        requestRemovePrimitive_ = false;
-        constexpr int kBaseInspectObjectCount = 8;
-        const int primitiveIndex =
-            selectedInspectObjectIndex_ - kBaseInspectObjectCount;
-        if (0 <= primitiveIndex &&
-            primitiveIndex < static_cast<int>(primitiveObjects_.size())) {
-            primitiveObjects_.erase(
-                primitiveObjects_.begin() + primitiveIndex);
-            primitiveObjectNames_.erase(
-                primitiveObjectNames_.begin() + primitiveIndex);
-            primitiveObjectModelIndices_.erase(
-                primitiveObjectModelIndices_.begin() + primitiveIndex);
-            selectedInspectObjectIndex_ = 0;
-        }
-    }
-
-    if (requestAddPrimitive_) {
-        requestAddPrimitive_ = false;
-        const int modelItemCount =
-            static_cast<int>(
-                sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
-        if (0 <= addPrimitiveModelIndex_ &&
-            addPrimitiveModelIndex_ < modelItemCount) {
-            auto primitiveObject = std::make_unique<Object3d>();
-            primitiveObject->Initialize(object3dCommon_.get());
-            primitiveObject->SetModel(kInspectorModelItems[addPrimitiveModelIndex_]);
-            primitiveObject->SetTranslate({
-                0.0f,
-                1.0f,
-                static_cast<float>(primitiveObjects_.size()) + 5.0f
-            });
-            primitiveObject->SetEnvironmentCoefficient(0.0f);
-
-            primitiveObjectNames_.push_back(
-                "Added Primitive " +
-                std::to_string(primitiveObjects_.size() + 1));
-            primitiveObjectModelIndices_.push_back(addPrimitiveModelIndex_);
-            primitiveObjects_.push_back(std::move(primitiveObject));
-        }
-    }
+    TrackTransformHistory(inspectObjects);
+    ProcessEditorRequests();
 
     for (auto& sprite : sprites_) {
         sprite.SetPosition(spritePos_);
     }
     object3d_->SetRotate(objectRotate_);
-    object3d_->SetDirectionalLightDirection(lightDirection_);
-    object3d_->SetDirectionalLightIntensity(lightIntensity_);
-    object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
-    object3d_->SetPointLightPosition(pointLightPosition_);
-    object3d_->SetPointLightIntensity(pointLightIntensity_);
-    object3d_->SetSpotLightPosition(spotLightPosition_);
-    object3d_->SetSpotLightDirection(spotLightDirection_);
-    object3d_->SetSpotLightIntensity(spotLightIntensity_);
+    ApplyLightingToObject(object3d_.get());
 
     ringObject_->SetRotate({ 1.5707963f, objectRotate_.y, objectRotate_.z });
-    ringObject_->SetDirectionalLightDirection(lightDirection_);
-    ringObject_->SetDirectionalLightIntensity(lightIntensity_);
-    ringObject_->SetPointLightPosition(pointLightPosition_);
-    ringObject_->SetPointLightIntensity(pointLightIntensity_);
-    ringObject_->SetSpotLightPosition(spotLightPosition_);
-    ringObject_->SetSpotLightDirection(spotLightDirection_);
-    ringObject_->SetSpotLightIntensity(spotLightIntensity_);
+    ApplyLightingToObject(ringObject_.get());
 
     cylinderUVOffset_ += cylinderUVScrollSpeed_ * deltaTime;
     Matrix4x4 cylinderUVTransform = Multiply(
@@ -596,91 +1074,12 @@ void GamePlayScene::Update() {
     cylinderObject_->SetColor(cylinderColor_);
     cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
     cylinderObject_->SetUVTransform(cylinderUVTransform);
-    cylinderObject_->SetDirectionalLightDirection(lightDirection_);
-    cylinderObject_->SetDirectionalLightIntensity(lightIntensity_);
-    cylinderObject_->SetPointLightPosition(pointLightPosition_);
-    cylinderObject_->SetPointLightIntensity(pointLightIntensity_);
-    cylinderObject_->SetSpotLightPosition(spotLightPosition_);
-    cylinderObject_->SetSpotLightDirection(spotLightDirection_);
-    cylinderObject_->SetSpotLightIntensity(spotLightIntensity_);
+    ApplyLightingToObject(cylinderObject_.get());
 
     sphereObject_->SetRotate(objectRotate_);
-    sphereObject_->SetDirectionalLightDirection(lightDirection_);
-    sphereObject_->SetDirectionalLightIntensity(lightIntensity_);
-    sphereObject_->SetEnvironmentCoefficient(environmentCoefficient_);
-    sphereObject_->SetPointLightPosition(pointLightPosition_);
-    sphereObject_->SetPointLightIntensity(pointLightIntensity_);
-    sphereObject_->SetSpotLightPosition(spotLightPosition_);
-    sphereObject_->SetSpotLightDirection(spotLightDirection_);
-    sphereObject_->SetSpotLightIntensity(spotLightIntensity_);
+    ApplyLightingToObject(sphereObject_.get());
 
-    if (Model* animatedCubeModel =
-            ModelManager::GetInstance()->FindModel("AnimatedCube/AnimatedCube.gltf")) {
-        const Animation& animation = animatedCubeModel->GetAnimation();
-        if (animation.duration > 0.0f &&
-            animatedCubeModel->HasAnimation()) {
-            animationTime_ += deltaTime * animation.ticksPerSecond;
-            while (animationTime_ > animation.duration) {
-                animationTime_ -= animation.duration;
-            }
-
-            const std::string& rootNodeName =
-                animatedCubeModel->GetRootNode().name;
-            auto it = animation.nodeAnimations.find(rootNodeName);
-            if (it != animation.nodeAnimations.end()) {
-                const QuaternionTransform transform =
-                    Model::CalculateValue(it->second, animationTime_);
-                animatedCubeObject_->SetScale(transform.scale);
-                animatedCubeObject_->SetQuaternionRotate(transform.rotate);
-                animatedCubeObject_->SetTranslate({
-                    transform.translate.x,
-                    transform.translate.y + 1.5f,
-                    transform.translate.z - 3.5f
-                });
-            }
-        }
-    }
-
-    animatedCubeObject_->SetDirectionalLightDirection(lightDirection_);
-    animatedCubeObject_->SetDirectionalLightIntensity(lightIntensity_);
-    animatedCubeObject_->SetPointLightPosition(pointLightPosition_);
-    animatedCubeObject_->SetPointLightIntensity(pointLightIntensity_);
-    animatedCubeObject_->SetSpotLightPosition(spotLightPosition_);
-    animatedCubeObject_->SetSpotLightDirection(spotLightDirection_);
-    animatedCubeObject_->SetSpotLightIntensity(spotLightIntensity_);
-
-    if (simpleSkinObject_) {
-        simpleSkinObject_->UpdateAnimation(deltaTime);
-        simpleSkinObject_->SetDirectionalLightDirection(lightDirection_);
-        simpleSkinObject_->SetDirectionalLightIntensity(lightIntensity_);
-        simpleSkinObject_->SetPointLightPosition(pointLightPosition_);
-        simpleSkinObject_->SetPointLightIntensity(pointLightIntensity_);
-        simpleSkinObject_->SetSpotLightPosition(spotLightPosition_);
-        simpleSkinObject_->SetSpotLightDirection(spotLightDirection_);
-        simpleSkinObject_->SetSpotLightIntensity(spotLightIntensity_);
-    }
-
-    if (humanSneakObject_) {
-        humanSneakObject_->UpdateAnimation(deltaTime);
-        humanSneakObject_->SetDirectionalLightDirection(lightDirection_);
-        humanSneakObject_->SetDirectionalLightIntensity(lightIntensity_);
-        humanSneakObject_->SetPointLightPosition(pointLightPosition_);
-        humanSneakObject_->SetPointLightIntensity(pointLightIntensity_);
-        humanSneakObject_->SetSpotLightPosition(spotLightPosition_);
-        humanSneakObject_->SetSpotLightDirection(spotLightDirection_);
-        humanSneakObject_->SetSpotLightIntensity(spotLightIntensity_);
-    }
-
-    if (humanWalkObject_) {
-        humanWalkObject_->UpdateAnimation(deltaTime);
-        humanWalkObject_->SetDirectionalLightDirection(lightDirection_);
-        humanWalkObject_->SetDirectionalLightIntensity(lightIntensity_);
-        humanWalkObject_->SetPointLightPosition(pointLightPosition_);
-        humanWalkObject_->SetPointLightIntensity(pointLightIntensity_);
-        humanWalkObject_->SetSpotLightPosition(spotLightPosition_);
-        humanWalkObject_->SetSpotLightDirection(spotLightDirection_);
-        humanWalkObject_->SetSpotLightIntensity(spotLightIntensity_);
-    }
+    UpdateAnimations(deltaTime);
 
     if (showSkeletonDebug_) {
         UpdateSkeletonDebugSet(simpleSkinDebug_);
@@ -688,15 +1087,9 @@ void GamePlayScene::Update() {
         UpdateSkeletonDebugSet(humanWalkDebug_);
     }
 
-    for (auto& primitiveObject : primitiveObjects_) {
-        primitiveObject->SetRotate(objectRotate_);
-        primitiveObject->SetDirectionalLightDirection(lightDirection_);
-        primitiveObject->SetDirectionalLightIntensity(lightIntensity_);
-        primitiveObject->SetPointLightPosition(pointLightPosition_);
-        primitiveObject->SetPointLightIntensity(pointLightIntensity_);
-        primitiveObject->SetSpotLightPosition(spotLightPosition_);
-        primitiveObject->SetSpotLightDirection(spotLightDirection_);
-        primitiveObject->SetSpotLightIntensity(spotLightIntensity_);
+    for (auto& editorObject : editorObjects_) {
+        editorObject.object->SetRotate(objectRotate_);
+        ApplyLightingToObject(editorObject.object.get());
     }
 
     object3dCommon_->SetBlendMode(
@@ -738,8 +1131,8 @@ void GamePlayScene::Update() {
             bone->Update();
         }
     }
-    for (auto& primitiveObject : primitiveObjects_) {
-        primitiveObject->Update();
+    for (auto& editorObject : editorObjects_) {
+        editorObject.object->Update();
     }
 
     if (emitter_) {
@@ -754,6 +1147,93 @@ void GamePlayScene::Update() {
     for (auto& s : sprites_) {
         s.Update();
     }
+}
+
+void GamePlayScene::LoadEditorSettings()
+{
+    std::ifstream file(kEditorSettingsPath);
+    if (!file) {
+        return;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    const std::string json = buffer.str();
+
+    int sceneFileIndex = 0;
+    int prefabFileIndex = 0;
+    int gizmoMode = 0;
+    ExtractSettingsInt(json, "postEffectMode", postEffectMode_);
+    ExtractSettingsBool(json, "showSkybox", showSkybox_);
+    ExtractSettingsFloat(json, "environmentCoefficient", environmentCoefficient_);
+    ExtractSettingsVector3(json, "lightDirection", lightDirection_);
+    ExtractSettingsFloat(json, "lightIntensity", lightIntensity_);
+    ExtractSettingsVector3(json, "pointLightPosition", pointLightPosition_);
+    ExtractSettingsFloat(json, "pointLightIntensity", pointLightIntensity_);
+    ExtractSettingsVector3(json, "spotLightPosition", spotLightPosition_);
+    ExtractSettingsVector3(json, "spotLightDirection", spotLightDirection_);
+    ExtractSettingsFloat(json, "spotLightIntensity", spotLightIntensity_);
+    ExtractSettingsBool(json, "renderingPanelOpen", renderingPanelOpen_);
+    ExtractSettingsBool(json, "objectsPanelOpen", objectsPanelOpen_);
+    ExtractSettingsBool(json, "inspectorPanelOpen", inspectorPanelOpen_);
+    ExtractSettingsBool(json, "materialPanelOpen", materialPanelOpen_);
+    ExtractSettingsBool(json, "cylinderPanelOpen", cylinderPanelOpen_);
+    ExtractSettingsBool(json, "lightingPanelOpen", lightingPanelOpen_);
+
+    if (ExtractSettingsInt(json, "sceneFileIndex", sceneFileIndex)) {
+        editorManager_.SetSceneFileIndex(sceneFileIndex);
+    }
+    if (ExtractSettingsInt(json, "prefabFileIndex", prefabFileIndex)) {
+        editorManager_.SetPrefabFileIndex(prefabFileIndex);
+    }
+    if (ExtractSettingsInt(json, "gizmoMode", gizmoMode)) {
+        editorManager_.SetGizmoMode(gizmoMode);
+    }
+}
+
+void GamePlayScene::SaveEditorSettings() const
+{
+    std::filesystem::path path(kEditorSettingsPath);
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path());
+    }
+
+    std::ofstream file(path);
+    if (!file) {
+        return;
+    }
+
+    file << "{\n";
+    file << "  \"postEffectMode\": " << postEffectMode_ << ",\n";
+    file << "  \"showSkybox\": " << (showSkybox_ ? "true" : "false") << ",\n";
+    file << "  \"environmentCoefficient\": " << environmentCoefficient_ << ",\n";
+    file << "  \"lightDirection\": [" << lightDirection_.x << ", "
+        << lightDirection_.y << ", " << lightDirection_.z << "],\n";
+    file << "  \"lightIntensity\": " << lightIntensity_ << ",\n";
+    file << "  \"pointLightPosition\": [" << pointLightPosition_.x << ", "
+        << pointLightPosition_.y << ", " << pointLightPosition_.z << "],\n";
+    file << "  \"pointLightIntensity\": " << pointLightIntensity_ << ",\n";
+    file << "  \"spotLightPosition\": [" << spotLightPosition_.x << ", "
+        << spotLightPosition_.y << ", " << spotLightPosition_.z << "],\n";
+    file << "  \"spotLightDirection\": [" << spotLightDirection_.x << ", "
+        << spotLightDirection_.y << ", " << spotLightDirection_.z << "],\n";
+    file << "  \"spotLightIntensity\": " << spotLightIntensity_ << ",\n";
+    file << "  \"renderingPanelOpen\": "
+        << (renderingPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"objectsPanelOpen\": "
+        << (objectsPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"inspectorPanelOpen\": "
+        << (inspectorPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"materialPanelOpen\": "
+        << (materialPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"cylinderPanelOpen\": "
+        << (cylinderPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"lightingPanelOpen\": "
+        << (lightingPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"sceneFileIndex\": " << editorManager_.GetSceneFileIndex() << ",\n";
+    file << "  \"prefabFileIndex\": " << editorManager_.GetPrefabFileIndex() << ",\n";
+    file << "  \"gizmoMode\": " << editorManager_.GetGizmoMode() << "\n";
+    file << "}\n";
 }
 
 void GamePlayScene::UpdateDebugCamera(float deltaTime)
@@ -832,8 +1312,8 @@ void GamePlayScene::Draw() {
     if (showSphere_) {
         sphereObject_->Draw();
         animatedCubeObject_->Draw();
-        for (auto& primitiveObject : primitiveObjects_) {
-            primitiveObject->Draw();
+        for (auto& editorObject : editorObjects_) {
+            editorObject.object->Draw();
         }
     }
 
@@ -885,6 +1365,8 @@ void GamePlayScene::Draw() {
 }
 
 void GamePlayScene::Finalize() {
+    SaveEditorSettings();
+
     emitter_.reset();
     cylinderObject_.reset();
     ringObject_.reset();
@@ -899,7 +1381,7 @@ void GamePlayScene::Finalize() {
     humanSneakDebug_.bones.clear();
     humanWalkDebug_.joints.clear();
     humanWalkDebug_.bones.clear();
-    primitiveObjects_.clear();
+    editorObjects_.clear();
     object3d_.reset();
     skybox_.reset();
     camera_.reset();

@@ -106,13 +106,22 @@ class Model {
 public:
     void Initialize(ModelCommon* modelCommon, const std::string& directoryPath, const std::string& filename);
     void Initialize(ModelCommon* modelCommon, const ModelData& modelData);
-    void Draw(const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView = nullptr);
+    void Draw(
+        const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView = nullptr,
+        ID3D12Resource* overrideMaterialResource = nullptr,
+        const std::string* overrideTextureFilePath = nullptr);
     void SetEnvironmentCoefficient(float coefficient);
     float GetEnvironmentCoefficient() const;
     void SetColor(const Vector4& color);
     void SetAlphaReference(float alphaReference);
     void SetUVTransform(const Matrix4x4& uvTransform);
     void SetLightingMode(int32_t lightingMode);
+    void SetTextureFilePath(const std::string& textureFilePath);
+    Vector4 GetColor() const;
+    float GetAlphaReference() const;
+    int32_t GetLightingMode() const;
+    const std::string& GetTextureFilePath() const;
+    const Material& GetMaterial() const { return *materialData_; }
     const Animation& GetAnimation() const { return modelData_.animation; }
     const Node& GetRootNode() const { return modelData_.rootNode; }
     const SkinClusterData& GetSkinClusterData() const { return modelData_.skinClusterData; }
