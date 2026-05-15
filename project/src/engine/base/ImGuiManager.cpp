@@ -57,7 +57,7 @@ bool ImGuiManager::SaveInspectorTransforms(
 
         SceneSerializer::ObjectRecord record{};
         record.name = inspector.objects[index].name;
-        record.primitive = index >= 8;
+        record.primitive = index >= 1;
         record.modelIndex =
             inspector.objects[index].selectedModelIndex ?
             *inspector.objects[index].selectedModelIndex :
@@ -298,10 +298,6 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
     if (panels.objectsOpen) {
     ImGui::BeginDisabled(inspector.isPlayMode);
     ImGui::Checkbox("Show Plane", &objects.showPlane);
-    ImGui::Checkbox("Show Ring", &objects.showRing);
-    ImGui::Checkbox("Show Cylinder", &objects.showCylinder);
-    ImGui::Checkbox("Show Sphere", &objects.showSphere);
-    ImGui::Checkbox("Show Particle", &objects.showParticle);
 
     ImGui::Separator();
 
@@ -572,7 +568,7 @@ void ImGuiManager::ShowGamePlayController(GamePlayDebugSettings& settings)
             inspectorStatus_ = std::string("Load requested: ") +
                 inspector.saveFilePath;
         }
-        if (inspector.selectedObjectIndex >= 8) {
+        if (inspector.selectedObjectIndex >= 1) {
             ImGui::SameLine();
             if (ImGui::Button("Duplicate Selected")) {
                 inspector.requestDuplicateObject = true;

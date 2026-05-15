@@ -42,9 +42,9 @@ constexpr const char* kInspectorModelItems[] = {
 };
 
 constexpr const char* kSceneFilePath =
-"resources/scene_debug_transforms.json";
+"resources/game_scene.json";
 constexpr const char* kEditorSettingsPath =
-"resources/editor_settings.json";
+"resources/game_editor_settings.json";
 constexpr size_t kMaxTransformHistoryCount = 64;
 constexpr float kTransformHistoryEpsilon = 0.0001f;
 
@@ -292,97 +292,6 @@ void GamePlayScene::Initialize() {
     object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
     object3d_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
 
-    ringObject_ = std::make_unique<Object3d>();
-    ringObject_->Initialize(object3dCommon_.get());
-    ringObject_->SetModel("primitive_ring");
-    ringObject_->SetTranslate({ 0.0f, 0.05f, 0.0f });
-    ringObject_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
-    ringObject_->SetEnvironmentCoefficient(0.0f);
-
-    cylinderObject_ = std::make_unique<Object3d>();
-    cylinderObject_->Initialize(object3dCommon_.get());
-    cylinderObject_->SetModel("primitive_cylinder");
-    cylinderObject_->SetTranslate({ 0.0f, 0.0f, 0.0f });
-    cylinderObject_->SetEnvironmentCoefficient(0.0f);
-    cylinderObject_->SetLightingMode(0);
-    cylinderObject_->SetColor(cylinderColor_);
-    cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
-
-    sphereObject_ = std::make_unique<Object3d>();
-    sphereObject_->Initialize(object3dCommon_.get());
-    sphereObject_->SetModel("primitive_sphere");
-    sphereObject_->SetScale({ 1.0f, 1.0f, 1.0f });
-    sphereObject_->SetTranslate({ 0.0f, 1.5f, 3.0f });
-    sphereObject_->SetEnvironmentCoefficient(environmentCoefficient_);
-
-    animatedCubeObject_ = std::make_unique<Object3d>();
-    animatedCubeObject_->Initialize(object3dCommon_.get());
-    animatedCubeObject_->SetModel("AnimatedCube/AnimatedCube.gltf");
-    animatedCubeObject_->SetTranslate({ 0.0f, 1.5f, -3.5f });
-    animatedCubeObject_->SetScale({ 1.0f, 1.0f, 1.0f });
-    animatedCubeObject_->SetEnvironmentCoefficient(0.0f);
-
-    simpleSkinObject_ = std::make_unique<Object3d>();
-    simpleSkinObject_->Initialize(object3dCommon_.get());
-    simpleSkinObject_->SetModel("simpleSkin/simpleSkin.gltf");
-    simpleSkinObject_->SetTranslate({ -7.0f, 0.0f, 0.0f });
-    simpleSkinObject_->SetEnvironmentCoefficient(0.0f);
-
-    humanSneakObject_ = std::make_unique<Object3d>();
-    humanSneakObject_->Initialize(object3dCommon_.get());
-    humanSneakObject_->SetModel("human/sneakWalk.gltf");
-    humanSneakObject_->SetTranslate({ 0.0f, 0.0f, 0.0f });
-    humanSneakObject_->SetEnvironmentCoefficient(0.0f);
-
-    humanWalkObject_ = std::make_unique<Object3d>();
-    humanWalkObject_->Initialize(object3dCommon_.get());
-    humanWalkObject_->SetModel("human/walk.gltf");
-    humanWalkObject_->SetTranslate({ 7.0f, 0.0f, 0.0f });
-    humanWalkObject_->SetEnvironmentCoefficient(0.0f);
-
-    InitializeSkeletonDebugSet(
-        simpleSkinDebug_,
-        simpleSkinObject_.get(),
-        { 1.0f, 1.0f, 1.0f, 1.0f }
-    );
-    InitializeSkeletonDebugSet(
-        humanSneakDebug_,
-        humanSneakObject_.get(),
-        { 1.0f, 1.0f, 1.0f, 1.0f }
-    );
-    InitializeSkeletonDebugSet(
-        humanWalkDebug_,
-        humanWalkObject_.get(),
-        { 1.0f, 1.0f, 1.0f, 1.0f }
-    );
-
-    struct PrimitiveSample {
-        const char* modelName;
-        Math::Vector3 position;
-        int modelIndex;
-    };
-    const PrimitiveSample primitiveSamples[] = {
-        { "primitive_triangle", { -4.5f, 1.0f, 3.0f }, 4 },
-        { "primitive_circle",   { -2.0f, 1.0f, 3.0f }, 5 },
-        { "primitive_box",      { 2.5f, 1.0f, 3.0f }, 6 },
-        { "primitive_torus",    { 5.0f, 1.2f, 3.0f }, 7 },
-        { "primitive_cone",     { -5.0f, 1.0f, -2.0f }, 8 },
-    };
-
-    for (const auto& sample : primitiveSamples) {
-        auto primitiveObject = std::make_unique<Object3d>();
-        primitiveObject->Initialize(object3dCommon_.get());
-        primitiveObject->SetModel(sample.modelName);
-        primitiveObject->SetTranslate(sample.position);
-        primitiveObject->SetEnvironmentCoefficient(0.0f);
-
-        EditorObject editorObject{};
-        editorObject.name = sample.modelName;
-        editorObject.modelIndex = sample.modelIndex;
-        editorObject.object = std::move(primitiveObject);
-        editorObjects_.push_back(std::move(editorObject));
-    }
-
     editorManager_.SetSceneFilePath(kSceneFilePath);
     LoadEditorSettings();
     LoadPrimitiveObjectsFromSceneFile(editorManager_.GetSceneFilePath());
@@ -393,17 +302,12 @@ void GamePlayScene::Initialize() {
     TextureManager::GetInstance()->LoadTexture("resources/gradationLine.png");
     TextureManager::GetInstance()->LoadTexture("resources/circle2.png");
 
-    ParticleManager::GetInstance()->CreateParticleGroup(
-        "test",
-        "resources/circle2.png"
-    );
-
-    emitter_ = std::make_unique<ParticleEmitter>(
-        "test",
-        Math::Vector3{ 0.0f, 2.0f, 0.0f },
-        0.5f,
-        10
-    );
+    showRing_ = false;
+    showCylinder_ = false;
+    showSphere_ = false;
+    showParticle_ = false;
+    showSkinningSamples_ = false;
+    showSkeletonDebug_ = false;
 }
 
 bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
@@ -422,14 +326,7 @@ bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
         int modelIndexSlot;
     };
     const BaseObjectBinding baseObjects[] = {
-        { "Plane", object3d_.get(), 0 },
-        { "Ring", ringObject_.get(), 1 },
-        { "Cylinder", cylinderObject_.get(), 2 },
-        { "Sphere", sphereObject_.get(), 3 },
-        { "Animated Cube", animatedCubeObject_.get(), 4 },
-        { "Simple Skin", simpleSkinObject_.get(), 5 },
-        { "Human Sneak", humanSneakObject_.get(), 6 },
-        { "Human Walk", humanWalkObject_.get(), 7 }
+        { "Plane", object3d_.get(), 0 }
     };
     const int modelItemCount =
         static_cast<int>(
@@ -539,7 +436,7 @@ void GamePlayScene::AddEditorPrimitive(int modelIndex)
 
 void GamePlayScene::RemoveSelectedEditorObject()
 {
-    constexpr int kBaseInspectObjectCount = 8;
+    constexpr int kBaseInspectObjectCount = 1;
 
     const int primitiveIndex =
         editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
@@ -556,7 +453,7 @@ void GamePlayScene::RemoveSelectedEditorObject()
 
 void GamePlayScene::DuplicateSelectedEditorObject()
 {
-    constexpr int kBaseInspectObjectCount = 8;
+    constexpr int kBaseInspectObjectCount = 1;
 
     const int primitiveIndex =
         editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
@@ -594,7 +491,7 @@ void GamePlayScene::DuplicateSelectedEditorObject()
 
 void GamePlayScene::SaveSelectedEditorObjectAsPrefab()
 {
-    constexpr int kBaseInspectObjectCount = 8;
+    constexpr int kBaseInspectObjectCount = 1;
 
     const int primitiveIndex =
         editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
@@ -667,14 +564,7 @@ void GamePlayScene::BuildInspectableObjects(
     std::vector<ImGuiManager::InspectableObject>& inspectObjects)
 {
     inspectObjects = {
-        { "Plane", ImGuiManager::InspectableType::Object3d, object3d_.get(), &inspectObjectModelIndices_[0], nullptr },
-        { "Ring", ImGuiManager::InspectableType::Object3d, ringObject_.get(), &inspectObjectModelIndices_[1], nullptr },
-        { "Cylinder", ImGuiManager::InspectableType::Object3d, cylinderObject_.get(), &inspectObjectModelIndices_[2], nullptr },
-        { "Sphere", ImGuiManager::InspectableType::Object3d, sphereObject_.get(), &inspectObjectModelIndices_[3], nullptr },
-        { "Animated Cube", ImGuiManager::InspectableType::Object3d, animatedCubeObject_.get(), &inspectObjectModelIndices_[4], nullptr },
-        { "Simple Skin", ImGuiManager::InspectableType::Object3d, simpleSkinObject_.get(), &inspectObjectModelIndices_[5], nullptr },
-        { "Human Sneak", ImGuiManager::InspectableType::Object3d, humanSneakObject_.get(), &inspectObjectModelIndices_[6], nullptr },
-        { "Human Walk", ImGuiManager::InspectableType::Object3d, humanWalkObject_.get(), &inspectObjectModelIndices_[7], nullptr }
+        { "Plane", ImGuiManager::InspectableType::Object3d, object3d_.get(), &inspectObjectModelIndices_[0], nullptr }
     };
 
     for (auto& editorObject : editorObjects_) {
@@ -717,33 +607,6 @@ std::vector<SceneSerializer::ObjectRecord> GamePlayScene::BuildSceneObjectRecord
         };
 
     appendObject("Plane", object3d_.get(), false, inspectObjectModelIndices_[0]);
-    appendObject("Ring", ringObject_.get(), false, inspectObjectModelIndices_[1]);
-    appendObject(
-        "Cylinder",
-        cylinderObject_.get(),
-        false,
-        inspectObjectModelIndices_[2]);
-    appendObject("Sphere", sphereObject_.get(), false, inspectObjectModelIndices_[3]);
-    appendObject(
-        "Animated Cube",
-        animatedCubeObject_.get(),
-        false,
-        inspectObjectModelIndices_[4]);
-    appendObject(
-        "Simple Skin",
-        simpleSkinObject_.get(),
-        false,
-        inspectObjectModelIndices_[5]);
-    appendObject(
-        "Human Sneak",
-        humanSneakObject_.get(),
-        false,
-        inspectObjectModelIndices_[6]);
-    appendObject(
-        "Human Walk",
-        humanWalkObject_.get(),
-        false,
-        inspectObjectModelIndices_[7]);
 
     for (const EditorObject& editorObject : editorObjects_) {
         appendObject(
@@ -943,6 +806,8 @@ void GamePlayScene::ApplyLightingToObject(Object3d* object)
 
 void GamePlayScene::UpdateAnimations(float deltaTime)
 {
+    (void)deltaTime;
+#if 0
     if (Model* animatedCubeModel =
         ModelManager::GetInstance()->FindModel("AnimatedCube/AnimatedCube.gltf")) {
         const Animation& animation = animatedCubeModel->GetAnimation();
@@ -990,6 +855,7 @@ void GamePlayScene::UpdateAnimations(float deltaTime)
         humanWalkObject_->UpdateAnimation(deltaTime);
         ApplyLightingToObject(humanWalkObject_.get());
     }
+#endif
 }
 
 void GamePlayScene::Update() {
@@ -1063,32 +929,11 @@ void GamePlayScene::Update() {
     object3d_->SetRotate(objectRotate_);
     ApplyLightingToObject(object3d_.get());
 
-    ringObject_->SetRotate({ 1.5707963f, objectRotate_.y, objectRotate_.z });
-    ApplyLightingToObject(ringObject_.get());
-
     cylinderUVOffset_ += cylinderUVScrollSpeed_ * deltaTime;
-    Matrix4x4 cylinderUVTransform = Multiply(
-        MakeScaleMatrix({ 1.0f, -1.0f, 1.0f }),
-        MakeTranslateMatrix({ cylinderUVOffset_, 1.0f, 0.0f })
-    );
-    cylinderObject_->SetColor(cylinderColor_);
-    cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
-    cylinderObject_->SetUVTransform(cylinderUVTransform);
-    ApplyLightingToObject(cylinderObject_.get());
-
-    sphereObject_->SetRotate(objectRotate_);
-    ApplyLightingToObject(sphereObject_.get());
 
     UpdateAnimations(deltaTime);
 
-    if (showSkeletonDebug_) {
-        UpdateSkeletonDebugSet(simpleSkinDebug_);
-        UpdateSkeletonDebugSet(humanSneakDebug_);
-        UpdateSkeletonDebugSet(humanWalkDebug_);
-    }
-
     for (auto& editorObject : editorObjects_) {
-        editorObject.object->SetRotate(objectRotate_);
         ApplyLightingToObject(editorObject.object.get());
     }
 
@@ -1098,51 +943,9 @@ void GamePlayScene::Update() {
     camera_->Update();
     skybox_->Update(camera_.get());
     object3d_->Update();
-    ringObject_->Update();
-    cylinderObject_->Update();
-    sphereObject_->Update();
-    animatedCubeObject_->Update();
-    if (simpleSkinObject_) {
-        simpleSkinObject_->Update();
-    }
-    if (humanSneakObject_) {
-        humanSneakObject_->Update();
-    }
-    if (humanWalkObject_) {
-        humanWalkObject_->Update();
-    }
-    if (showSkeletonDebug_) {
-        for (auto& joint : simpleSkinDebug_.joints) {
-            joint->Update();
-        }
-        for (auto& bone : simpleSkinDebug_.bones) {
-            bone->Update();
-        }
-        for (auto& joint : humanSneakDebug_.joints) {
-            joint->Update();
-        }
-        for (auto& bone : humanSneakDebug_.bones) {
-            bone->Update();
-        }
-        for (auto& joint : humanWalkDebug_.joints) {
-            joint->Update();
-        }
-        for (auto& bone : humanWalkDebug_.bones) {
-            bone->Update();
-        }
-    }
     for (auto& editorObject : editorObjects_) {
         editorObject.object->Update();
     }
-
-    if (emitter_) {
-        emitter_->Update(deltaTime);
-    }
-
-    ParticleManager::GetInstance()->Update(
-        camera_->GetViewMatrix(),
-        camera_->GetProjectionMatrix()
-    );
 
     for (auto& s : sprites_) {
         s.Update();
@@ -1303,59 +1106,8 @@ void GamePlayScene::Draw() {
     if (showPlane_) {
         object3d_->Draw();
     }
-    if (showRing_) {
-        ringObject_->Draw();
-    }
-    if (showCylinder_) {
-        cylinderObject_->Draw();
-    }
-    if (showSphere_) {
-        sphereObject_->Draw();
-        animatedCubeObject_->Draw();
-        for (auto& editorObject : editorObjects_) {
-            editorObject.object->Draw();
-        }
-    }
-
-    if (showSkinningSamples_) {
-        if (simpleSkinObject_) {
-            simpleSkinObject_->Draw();
-        }
-        if (humanSneakObject_) {
-            humanSneakObject_->Draw();
-        }
-        if (humanWalkObject_) {
-            humanWalkObject_->Draw();
-        }
-    }
-
-    if (showSkinningSamples_ && showSkeletonDebug_) {
-        object3dCommon_->SetDepthDrawMode(DepthDrawMode::Overlay);
-        object3dCommon_->CommonDrawSetting();
-        for (auto& bone : simpleSkinDebug_.bones) {
-            bone->Draw();
-        }
-        for (auto& joint : simpleSkinDebug_.joints) {
-            joint->Draw();
-        }
-        for (auto& bone : humanSneakDebug_.bones) {
-            bone->Draw();
-        }
-        for (auto& joint : humanSneakDebug_.joints) {
-            joint->Draw();
-        }
-        for (auto& bone : humanWalkDebug_.bones) {
-            bone->Draw();
-        }
-        for (auto& joint : humanWalkDebug_.joints) {
-            joint->Draw();
-        }
-        object3dCommon_->SetDepthDrawMode(DepthDrawMode::Normal);
-        object3dCommon_->CommonDrawSetting();
-    }
-
-    if (showParticle_) {
-        ParticleManager::GetInstance()->Draw();
+    for (auto& editorObject : editorObjects_) {
+        editorObject.object->Draw();
     }
 
     spriteCommon_->CommonDrawSetting();

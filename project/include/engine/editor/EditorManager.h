@@ -36,7 +36,7 @@ public:
 
 private:
     std::array<const char*, 3> sceneFilePaths_{
-        "resources/scene_debug_transforms.json",
+        "resources/game_scene.json",
         "resources/scene_01.json",
         "resources/scene_02.json"
     };
