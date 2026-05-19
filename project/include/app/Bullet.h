@@ -16,7 +16,9 @@ public:
         const Math::Vector3& position,
         const Math::Vector3& velocity,
         const Math::Vector4& color = { 1.0f, 0.85f, 0.25f, 1.0f },
-        int lifeTimer = 180);
+        int lifeTimer = 180,
+        const Math::Vector3& scale = { 0.18f, 0.18f, 0.5f },
+        float collisionRadius = 0.35f);
     void Update();
     void Draw();
 

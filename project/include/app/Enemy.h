@@ -24,8 +24,13 @@ public:
 
 private:
     std::unique_ptr<Object3d> object_;
+    Math::Vector3 baseTranslate_{};
     Math::Vector3 translate_{};
     float speed_ = 0.08f;
+    float moveTimer_ = 0.0f;
+    float phase_ = 0.0f;
+    float horizontalAmplitude_ = 1.2f;
+    float verticalAmplitude_ = 0.55f;
     float collisionRadius_ = 0.8f;
     bool isDead_ = false;
 };

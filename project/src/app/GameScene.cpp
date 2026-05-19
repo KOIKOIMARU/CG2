@@ -204,7 +204,9 @@ void GameScene::FireEnemyBullet(const Math::Vector3& position)
         spawnPosition,
         { 0.0f, 0.0f, -0.28f },
         { 1.0f, 0.25f, 0.25f, 1.0f },
-        240);
+        240,
+        { 0.42f, 0.42f, 0.42f },
+        0.55f);
     enemyBullets_.push_back(std::move(bullet));
 }
 

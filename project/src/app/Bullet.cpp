@@ -6,17 +6,20 @@ void Bullet::Initialize(
     const Math::Vector3& position,
     const Math::Vector3& velocity,
     const Math::Vector4& color,
-    int lifeTimer)
+    int lifeTimer,
+    const Math::Vector3& scale,
+    float collisionRadius)
 {
     object_ = std::make_unique<Object3d>();
     object_->Initialize(object3dCommon);
     object_->SetModel(model);
-    object_->SetScale({ 0.18f, 0.18f, 0.5f });
+    object_->SetScale(scale);
     object_->SetColor(color);
 
     translate_ = position;
     velocity_ = velocity;
     lifeTimer_ = lifeTimer;
+    collisionRadius_ = collisionRadius;
     object_->SetTranslate(translate_);
     object_->Update();
 }
