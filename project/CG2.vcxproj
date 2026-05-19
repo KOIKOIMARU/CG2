@@ -167,7 +167,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp" />
     <ClCompile Include="src\engine\editor\EditorManager.cpp" />
     <ClCompile Include="src\engine\base\Framework.cpp" />
+    <ClCompile Include="src\app\Bullet.cpp" />
+    <ClCompile Include="src\app\Enemy.cpp" />
+    <ClCompile Include="src\app\GameScene.cpp" />
     <ClCompile Include="src\app\MyGame.cpp" />
+    <ClCompile Include="src\app\Player.cpp" />
     <ClCompile Include="src\engine\audio\SoundManager.cpp" />
     <ClCompile Include="src\engine\base\ImGuiManager.cpp" />
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp" />
@@ -412,7 +416,11 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\Particle.h" />
     <ClInclude Include="include\engine\3d\ParticleManager.h" />
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
+    <ClInclude Include="include\app\Bullet.h" />
+    <ClInclude Include="include\app\Enemy.h" />
+    <ClInclude Include="include\app\GameScene.h" />
     <ClInclude Include="include\app\MyGame.h" />
+    <ClInclude Include="include\app\Player.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />
     <ClInclude Include="include\engine\2d\Sprite.h" />

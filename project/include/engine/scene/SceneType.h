@@ -3,4 +3,5 @@
 enum class SceneType {
     Title,
     GamePlay,
+    Game,
 };

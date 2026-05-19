@@ -7,6 +7,7 @@
 #include "engine/base/ImGuiManager.h"
 #include "engine/io/Input.h"
 #include "engine/scene/GamePlayScene.h"
+#include "app/GameScene.h"
 
 MyGame::MyGame() = default;
 MyGame::~MyGame() = default;
@@ -25,7 +26,7 @@ void MyGame::Initialize() {
         input_.get()
     );
 
-    SceneManager::GetInstance()->SetNextScene(SceneType::GamePlay);
+    SceneManager::GetInstance()->SetNextScene(SceneType::Game);
 }
 
 void MyGame::Update() {
@@ -49,6 +50,10 @@ void MyGame::Draw() {
     if (auto* gamePlayScene =
             dynamic_cast<GamePlayScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
         postEffectMode = gamePlayScene->GetPostEffectMode();
+    }
+    if (auto* gameScene =
+            dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
+        postEffectMode = gameScene->GetPostEffectMode();
     }
     dxCommon_->DrawRenderTextureToSwapChain(postEffectMode);
 

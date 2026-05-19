@@ -14,6 +14,7 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include "engine/scene/SceneSerializer.h"
+#include "engine/scene/SceneManager.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
 #include <algorithm>
@@ -860,6 +861,11 @@ void GamePlayScene::UpdateAnimations(float deltaTime)
 
 void GamePlayScene::Update() {
     const float deltaTime = dxCommon_->GetDeltaTime();
+
+    if (input_ && input_->TriggerKey(DIK_F2)) {
+        sceneManager_->SetNextScene(SceneType::Game);
+        return;
+    }
 
     if (input_ && input_->TriggerKey(DIK_F1)) {
         isDebugCameraEnabled_ = !isDebugCameraEnabled_;
