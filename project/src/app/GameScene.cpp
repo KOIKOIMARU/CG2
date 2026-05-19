@@ -1,5 +1,6 @@
 #include "app/GameScene.h"
 
+#include "app/GameResult.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/io/Input.h"
@@ -102,7 +103,7 @@ void GameScene::Update()
     camera_->Update();
     player_->Update(input_);
 
-    if (!isGameOver_) {
+    if (!isGameOver_ && !isGameClear_) {
         if (shootCooldown_ > 0) {
             --shootCooldown_;
         }
@@ -134,6 +135,15 @@ void GameScene::Update()
     CheckBulletEnemyCollisions();
     CheckEnemyBulletPlayerCollisions();
 
+    if (resultTransitionTimer_ > 0) {
+        --resultTransitionTimer_;
+        if (resultTransitionTimer_ == 0) {
+            GameResult::SetResult(isGameClear_, score_);
+            sceneManager_->SetNextScene(SceneType::Result);
+            return;
+        }
+    }
+
     if (guidePlane_) {
         guidePlane_->Update();
     }
@@ -144,6 +154,10 @@ void GameScene::Update()
     ImGui::Text("Player Bullets: %zu", playerBullets_.size());
     ImGui::Text("Enemy Bullets: %zu", enemyBullets_.size());
     ImGui::Text("Enemies: %zu", enemies_.size());
+    ImGui::Text("Defeated: %d / 20", defeatedEnemyCount_);
+    if (isGameClear_) {
+        ImGui::TextUnformatted("GAME CLEAR");
+    }
     if (isGameOver_) {
         ImGui::TextUnformatted("GAME OVER - grayscale post effect");
     }
@@ -288,6 +302,11 @@ void GameScene::CheckBulletEnemyCollisions()
                 bullet->Kill();
                 enemy->Kill();
                 score_ += 100;
+                ++defeatedEnemyCount_;
+                if (defeatedEnemyCount_ >= 20 && !isGameClear_) {
+                    isGameClear_ = true;
+                    resultTransitionTimer_ = 90;
+                }
                 break;
             }
         }
@@ -311,8 +330,9 @@ void GameScene::CheckEnemyBulletPlayerCollisions()
             player_->GetTranslate()) <= radius * radius) {
             bullet->Kill();
             player_->Damage(10);
-            if (player_->IsDead()) {
+            if (player_->IsDead() && !isGameOver_) {
                 isGameOver_ = true;
+                resultTransitionTimer_ = 90;
             }
             break;
         }

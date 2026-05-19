@@ -51,5 +51,8 @@ private:
     int enemySpawnTimer_ = 0;
     int enemyShotTimer_ = 60;
     int score_ = 0;
+    int defeatedEnemyCount_ = 0;
+    int resultTransitionTimer_ = -1;
     bool isGameOver_ = false;
+    bool isGameClear_ = false;
 };

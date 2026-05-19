@@ -2,6 +2,7 @@
 #include "engine/scene/TitleScene.h"
 #include "engine/scene/GamePlayScene.h"
 #include "app/GameScene.h"
+#include "app/ResultScene.h"
 
 std::unique_ptr<BaseScene> SceneFactory::CreateScene(SceneType sceneType) {
     switch (sceneType) {
@@ -13,6 +14,9 @@ std::unique_ptr<BaseScene> SceneFactory::CreateScene(SceneType sceneType) {
 
     case SceneType::Game:
         return std::make_unique<GameScene>();
+
+    case SceneType::Result:
+        return std::make_unique<ResultScene>();
 
     default:
         return nullptr;
