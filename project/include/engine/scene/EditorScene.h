@@ -9,6 +9,7 @@
 #include "engine/3d/Object3dCommon.h"
 #include "engine/base/ImGuiManager.h"
 #include "engine/editor/EditorManager.h"
+#include "engine/editor/EditorPlayController.h"
 #include "engine/scene/SceneSerializer.h"
 
 class Object3dCommon;
@@ -24,24 +25,25 @@ struct SkeletonDebugSet {
     Math::Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
-// エディタ上で扱う追加オブジェクト
+// 郢ｧ・ｨ郢昴・縺・ｹｧ・ｿ闕ｳ鄙ｫ縲定ｬ・ｽｱ邵ｺ繝ｻ・ｿ・ｽ陷会｣ｰ郢ｧ・ｪ郢晄じ縺夂ｹｧ・ｧ郢ｧ・ｯ郢昴・
 struct EditorObject {
     std::string name;
     std::unique_ptr<Object3d> object;
     int modelIndex = 0;
+    bool visible = true;
 };
 
-class GamePlayScene : public BaseScene {
+class EditorScene : public BaseScene {
 public:
-    GamePlayScene();
-    ~GamePlayScene() override;
+    EditorScene();
+    ~EditorScene() override;
 
     void Initialize() override;
     void Finalize() override;
     void Update() override;
     void Draw() override;
 
-    int GetPostEffectMode() const { return postEffectMode_; }
+    int GetPostEffectMode() const;
 
 private:
     struct TransformHistoryRecord {
@@ -69,9 +71,16 @@ private:
     void RemoveSelectedEditorObject();
     void BuildInspectableObjects(
         std::vector<ImGuiManager::InspectableObject>& inspectObjects);
+    void ShowEditorGui(
+        std::vector<ImGuiManager::InspectableObject>& inspectObjects);
     void ProcessEditorRequests();
     void ApplyLightingToObject(Object3d* object);
     void UpdateAnimations(float deltaTime);
+    void HandleEditorShortcuts();
+    void ApplyViewportMode();
+    void ApplyPlayModeRequests(bool& startedPlayModeThisFrame);
+    void EnterPlayMode();
+    void ExitPlayMode();
     void LoadEditorSettings();
     void SaveEditorSettings() const;
     std::vector<SceneSerializer::ObjectRecord> BuildSceneObjectRecords() const;
@@ -85,7 +94,6 @@ private:
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Skybox> skybox_;
-    std::unique_ptr<Object3d> object3d_;
     std::unique_ptr<Object3d> ringObject_;
     std::unique_ptr<Object3d> cylinderObject_;
     std::unique_ptr<Object3d> sphereObject_;
@@ -93,6 +101,7 @@ private:
     std::unique_ptr<Object3d> simpleSkinObject_;
     std::unique_ptr<Object3d> humanSneakObject_;
     std::unique_ptr<Object3d> humanWalkObject_;
+    EditorPlayController playController_;
     std::vector<EditorObject> editorObjects_;
     SkeletonDebugSet simpleSkinDebug_;
     SkeletonDebugSet humanSneakDebug_;
@@ -101,7 +110,6 @@ private:
 
     std::vector<Sprite> sprites_;
     Math::Vector2 spritePos_{ 100.0f, 100.0f };
-    Math::Vector3 objectRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 lightDirection_{ 0.0f, -1.0f, 0.0f };
     float lightIntensity_ = 1.0f;
     int blendModeIndex_ = static_cast<int>(BlendMode::Normal);
@@ -113,7 +121,6 @@ private:
     float spotLightIntensity_ = 4.0f;
     bool showSkybox_ = false;
     int postEffectMode_ = 0;
-    bool showPlane_ = true;
     bool showRing_ = true;
     bool showCylinder_ = true;
     bool showSphere_ = true;
@@ -131,15 +138,16 @@ private:
     bool materialPanelOpen_ = true;
     bool cylinderPanelOpen_ = false;
     bool lightingPanelOpen_ = true;
+    bool gameViewPanelOpen_ = true;
+    int viewportTabIndex_ = 1;
+    int previousViewportTabIndex_ = 1;
+    bool wasPlayMode_ = false;
     std::vector<TransformHistoryRecord> undoStack_;
     std::vector<TransformHistoryRecord> redoStack_;
     int lastTransformHistoryObjectIndex_ = -1;
     Math::Vector3 lastObservedTranslate_{};
     Math::Vector3 lastObservedRotate_{};
     Math::Vector3 lastObservedScale_{ 1.0f, 1.0f, 1.0f };
-    std::array<int, 8> inspectObjectModelIndices_{
-        0, 1, 2, 3, 9, 10, 11, 12
-    };
     EditorManager editorManager_;
 
     bool isDebugCameraEnabled_ = false;

@@ -70,6 +70,8 @@ public:
         const Math::Vector4& clearColor);
 
     void InitializeRenderTexture(SrvManager* srvManager);
+    D3D12_GPU_DESCRIPTOR_HANDLE GetRenderTextureGpuDescriptorHandle() const;
+    Math::Vector2 GetRenderTextureSize() const;
 
     // テクスチャデータ転送
     void UploadTextureData(
@@ -180,6 +182,8 @@ private:
     uint32_t renderTextureSrvIndex_ = 0;
     uint32_t depthTextureSrvIndex_ = 0;
     uint32_t dissolveMaskTextureSrvIndex_ = 0;
+    D3D12_RESOURCE_STATES renderTextureState_ =
+        D3D12_RESOURCE_STATE_RENDER_TARGET;
 
     // 各ヒープのインクリメントサイズ
     UINT rtvDescriptorSize_ = 0;
@@ -206,6 +210,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> boxFilterPipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> boxFilter5x5PipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> gaussianFilterPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> vignetteSmoothingPipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> luminanceOutlinePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> depthOutlinePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> radialBlurPipelineState_;

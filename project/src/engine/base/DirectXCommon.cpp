@@ -59,6 +59,20 @@ void DirectXCommon::PreDraw() {
     currentBackBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
     UINT bbIndex = currentBackBufferIndex_;
 
+    if (renderTextureState_ != D3D12_RESOURCE_STATE_RENDER_TARGET) {
+        D3D12_RESOURCE_BARRIER renderTextureBarrier{};
+        renderTextureBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        renderTextureBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        renderTextureBarrier.Transition.pResource = renderTextureResource_.Get();
+        renderTextureBarrier.Transition.StateBefore = renderTextureState_;
+        renderTextureBarrier.Transition.StateAfter =
+            D3D12_RESOURCE_STATE_RENDER_TARGET;
+        renderTextureBarrier.Transition.Subresource =
+            D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList_->ResourceBarrier(1, &renderTextureBarrier);
+        renderTextureState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
+
     // 2. TransitionBarrier PRESENT → RENDER_TARGET
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -108,6 +122,7 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(boxFilterPipelineState_);
     assert(boxFilter5x5PipelineState_);
     assert(gaussianFilterPipelineState_);
+    assert(vignetteSmoothingPipelineState_);
     assert(luminanceOutlinePipelineState_);
     assert(depthOutlinePipelineState_);
     assert(radialBlurPipelineState_);
@@ -138,6 +153,7 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList_->ResourceBarrier(1, &barrier);
+    renderTextureState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
     D3D12_RESOURCE_BARRIER depthBarrier{};
     if (useDepthTexture) {
@@ -186,6 +202,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = dissolvePipelineState_.Get();
     } else if (postEffectMode == 10) {
         pipelineState = randomPipelineState_.Get();
+    } else if (postEffectMode == 11) {
+        pipelineState = vignetteSmoothingPipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -226,10 +244,26 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         commandList_->ResourceBarrier(1, &depthBarrier);
     }
 
-    barrier.Transition.StateBefore =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    commandList_->ResourceBarrier(1, &barrier);
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE
+DirectXCommon::GetRenderTextureGpuDescriptorHandle() const
+{
+    assert(srvDescriptorHeap_);
+
+    return GetGPUDescriptorHandle(
+        srvDescriptorHeap_,
+        device_->GetDescriptorHandleIncrementSize(
+            D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV),
+        renderTextureSrvIndex_);
+}
+
+Math::Vector2 DirectXCommon::GetRenderTextureSize() const
+{
+    return {
+        static_cast<float>(WinApp::kClientWidth),
+        static_cast<float>(WinApp::kClientHeight)
+    };
 }
 
 
@@ -970,6 +1004,8 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/BoxFilter5x5.PS.hlsl");
     gaussianFilterPipelineState_ =
         CreateFullscreenPipelineState(L"shaders/GaussianFilter.PS.hlsl");
+    vignetteSmoothingPipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/VignetteSmoothing.PS.hlsl");
     luminanceOutlinePipelineState_ =
         CreateFullscreenPipelineState(
             L"shaders/LuminanceBasedOutline.PS.hlsl");

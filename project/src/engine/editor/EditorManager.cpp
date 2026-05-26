@@ -1,5 +1,7 @@
 #include "engine/editor/EditorManager.h"
 
+bool EditorManager::playOnNextEditorOpen_ = false;
+
 void EditorManager::SetSceneFilePath(const char* path)
 {
     sceneFilePaths_[0] = path;
@@ -49,7 +51,9 @@ ImGuiManager::ObjectInspectorSettings EditorManager::CreateInspectorSettings(
         selectedObjectIndex_,
         addModelIndex_,
         gizmoMode_,
-        isPlayMode_,
+        mode_ == EditorMode::Play,
+        requestStartPlayMode_,
+        requestStopPlayMode_,
         requestAddObject_,
         requestRemoveObject_,
         requestDuplicateObject_,
@@ -88,7 +92,63 @@ void EditorManager::ResetSelectedObjectIndex()
 
 bool EditorManager::IsPlayMode() const
 {
-    return isPlayMode_;
+    return mode_ == EditorMode::Play;
+}
+
+void EditorManager::SetPlayMode(bool isPlayMode)
+{
+    mode_ = isPlayMode ? EditorMode::Play : EditorMode::Edit;
+}
+
+EditorManager::EditorMode EditorManager::GetMode() const
+{
+    return mode_;
+}
+
+void EditorManager::SetMode(EditorMode mode)
+{
+    mode_ = mode;
+}
+
+bool EditorManager::IsEditorGuiVisible() const
+{
+    return isEditorGuiVisible_;
+}
+
+void EditorManager::SetEditorGuiVisible(bool isVisible)
+{
+    isEditorGuiVisible_ = isVisible;
+}
+
+void EditorManager::ToggleEditorGuiVisible()
+{
+    isEditorGuiVisible_ = !isEditorGuiVisible_;
+}
+
+void EditorManager::RequestPlayOnNextEditorOpen()
+{
+    playOnNextEditorOpen_ = true;
+}
+
+bool EditorManager::ConsumePlayOnNextEditorOpenRequest()
+{
+    const bool requested = playOnNextEditorOpen_;
+    playOnNextEditorOpen_ = false;
+    return requested;
+}
+
+bool EditorManager::ConsumeStartPlayModeRequest()
+{
+    const bool requested = requestStartPlayMode_;
+    requestStartPlayMode_ = false;
+    return requested;
+}
+
+bool EditorManager::ConsumeStopPlayModeRequest()
+{
+    const bool requested = requestStopPlayMode_;
+    requestStopPlayMode_ = false;
+    return requested;
 }
 
 int EditorManager::GetAddModelIndex() const

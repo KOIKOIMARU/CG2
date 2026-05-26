@@ -6,8 +6,7 @@
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/ImGuiManager.h"
 #include "engine/io/Input.h"
-#include "engine/scene/GamePlayScene.h"
-#include "app/GameScene.h"
+#include "engine/scene/EditorScene.h"
 
 MyGame::MyGame() = default;
 MyGame::~MyGame() = default;
@@ -47,13 +46,9 @@ void MyGame::Draw() {
     SceneManager::GetInstance()->Draw();
 
     int postEffectMode = 0;
-    if (auto* gamePlayScene =
-            dynamic_cast<GamePlayScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
-        postEffectMode = gamePlayScene->GetPostEffectMode();
-    }
-    if (auto* gameScene =
-            dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
-        postEffectMode = gameScene->GetPostEffectMode();
+    if (auto* editorScene =
+            dynamic_cast<EditorScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
+        postEffectMode = editorScene->GetPostEffectMode();
     }
     dxCommon_->DrawRenderTextureToSwapChain(postEffectMode);
 

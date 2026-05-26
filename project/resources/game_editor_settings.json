@@ -1,6 +1,6 @@
 {
   "postEffectMode": 0,
-  "showSkybox": false,
+  "showSkybox": true,
   "environmentCoefficient": 0.2,
   "lightDirection": [0, -1, 0],
   "lightIntensity": 1,
@@ -15,7 +15,9 @@
   "materialPanelOpen": true,
   "cylinderPanelOpen": false,
   "lightingPanelOpen": true,
+  "gameViewPanelOpen": true,
   "sceneFileIndex": 0,
   "prefabFileIndex": 0,
-  "gizmoMode": 0
+  "gizmoMode": 0,
+  "viewportTabIndex": 0
 }

@@ -4,6 +4,11 @@
 
 class EditorManager {
 public:
+    enum class EditorMode {
+        Edit,
+        Play
+    };
+
     void SetSceneFilePath(const char* path);
     const char* GetSceneFilePath() const;
     const char* GetPrefabFilePath() const;
@@ -19,12 +24,22 @@ public:
     int GetSelectedObjectIndex() const;
     void ResetSelectedObjectIndex();
     bool IsPlayMode() const;
+    void SetPlayMode(bool isPlayMode);
+    EditorMode GetMode() const;
+    void SetMode(EditorMode mode);
+    bool IsEditorGuiVisible() const;
+    void SetEditorGuiVisible(bool isVisible);
+    void ToggleEditorGuiVisible();
+    static void RequestPlayOnNextEditorOpen();
+    static bool ConsumePlayOnNextEditorOpenRequest();
 
     int GetAddModelIndex() const;
     int GetGizmoMode() const;
     void SetGizmoMode(int mode);
 
     bool ConsumeAddObjectRequest();
+    bool ConsumeStartPlayModeRequest();
+    bool ConsumeStopPlayModeRequest();
     bool ConsumeRemoveObjectRequest();
     bool ConsumeDuplicateObjectRequest();
     bool ConsumeSavePrefabRequest();
@@ -50,7 +65,11 @@ private:
     int selectedObjectIndex_ = 0;
     int addModelIndex_ = 2;
     int gizmoMode_ = 0;
-    bool isPlayMode_ = false;
+    EditorMode mode_ = EditorMode::Edit;
+    bool isEditorGuiVisible_ = true;
+    static bool playOnNextEditorOpen_;
+    bool requestStartPlayMode_ = false;
+    bool requestStopPlayMode_ = false;
     bool requestAddObject_ = false;
     bool requestRemoveObject_ = false;
     bool requestDuplicateObject_ = false;

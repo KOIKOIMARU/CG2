@@ -11,7 +11,7 @@ class SrvManager;
 class Object3d;
 
 #ifdef USE_IMGUI
-// ここは君のプロジェクトの実際のパスに合わせる
+// 縺薙％縺ｯ蜷帙・繝励Ο繧ｸ繧ｧ繧ｯ繝医・螳滄圀縺ｮ繝代せ縺ｫ蜷医ｏ縺帙ｋ
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx12.h"
@@ -27,8 +27,6 @@ public:
     };
 
     struct ObjectDebugSettings {
-        Math::Vector3& objectRotate;
-        bool& showPlane;
         bool& showRing;
         bool& showCylinder;
         bool& showSphere;
@@ -58,6 +56,8 @@ public:
         bool& materialOpen;
         bool& cylinderOpen;
         bool& lightingOpen;
+        bool& gameViewOpen;
+        int& viewportTabIndex;
     };
 
     enum class InspectableType {
@@ -73,6 +73,7 @@ public:
         Object3d* object = nullptr;
         int* selectedModelIndex = nullptr;
         std::string* editableName = nullptr;
+        bool* visible = nullptr;
     };
 
     struct ObjectInspectorSettings {
@@ -81,7 +82,9 @@ public:
         int& selectedObjectIndex;
         int& addModelIndex;
         int& gizmoMode;
-        bool& isPlayMode;
+        bool isPlayMode;
+        bool& requestStartPlayMode;
+        bool& requestStopPlayMode;
         bool& requestAddObject;
         bool& requestRemoveObject;
         bool& requestDuplicateObject;
@@ -100,7 +103,7 @@ public:
         int& prefabFileIndex;
     };
 
-    struct GamePlayDebugSettings {
+    struct EditorDebugSettings {
         RenderingDebugSettings rendering;
         ObjectDebugSettings objects;
         CylinderEffectDebugSettings cylinder;
@@ -116,7 +119,17 @@ public:
     void Finalize();
 
     void ShowSpriteController(Math::Vector2& spritePos);
-    void ShowGamePlayController(GamePlayDebugSettings& settings);
+    void ShowEditorController(EditorDebugSettings& settings);
+    void ShowGameView(
+        D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
+        const Math::Vector2& textureSize,
+        bool& isOpen,
+        bool isPlayMode,
+        bool& requestStartPlayMode,
+        bool& requestStopPlayMode,
+        int& viewportTabIndex,
+        bool isSceneCameraEnabled,
+        ObjectInspectorSettings& inspector);
 
 private:
     bool SaveInspectorTransforms(const ObjectInspectorSettings& inspector);

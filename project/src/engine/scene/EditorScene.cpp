@@ -1,4 +1,4 @@
-#include "engine/scene/GamePlayScene.h"
+#include "engine/scene/EditorScene.h"
 
 #include "engine/3d/Object3dCommon.h"
 #include "engine/3d/Object3d.h"
@@ -178,11 +178,18 @@ Math::Vector3 MakeBoneRotate(const Math::Vector3& direction)
 
 } // namespace
 
-GamePlayScene::GamePlayScene() = default;
-GamePlayScene::~GamePlayScene() = default;
+EditorScene::EditorScene() = default;
+EditorScene::~EditorScene() = default;
 
+int EditorScene::GetPostEffectMode() const
+{
+    if (editorManager_.IsPlayMode() && playController_.IsRunning()) {
+        return playController_.GetPostEffectMode();
+    }
+    return postEffectMode_;
+}
 
-void GamePlayScene::Initialize() {
+void EditorScene::Initialize() {
     const std::string environmentTexturePath =
         "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
 
@@ -194,6 +201,13 @@ void GamePlayScene::Initialize() {
     camera_->SetRotate({ 0.2f, 0.0f, 0.0f });
     camera_->SetTranslate({ 0.0f, 6.0f, -24.0f });
     object3dCommon_->SetDefaultCamera(camera_.get());
+
+    playController_.SetSystems(
+        dxCommon_,
+        srvManager_,
+        spriteCommon_,
+        imguiManager_,
+        input_);
 
     skybox_ = std::make_unique<Skybox>();
     skybox_->Initialize(
@@ -287,12 +301,6 @@ void GamePlayScene::Initialize() {
     ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
     ModelManager::GetInstance()->LoadModel("human/walk.gltf");
 
-    object3d_ = std::make_unique<Object3d>();
-    object3d_->Initialize(object3dCommon_.get());
-    object3d_->SetModel("primitive_plane");
-    object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
-    object3d_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
-
     editorManager_.SetSceneFilePath(kSceneFilePath);
     LoadEditorSettings();
     LoadPrimitiveObjectsFromSceneFile(editorManager_.GetSceneFilePath());
@@ -309,9 +317,13 @@ void GamePlayScene::Initialize() {
     showParticle_ = false;
     showSkinningSamples_ = false;
     showSkeletonDebug_ = false;
+
+    if (editorManager_.ConsumePlayOnNextEditorOpenRequest()) {
+        editorManager_.SetMode(EditorManager::EditorMode::Play);
+    }
 }
 
-bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
+bool EditorScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
     std::vector<SceneSerializer::ObjectRecord> records;
     SceneSerializer::SceneSettings settings{};
     if (!SceneSerializer::LoadScene(path, records, settings)) {
@@ -321,51 +333,13 @@ bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
     ApplySceneSettings(settings);
     ClearTransformHistory();
 
-    struct BaseObjectBinding {
-        const char* name;
-        Object3d* object;
-        int modelIndexSlot;
-    };
-    const BaseObjectBinding baseObjects[] = {
-        { "Plane", object3d_.get(), 0 }
-    };
     const int modelItemCount =
         static_cast<int>(
             sizeof(kInspectorModelItems) / sizeof(kInspectorModelItems[0]));
-    for (const BaseObjectBinding& binding : baseObjects) {
-        if (!binding.object) {
-            continue;
-        }
-
-        const SceneSerializer::ObjectRecord* record =
-            SceneSerializer::FindObjectByName(records, binding.name);
-        if (!record) {
-            continue;
-        }
-
-        if (0 <= record->modelIndex && record->modelIndex < modelItemCount) {
-            binding.object->SetModel(kInspectorModelItems[record->modelIndex]);
-            inspectObjectModelIndices_[binding.modelIndexSlot] =
-                record->modelIndex;
-        }
-        binding.object->SetTranslate(record->translate);
-        binding.object->SetRotate(record->rotate);
-        binding.object->SetScale(record->scale);
-        binding.object->SetColor(record->color);
-        binding.object->SetAlphaReference(record->alphaReference);
-        binding.object->SetLightingMode(record->lightingMode);
-        if (!record->textureFilePath.empty()) {
-            binding.object->SetTextureFilePath(record->textureFilePath);
-        }
-    }
 
     editorObjects_.clear();
 
     for (const SceneSerializer::ObjectRecord& record : records) {
-        if (!record.primitive) {
-            continue;
-        }
-
         if (record.modelIndex < 0 || modelItemCount <= record.modelIndex) {
             continue;
         }
@@ -397,7 +371,7 @@ bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
     return true;
 }
 
-bool GamePlayScene::SaveSceneToFile(const char* path) const
+bool EditorScene::SaveSceneToFile(const char* path) const
 {
     return SceneSerializer::SaveScene(
         path,
@@ -405,7 +379,7 @@ bool GamePlayScene::SaveSceneToFile(const char* path) const
         BuildSceneSettings());
 }
 
-void GamePlayScene::AddEditorPrimitive(int modelIndex)
+void EditorScene::AddEditorPrimitive(int modelIndex)
 {
     const int modelItemCount =
         static_cast<int>(
@@ -435,36 +409,30 @@ void GamePlayScene::AddEditorPrimitive(int modelIndex)
     ClearTransformHistory();
 }
 
-void GamePlayScene::RemoveSelectedEditorObject()
+void EditorScene::RemoveSelectedEditorObject()
 {
-    constexpr int kBaseInspectObjectCount = 1;
+    const int objectIndex = editorManager_.GetSelectedObjectIndex();
 
-    const int primitiveIndex =
-        editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
-
-    if (primitiveIndex < 0 ||
-        primitiveIndex >= static_cast<int>(editorObjects_.size())) {
+    if (objectIndex < 0 ||
+        objectIndex >= static_cast<int>(editorObjects_.size())) {
         return;
     }
 
-    editorObjects_.erase(editorObjects_.begin() + primitiveIndex);
+    editorObjects_.erase(editorObjects_.begin() + objectIndex);
     editorManager_.ResetSelectedObjectIndex();
     ClearTransformHistory();
 }
 
-void GamePlayScene::DuplicateSelectedEditorObject()
+void EditorScene::DuplicateSelectedEditorObject()
 {
-    constexpr int kBaseInspectObjectCount = 1;
+    const int objectIndex = editorManager_.GetSelectedObjectIndex();
 
-    const int primitiveIndex =
-        editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
-
-    if (primitiveIndex < 0 ||
-        primitiveIndex >= static_cast<int>(editorObjects_.size())) {
+    if (objectIndex < 0 ||
+        objectIndex >= static_cast<int>(editorObjects_.size())) {
         return;
     }
 
-    const EditorObject& source = editorObjects_[primitiveIndex];
+    const EditorObject& source = editorObjects_[objectIndex];
     auto duplicatedObject = std::make_unique<Object3d>();
     duplicatedObject->Initialize(object3dCommon_.get());
     duplicatedObject->SetModel(kInspectorModelItems[source.modelIndex]);
@@ -485,24 +453,22 @@ void GamePlayScene::DuplicateSelectedEditorObject()
     EditorObject duplicatedEditorObject{};
     duplicatedEditorObject.name = source.name + " Copy";
     duplicatedEditorObject.modelIndex = source.modelIndex;
+    duplicatedEditorObject.visible = source.visible;
     duplicatedEditorObject.object = std::move(duplicatedObject);
     editorObjects_.push_back(std::move(duplicatedEditorObject));
     ClearTransformHistory();
 }
 
-void GamePlayScene::SaveSelectedEditorObjectAsPrefab()
+void EditorScene::SaveSelectedEditorObjectAsPrefab()
 {
-    constexpr int kBaseInspectObjectCount = 1;
+    const int objectIndex = editorManager_.GetSelectedObjectIndex();
 
-    const int primitiveIndex =
-        editorManager_.GetSelectedObjectIndex() - kBaseInspectObjectCount;
-
-    if (primitiveIndex < 0 ||
-        primitiveIndex >= static_cast<int>(editorObjects_.size())) {
+    if (objectIndex < 0 ||
+        objectIndex >= static_cast<int>(editorObjects_.size())) {
         return;
     }
 
-    const EditorObject& source = editorObjects_[primitiveIndex];
+    const EditorObject& source = editorObjects_[objectIndex];
     SceneSerializer::ObjectRecord record{};
     record.name = source.name;
     record.primitive = true;
@@ -518,7 +484,7 @@ void GamePlayScene::SaveSelectedEditorObjectAsPrefab()
     SceneSerializer::SaveObjects(editorManager_.GetPrefabFilePath(), { record });
 }
 
-void GamePlayScene::InstantiatePrefab()
+void EditorScene::InstantiatePrefab()
 {
     std::vector<SceneSerializer::ObjectRecord> records;
     if (!SceneSerializer::LoadObjects(editorManager_.GetPrefabFilePath(), records) ||
@@ -561,12 +527,10 @@ void GamePlayScene::InstantiatePrefab()
     ClearTransformHistory();
 }
 
-void GamePlayScene::BuildInspectableObjects(
+void EditorScene::BuildInspectableObjects(
     std::vector<ImGuiManager::InspectableObject>& inspectObjects)
 {
-    inspectObjects = {
-        { "Plane", ImGuiManager::InspectableType::Object3d, object3d_.get(), &inspectObjectModelIndices_[0], nullptr }
-    };
+    inspectObjects.clear();
 
     for (auto& editorObject : editorObjects_) {
         inspectObjects.push_back({
@@ -574,12 +538,75 @@ void GamePlayScene::BuildInspectableObjects(
      ImGuiManager::InspectableType::Object3d,
      editorObject.object.get(),
      &editorObject.modelIndex,
-     &editorObject.name
+     &editorObject.name,
+     &editorObject.visible
             });
     }
 }
 
-std::vector<SceneSerializer::ObjectRecord> GamePlayScene::BuildSceneObjectRecords() const
+void EditorScene::ShowEditorGui(
+    std::vector<ImGuiManager::InspectableObject>& inspectObjects)
+{
+    if (!editorManager_.IsEditorGuiVisible()) {
+        return;
+    }
+
+    ImGuiManager::EditorDebugSettings debugSettings{
+        {
+            blendModeIndex_,
+            environmentCoefficient_,
+            showSkybox_,
+            postEffectMode_
+        },
+        {
+            showRing_,
+            showCylinder_,
+            showSphere_,
+            showParticle_
+        },
+        {
+            cylinderColor_,
+            cylinderAlphaReference_,
+            cylinderUVScrollSpeed_
+        },
+        {
+            lightDirection_,
+            lightIntensity_,
+            pointLightPosition_,
+            pointLightIntensity_,
+            spotLightPosition_,
+            spotLightDirection_,
+            spotLightIntensity_
+        },
+        {
+            renderingPanelOpen_,
+            objectsPanelOpen_,
+            inspectorPanelOpen_,
+            materialPanelOpen_,
+            cylinderPanelOpen_,
+            lightingPanelOpen_,
+            gameViewPanelOpen_,
+            viewportTabIndex_
+        },
+        editorManager_.CreateInspectorSettings(
+            inspectObjects.data(),
+            static_cast<int>(inspectObjects.size()))
+    };
+
+    imguiManager_->ShowEditorController(debugSettings);
+    imguiManager_->ShowGameView(
+        dxCommon_->GetRenderTextureGpuDescriptorHandle(),
+        dxCommon_->GetRenderTextureSize(),
+        gameViewPanelOpen_,
+        editorManager_.IsPlayMode(),
+        debugSettings.inspector.requestStartPlayMode,
+        debugSettings.inspector.requestStopPlayMode,
+        viewportTabIndex_,
+        isDebugCameraEnabled_,
+        debugSettings.inspector);
+}
+
+std::vector<SceneSerializer::ObjectRecord> EditorScene::BuildSceneObjectRecords() const
 {
     std::vector<SceneSerializer::ObjectRecord> records;
 
@@ -607,8 +634,6 @@ std::vector<SceneSerializer::ObjectRecord> GamePlayScene::BuildSceneObjectRecord
             records.push_back(record);
         };
 
-    appendObject("Plane", object3d_.get(), false, inspectObjectModelIndices_[0]);
-
     for (const EditorObject& editorObject : editorObjects_) {
         appendObject(
             editorObject.name.c_str(),
@@ -620,7 +645,7 @@ std::vector<SceneSerializer::ObjectRecord> GamePlayScene::BuildSceneObjectRecord
     return records;
 }
 
-SceneSerializer::SceneSettings GamePlayScene::BuildSceneSettings() const
+SceneSerializer::SceneSettings EditorScene::BuildSceneSettings() const
 {
     SceneSerializer::SceneSettings settings{};
     if (camera_) {
@@ -640,7 +665,7 @@ SceneSerializer::SceneSettings GamePlayScene::BuildSceneSettings() const
     return settings;
 }
 
-void GamePlayScene::ApplySceneSettings(
+void EditorScene::ApplySceneSettings(
     const SceneSerializer::SceneSettings& settings)
 {
     if (settings.hasCamera && camera_) {
@@ -659,7 +684,7 @@ void GamePlayScene::ApplySceneSettings(
     }
 }
 
-void GamePlayScene::ProcessEditorRequests()
+void EditorScene::ProcessEditorRequests()
 {
     if (editorManager_.IsPlayMode()) {
         return;
@@ -710,7 +735,7 @@ void GamePlayScene::ProcessEditorRequests()
     }
 }
 
-void GamePlayScene::TrackTransformHistory(
+void EditorScene::TrackTransformHistory(
     const std::vector<ImGuiManager::InspectableObject>& inspectObjects)
 {
     if (editorManager_.IsPlayMode()) {
@@ -767,14 +792,14 @@ void GamePlayScene::TrackTransformHistory(
     lastObservedScale_ = scale;
 }
 
-void GamePlayScene::ClearTransformHistory()
+void EditorScene::ClearTransformHistory()
 {
     undoStack_.clear();
     redoStack_.clear();
     lastTransformHistoryObjectIndex_ = -1;
 }
 
-void GamePlayScene::ApplyTransformHistory(
+void EditorScene::ApplyTransformHistory(
     const TransformHistoryRecord& record,
     bool useAfter)
 {
@@ -790,7 +815,7 @@ void GamePlayScene::ApplyTransformHistory(
         useAfter ? record.afterScale : record.beforeScale);
 }
 
-void GamePlayScene::ApplyLightingToObject(Object3d* object)
+void EditorScene::ApplyLightingToObject(Object3d* object)
 {
     if (!object) {
         return;
@@ -805,7 +830,7 @@ void GamePlayScene::ApplyLightingToObject(Object3d* object)
     object->SetSpotLightIntensity(spotLightIntensity_);
 }
 
-void GamePlayScene::UpdateAnimations(float deltaTime)
+void EditorScene::UpdateAnimations(float deltaTime)
 {
     (void)deltaTime;
 #if 0
@@ -859,23 +884,97 @@ void GamePlayScene::UpdateAnimations(float deltaTime)
 #endif
 }
 
-void GamePlayScene::Update() {
-    const float deltaTime = dxCommon_->GetDeltaTime();
+void EditorScene::EnterPlayMode()
+{
+    viewportTabIndex_ = 1;
+    previousViewportTabIndex_ = viewportTabIndex_;
+    isDebugCameraEnabled_ = false;
+    SaveSceneToFile(editorManager_.GetSceneFilePath());
+    playController_.Start();
+}
+
+void EditorScene::ExitPlayMode()
+{
+    playController_.Stop();
+    editorManager_.SetPlayMode(false);
+    wasPlayMode_ = false;
+}
+
+void EditorScene::HandleEditorShortcuts()
+{
+    if (input_ && input_->TriggerKey(DIK_F1)) {
+        editorManager_.ToggleEditorGuiVisible();
+    }
 
     if (input_ && input_->TriggerKey(DIK_F2)) {
-        sceneManager_->SetNextScene(SceneType::Game);
+        editorManager_.SetPlayMode(!editorManager_.IsPlayMode());
+    }
+
+    if (!editorManager_.IsPlayMode() && input_ && input_->TriggerKey(DIK_F3)) {
+        isDebugCameraEnabled_ = !isDebugCameraEnabled_;
+        if (isDebugCameraEnabled_) {
+            viewportTabIndex_ = 0;
+        }
+    }
+
+    if (!editorManager_.IsPlayMode() && input_) {
+        if (input_->TriggerKey(DIK_1)) {
+            editorManager_.SetGizmoMode(0);
+        }
+        if (input_->TriggerKey(DIK_2)) {
+            editorManager_.SetGizmoMode(1);
+        }
+        if (input_->TriggerKey(DIK_3)) {
+            editorManager_.SetGizmoMode(2);
+        }
+    }
+}
+
+void EditorScene::ApplyViewportMode()
+{
+    if (viewportTabIndex_ == previousViewportTabIndex_) {
         return;
     }
 
-    if (input_ && input_->TriggerKey(DIK_F1)) {
-        isDebugCameraEnabled_ = !isDebugCameraEnabled_;
+    previousViewportTabIndex_ = viewportTabIndex_;
+    if (editorManager_.IsPlayMode()) {
+        return;
     }
 
-    if (isDebugCameraEnabled_) {
+    isDebugCameraEnabled_ = viewportTabIndex_ == 0;
+}
+
+void EditorScene::ApplyPlayModeRequests(bool& startedPlayModeThisFrame)
+{
+    if (editorManager_.ConsumeStartPlayModeRequest()) {
+        editorManager_.SetMode(EditorManager::EditorMode::Play);
+    }
+    if (editorManager_.ConsumeStopPlayModeRequest()) {
+        editorManager_.SetMode(EditorManager::EditorMode::Edit);
+    }
+
+    const bool isPlayMode = editorManager_.IsPlayMode();
+    if (isPlayMode && !wasPlayMode_) {
+        EnterPlayMode();
+        startedPlayModeThisFrame = true;
+    } else if (!isPlayMode && wasPlayMode_) {
+        ExitPlayMode();
+    }
+    wasPlayMode_ = editorManager_.IsPlayMode();
+}
+
+void EditorScene::Update() {
+    const float deltaTime = dxCommon_->GetDeltaTime();
+
+    HandleEditorShortcuts();
+
+    if (!editorManager_.IsPlayMode() && isDebugCameraEnabled_) {
         UpdateDebugCamera(deltaTime);
     }
 
-    imguiManager_->ShowSpriteController(spritePos_);
+    if (!editorManager_.IsPlayMode() && editorManager_.IsEditorGuiVisible()) {
+        imguiManager_->ShowSpriteController(spritePos_);
+    }
 
     std::vector<ImGuiManager::InspectableObject> inspectObjects;
     BuildInspectableObjects(inspectObjects);
@@ -883,48 +982,21 @@ void GamePlayScene::Update() {
     const int inspectObjectCount = static_cast<int>(inspectObjects.size());
     editorManager_.ValidateSelectedObjectIndex(inspectObjectCount);
 
-    ImGuiManager::GamePlayDebugSettings debugSettings{
-        {
-            blendModeIndex_,
-            environmentCoefficient_,
-            showSkybox_,
-            postEffectMode_
-        },
-        {
-            objectRotate_,
-            showPlane_,
-            showRing_,
-            showCylinder_,
-            showSphere_,
-            showParticle_
-        },
-        {
-            cylinderColor_,
-            cylinderAlphaReference_,
-            cylinderUVScrollSpeed_
-        },
-        {
-            lightDirection_,
-            lightIntensity_,
-            pointLightPosition_,
-            pointLightIntensity_,
-            spotLightPosition_,
-            spotLightDirection_,
-            spotLightIntensity_
-        },
-        {
-            renderingPanelOpen_,
-            objectsPanelOpen_,
-            inspectorPanelOpen_,
-            materialPanelOpen_,
-            cylinderPanelOpen_,
-            lightingPanelOpen_
-        },
-        editorManager_.CreateInspectorSettings(
-            inspectObjects.data(),
-            inspectObjectCount)
-    };
-    imguiManager_->ShowGamePlayController(debugSettings);
+    ShowEditorGui(inspectObjects);
+    ApplyViewportMode();
+
+    bool startedPlayModeThisFrame = false;
+    ApplyPlayModeRequests(startedPlayModeThisFrame);
+
+    if (editorManager_.IsPlayMode()) {
+        if (playController_.IsRunning() && !startedPlayModeThisFrame) {
+            playController_.Update(editorManager_.IsEditorGuiVisible());
+            if (playController_.IsExitRequested()) {
+                ExitPlayMode();
+            }
+        }
+        return;
+    }
 
     TrackTransformHistory(inspectObjects);
     ProcessEditorRequests();
@@ -932,9 +1004,6 @@ void GamePlayScene::Update() {
     for (auto& sprite : sprites_) {
         sprite.SetPosition(spritePos_);
     }
-    object3d_->SetRotate(objectRotate_);
-    ApplyLightingToObject(object3d_.get());
-
     cylinderUVOffset_ += cylinderUVScrollSpeed_ * deltaTime;
 
     UpdateAnimations(deltaTime);
@@ -948,7 +1017,6 @@ void GamePlayScene::Update() {
 
     camera_->Update();
     skybox_->Update(camera_.get());
-    object3d_->Update();
     for (auto& editorObject : editorObjects_) {
         editorObject.object->Update();
     }
@@ -958,7 +1026,7 @@ void GamePlayScene::Update() {
     }
 }
 
-void GamePlayScene::LoadEditorSettings()
+void EditorScene::LoadEditorSettings()
 {
     std::ifstream file(kEditorSettingsPath);
     if (!file) {
@@ -972,6 +1040,7 @@ void GamePlayScene::LoadEditorSettings()
     int sceneFileIndex = 0;
     int prefabFileIndex = 0;
     int gizmoMode = 0;
+    int viewportTabIndex = 1;
     ExtractSettingsInt(json, "postEffectMode", postEffectMode_);
     ExtractSettingsBool(json, "showSkybox", showSkybox_);
     ExtractSettingsFloat(json, "environmentCoefficient", environmentCoefficient_);
@@ -988,6 +1057,7 @@ void GamePlayScene::LoadEditorSettings()
     ExtractSettingsBool(json, "materialPanelOpen", materialPanelOpen_);
     ExtractSettingsBool(json, "cylinderPanelOpen", cylinderPanelOpen_);
     ExtractSettingsBool(json, "lightingPanelOpen", lightingPanelOpen_);
+    ExtractSettingsBool(json, "gameViewPanelOpen", gameViewPanelOpen_);
 
     if (ExtractSettingsInt(json, "sceneFileIndex", sceneFileIndex)) {
         editorManager_.SetSceneFileIndex(sceneFileIndex);
@@ -998,9 +1068,13 @@ void GamePlayScene::LoadEditorSettings()
     if (ExtractSettingsInt(json, "gizmoMode", gizmoMode)) {
         editorManager_.SetGizmoMode(gizmoMode);
     }
+    if (ExtractSettingsInt(json, "viewportTabIndex", viewportTabIndex)) {
+        viewportTabIndex_ = std::clamp(viewportTabIndex, 0, 1);
+        previousViewportTabIndex_ = viewportTabIndex_;
+    }
 }
 
-void GamePlayScene::SaveEditorSettings() const
+void EditorScene::SaveEditorSettings() const
 {
     std::filesystem::path path(kEditorSettingsPath);
     if (path.has_parent_path()) {
@@ -1039,13 +1113,16 @@ void GamePlayScene::SaveEditorSettings() const
         << (cylinderPanelOpen_ ? "true" : "false") << ",\n";
     file << "  \"lightingPanelOpen\": "
         << (lightingPanelOpen_ ? "true" : "false") << ",\n";
+    file << "  \"gameViewPanelOpen\": "
+        << (gameViewPanelOpen_ ? "true" : "false") << ",\n";
     file << "  \"sceneFileIndex\": " << editorManager_.GetSceneFileIndex() << ",\n";
     file << "  \"prefabFileIndex\": " << editorManager_.GetPrefabFileIndex() << ",\n";
-    file << "  \"gizmoMode\": " << editorManager_.GetGizmoMode() << "\n";
+    file << "  \"gizmoMode\": " << editorManager_.GetGizmoMode() << ",\n";
+    file << "  \"viewportTabIndex\": " << viewportTabIndex_ << "\n";
     file << "}\n";
 }
 
-void GamePlayScene::UpdateDebugCamera(float deltaTime)
+void EditorScene::UpdateDebugCamera(float deltaTime)
 {
     if (!input_ || !camera_) {
         return;
@@ -1103,17 +1180,21 @@ void GamePlayScene::UpdateDebugCamera(float deltaTime)
     camera_->SetTranslate(translate);
 }
 
-void GamePlayScene::Draw() {
+void EditorScene::Draw() {
+    if (editorManager_.IsPlayMode() && playController_.IsRunning()) {
+        playController_.Draw();
+        return;
+    }
+
     if (showSkybox_) {
         skybox_->Draw();
     }
 
     object3dCommon_->CommonDrawSetting();
-    if (showPlane_) {
-        object3d_->Draw();
-    }
     for (auto& editorObject : editorObjects_) {
-        editorObject.object->Draw();
+        if (editorObject.visible) {
+            editorObject.object->Draw();
+        }
     }
 
     spriteCommon_->CommonDrawSetting();
@@ -1122,7 +1203,8 @@ void GamePlayScene::Draw() {
     }
 }
 
-void GamePlayScene::Finalize() {
+void EditorScene::Finalize() {
+    ExitPlayMode();
     SaveEditorSettings();
 
     emitter_.reset();
@@ -1140,7 +1222,6 @@ void GamePlayScene::Finalize() {
     humanWalkDebug_.joints.clear();
     humanWalkDebug_.bones.clear();
     editorObjects_.clear();
-    object3d_.reset();
     skybox_.reset();
     camera_.reset();
     object3dCommon_.reset();
@@ -1148,7 +1229,7 @@ void GamePlayScene::Finalize() {
     ModelManager::GetInstance()->Finalize();
 }
 
-void GamePlayScene::InitializeSkeletonDebugSet(
+void EditorScene::InitializeSkeletonDebugSet(
     SkeletonDebugSet& debugSet,
     Object3d* source,
     const Math::Vector4& color)
@@ -1188,7 +1269,7 @@ void GamePlayScene::InitializeSkeletonDebugSet(
     }
 }
 
-void GamePlayScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
+void EditorScene::UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet)
 {
     if (!debugSet.source || !debugSet.source->HasSkeleton()) {
         return;
