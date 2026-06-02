@@ -34,7 +34,7 @@ public:
     void Update();
     void Draw();
     void SetDebugGuiAllowed(bool isAllowed);
-    int GetPostEffectMode() const { return isGameOver_ ? 1 : 11; }
+    int GetPostEffectMode() const { return isGameOver_ ? 1 : 5; }
     bool IsExitRequested() const { return isExitRequested_; }
 
 private:
