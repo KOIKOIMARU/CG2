@@ -25,6 +25,9 @@
     <Filter Include="src\engine\3d">
       <UniqueIdentifier>{27294f05-82aa-450c-a69f-0a9b06c12d88}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\engine\effect">
+      <UniqueIdentifier>{9d8e3ed7-c97c-490b-8bb0-fc71287071fd}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\engine\base">
       <UniqueIdentifier>{ef4b96e9-11ca-4c66-88f5-297da69ac206}</UniqueIdentifier>
     </Filter>
@@ -42,6 +45,9 @@
     </Filter>
     <Filter Include="include\engine\3d">
       <UniqueIdentifier>{67350c26-5c4c-440d-9d7d-003f0199a336}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\engine\effect">
+      <UniqueIdentifier>{906722c0-7b7e-4bc2-b378-83ea9402e8ad}</UniqueIdentifier>
     </Filter>
     <Filter Include="include\engine\base">
       <UniqueIdentifier>{3adcdd5d-d9fd-4797-a5e7-b4da2c98ae2e}</UniqueIdentifier>
@@ -164,6 +170,9 @@
     </ClCompile>
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp">
       <Filter>src\engine\3d</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\effect\PrimitiveEffect.cpp">
+      <Filter>src\engine\effect</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\base\ImGuiManager.cpp">
       <Filter>src\engine\base</Filter>
@@ -358,6 +367,9 @@
     </ClInclude>
     <ClInclude Include="include\engine\3d\ParticleEmitter.h">
       <Filter>include\engine\3d</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\effect\PrimitiveEffect.h">
+      <Filter>include\engine\effect</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\base\ImGuiManager.h">
       <Filter>include\engine\base</Filter>

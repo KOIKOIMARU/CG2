@@ -171,6 +171,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\audio\SoundManager.cpp" />
     <ClCompile Include="src\engine\base\ImGuiManager.cpp" />
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp" />
+    <ClCompile Include="src\engine\effect\PrimitiveEffect.cpp" />
     <ClCompile Include="src\engine\3d\Particle.cpp" />
     <ClCompile Include="src\engine\3d\ParticleManager.cpp" />
     <ClCompile Include="src\engine\3d\Camera.cpp" />
@@ -412,6 +413,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\Particle.h" />
     <ClInclude Include="include\engine\3d\ParticleManager.h" />
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
+    <ClInclude Include="include\engine\effect\PrimitiveEffect.h" />
     <ClInclude Include="include\app\MyGame.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />

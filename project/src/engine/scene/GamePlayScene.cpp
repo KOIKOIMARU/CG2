@@ -10,6 +10,7 @@
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/ParticleEmitter.h"
 #include "engine/3d/Skybox.h"
+#include "engine/effect/PrimitiveEffect.h"
 #include "engine/base/ImGuiManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
@@ -286,27 +287,13 @@ void GamePlayScene::Initialize() {
     ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
     ModelManager::GetInstance()->LoadModel("human/walk.gltf");
 
-    object3d_ = std::make_unique<Object3d>();
-    object3d_->Initialize(object3dCommon_.get());
-    object3d_->SetModel("primitive_plane");
-    object3d_->SetEnvironmentCoefficient(environmentCoefficient_);
-    object3d_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
-
-    ringObject_ = std::make_unique<Object3d>();
-    ringObject_->Initialize(object3dCommon_.get());
-    ringObject_->SetModel("primitive_ring");
-    ringObject_->SetTranslate({ 0.0f, 0.05f, 0.0f });
-    ringObject_->SetRotate({ 1.5707963f, 0.0f, 0.0f });
-    ringObject_->SetEnvironmentCoefficient(0.0f);
-
-    cylinderObject_ = std::make_unique<Object3d>();
-    cylinderObject_->Initialize(object3dCommon_.get());
-    cylinderObject_->SetModel("primitive_cylinder");
-    cylinderObject_->SetTranslate({ 0.0f, 0.0f, 0.0f });
-    cylinderObject_->SetEnvironmentCoefficient(0.0f);
-    cylinderObject_->SetLightingMode(0);
-    cylinderObject_->SetColor(cylinderColor_);
-    cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
+    primitiveEffect_ = std::make_unique<PrimitiveEffect>();
+    primitiveEffect_->Initialize(
+        object3dCommon_.get(),
+        cylinderColor_,
+        cylinderAlphaReference_,
+        environmentCoefficient_
+    );
 
     sphereObject_ = std::make_unique<Object3d>();
     sphereObject_->Initialize(object3dCommon_.get());
@@ -422,9 +409,9 @@ bool GamePlayScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
         int modelIndexSlot;
     };
     const BaseObjectBinding baseObjects[] = {
-        { "Plane", object3d_.get(), 0 },
-        { "Ring", ringObject_.get(), 1 },
-        { "Cylinder", cylinderObject_.get(), 2 },
+        { "Plane", primitiveEffect_->GetPlane(), 0 },
+        { "Ring", primitiveEffect_->GetRing(), 1 },
+        { "Cylinder", primitiveEffect_->GetCylinder(), 2 },
         { "Sphere", sphereObject_.get(), 3 },
         { "Animated Cube", animatedCubeObject_.get(), 4 },
         { "Simple Skin", simpleSkinObject_.get(), 5 },
@@ -667,9 +654,9 @@ void GamePlayScene::BuildInspectableObjects(
     std::vector<ImGuiManager::InspectableObject>& inspectObjects)
 {
     inspectObjects = {
-        { "Plane", ImGuiManager::InspectableType::Object3d, object3d_.get(), &inspectObjectModelIndices_[0], nullptr },
-        { "Ring", ImGuiManager::InspectableType::Object3d, ringObject_.get(), &inspectObjectModelIndices_[1], nullptr },
-        { "Cylinder", ImGuiManager::InspectableType::Object3d, cylinderObject_.get(), &inspectObjectModelIndices_[2], nullptr },
+        { "Plane", ImGuiManager::InspectableType::Object3d, primitiveEffect_->GetPlane(), &inspectObjectModelIndices_[0], nullptr },
+        { "Ring", ImGuiManager::InspectableType::Object3d, primitiveEffect_->GetRing(), &inspectObjectModelIndices_[1], nullptr },
+        { "Cylinder", ImGuiManager::InspectableType::Object3d, primitiveEffect_->GetCylinder(), &inspectObjectModelIndices_[2], nullptr },
         { "Sphere", ImGuiManager::InspectableType::Object3d, sphereObject_.get(), &inspectObjectModelIndices_[3], nullptr },
         { "Animated Cube", ImGuiManager::InspectableType::Object3d, animatedCubeObject_.get(), &inspectObjectModelIndices_[4], nullptr },
         { "Simple Skin", ImGuiManager::InspectableType::Object3d, simpleSkinObject_.get(), &inspectObjectModelIndices_[5], nullptr },
@@ -716,11 +703,11 @@ std::vector<SceneSerializer::ObjectRecord> GamePlayScene::BuildSceneObjectRecord
             records.push_back(record);
         };
 
-    appendObject("Plane", object3d_.get(), false, inspectObjectModelIndices_[0]);
-    appendObject("Ring", ringObject_.get(), false, inspectObjectModelIndices_[1]);
+    appendObject("Plane", primitiveEffect_->GetPlane(), false, inspectObjectModelIndices_[0]);
+    appendObject("Ring", primitiveEffect_->GetRing(), false, inspectObjectModelIndices_[1]);
     appendObject(
         "Cylinder",
-        cylinderObject_.get(),
+        primitiveEffect_->GetCylinder(),
         false,
         inspectObjectModelIndices_[2]);
     appendObject("Sphere", sphereObject_.get(), false, inspectObjectModelIndices_[3]);
@@ -1060,21 +1047,16 @@ void GamePlayScene::Update() {
     for (auto& sprite : sprites_) {
         sprite.SetPosition(spritePos_);
     }
-    object3d_->SetRotate(objectRotate_);
-    ApplyLightingToObject(object3d_.get());
-
-    ringObject_->SetRotate({ 1.5707963f, objectRotate_.y, objectRotate_.z });
-    ApplyLightingToObject(ringObject_.get());
-
-    cylinderUVOffset_ += cylinderUVScrollSpeed_ * deltaTime;
-    Matrix4x4 cylinderUVTransform = Multiply(
-        MakeScaleMatrix({ 1.0f, -1.0f, 1.0f }),
-        MakeTranslateMatrix({ cylinderUVOffset_, 1.0f, 0.0f })
+    primitiveEffect_->Update(
+        deltaTime,
+        objectRotate_,
+        cylinderColor_,
+        cylinderAlphaReference_,
+        cylinderUVScrollSpeed_
     );
-    cylinderObject_->SetColor(cylinderColor_);
-    cylinderObject_->SetAlphaReference(cylinderAlphaReference_);
-    cylinderObject_->SetUVTransform(cylinderUVTransform);
-    ApplyLightingToObject(cylinderObject_.get());
+    ApplyLightingToObject(primitiveEffect_->GetPlane());
+    ApplyLightingToObject(primitiveEffect_->GetRing());
+    ApplyLightingToObject(primitiveEffect_->GetCylinder());
 
     sphereObject_->SetRotate(objectRotate_);
     ApplyLightingToObject(sphereObject_.get());
@@ -1097,9 +1079,6 @@ void GamePlayScene::Update() {
 
     camera_->Update();
     skybox_->Update(camera_.get());
-    object3d_->Update();
-    ringObject_->Update();
-    cylinderObject_->Update();
     sphereObject_->Update();
     animatedCubeObject_->Update();
     if (simpleSkinObject_) {
@@ -1300,15 +1279,7 @@ void GamePlayScene::Draw() {
     }
 
     object3dCommon_->CommonDrawSetting();
-    if (showPlane_) {
-        object3d_->Draw();
-    }
-    if (showRing_) {
-        ringObject_->Draw();
-    }
-    if (showCylinder_) {
-        cylinderObject_->Draw();
-    }
+    primitiveEffect_->Draw(showPlane_, showRing_, showCylinder_);
     if (showSphere_) {
         sphereObject_->Draw();
         animatedCubeObject_->Draw();
@@ -1368,8 +1339,7 @@ void GamePlayScene::Finalize() {
     SaveEditorSettings();
 
     emitter_.reset();
-    cylinderObject_.reset();
-    ringObject_.reset();
+    primitiveEffect_.reset();
     sphereObject_.reset();
     animatedCubeObject_.reset();
     simpleSkinObject_.reset();
@@ -1382,7 +1352,6 @@ void GamePlayScene::Finalize() {
     humanWalkDebug_.joints.clear();
     humanWalkDebug_.bones.clear();
     editorObjects_.clear();
-    object3d_.reset();
     skybox_.reset();
     camera_.reset();
     object3dCommon_.reset();

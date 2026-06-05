@@ -16,6 +16,7 @@ class Object3d;
 class Camera;
 class ParticleEmitter;
 class Skybox;
+class PrimitiveEffect;
 
 struct SkeletonDebugSet {
     Object3d* source = nullptr;
@@ -85,9 +86,7 @@ private:
     std::unique_ptr<Object3dCommon> object3dCommon_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Skybox> skybox_;
-    std::unique_ptr<Object3d> object3d_;
-    std::unique_ptr<Object3d> ringObject_;
-    std::unique_ptr<Object3d> cylinderObject_;
+    std::unique_ptr<PrimitiveEffect> primitiveEffect_;
     std::unique_ptr<Object3d> sphereObject_;
     std::unique_ptr<Object3d> animatedCubeObject_;
     std::unique_ptr<Object3d> simpleSkinObject_;
@@ -121,7 +120,6 @@ private:
     Math::Vector4 cylinderColor_{ 0.45f, 0.55f, 1.0f, 0.8f };
     float cylinderAlphaReference_ = 0.01f;
     float cylinderUVScrollSpeed_ = 0.35f;
-    float cylinderUVOffset_ = 0.0f;
     float animationTime_ = 0.0f;
     bool showSkinningSamples_ = true;
     bool showSkeletonDebug_ = true;
