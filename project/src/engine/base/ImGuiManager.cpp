@@ -5,7 +5,10 @@
 #include "engine/3d/Object3d.h"
 #include "engine/scene/SceneSerializer.h"
 
+#include "ImGuizmo.h"
+
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -29,6 +32,7 @@ constexpr float kEditorViewportHeight =
 constexpr float kEditorProjectY =
     kEditorPanelTop + kEditorViewportHeight;
 constexpr float kEditorInspectorX = kEditorClientWidth - kEditorInspectorWidth;
+constexpr float kDegreesToRadians = 0.017453292519943295f;
 
 constexpr const char* kProjectModelAssets[] = {
     "primitive_plane",
@@ -54,6 +58,83 @@ constexpr const char* kProjectTextureAssets[] = {
     "resources/monsterBall.png",
     "resources/human/white.png"
 };
+
+struct ViewportImageRect {
+    ImVec2 min{};
+    ImVec2 max{};
+    bool isValid = false;
+};
+
+ImGuizmo::OPERATION ToImGuizmoOperation(int gizmoMode)
+{
+    if (gizmoMode == 1) {
+        return ImGuizmo::ROTATE;
+    }
+    if (gizmoMode == 2) {
+        return ImGuizmo::SCALE;
+    }
+    return ImGuizmo::TRANSLATE;
+}
+
+void DrawTransformGizmo(
+    const Math::Matrix4x4& viewMatrix,
+    const Math::Matrix4x4& projectionMatrix,
+    const ViewportImageRect& imageRect,
+    ImGuiManager::ObjectInspectorSettings& inspector)
+{
+    if (!imageRect.isValid ||
+        inspector.isPlayMode ||
+        inspector.selectedObjectIndex < 0 ||
+        inspector.selectedObjectIndex >= inspector.objectCount ||
+        inspector.objects[inspector.selectedObjectIndex].readOnly) {
+        return;
+    }
+
+    Object3d* selectedObject =
+        inspector.objects[inspector.selectedObjectIndex].object;
+    if (!selectedObject) {
+        return;
+    }
+
+    Math::Matrix4x4 objectMatrix = Math::MakeAffineMatrix(
+        selectedObject->GetScale(),
+        selectedObject->GetRotate(),
+        selectedObject->GetTranslate());
+
+    ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+    ImGuizmo::SetRect(
+        imageRect.min.x,
+        imageRect.min.y,
+        imageRect.max.x - imageRect.min.x,
+        imageRect.max.y - imageRect.min.y);
+    ImGuizmo::SetOrthographic(false);
+
+    if (!ImGuizmo::Manipulate(
+        &viewMatrix.m[0][0],
+        &projectionMatrix.m[0][0],
+        ToImGuizmoOperation(inspector.gizmoMode),
+        ImGuizmo::LOCAL,
+        &objectMatrix.m[0][0])) {
+        return;
+    }
+
+    float translate[3]{};
+    float rotate[3]{};
+    float scale[3]{};
+    ImGuizmo::DecomposeMatrixToComponents(
+        &objectMatrix.m[0][0],
+        translate,
+        rotate,
+        scale);
+
+    selectedObject->SetTranslate({ translate[0], translate[1], translate[2] });
+    selectedObject->SetRotate({
+        rotate[0] * kDegreesToRadians,
+        rotate[1] * kDegreesToRadians,
+        rotate[2] * kDegreesToRadians
+    });
+    selectedObject->SetScale({ scale[0], scale[1], scale[2] });
+}
 
 bool DrawToolbarToolButton(
     const char* label,
@@ -444,18 +525,10 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
     ImGui::SameLine();
     ImGui::Checkbox("ゲームビュー", &panels.gameViewOpen);
     ImGui::SameLine();
-    if (ImGui::RadioButton("シーン", panels.viewportTabIndex == 0)) {
-        panels.viewportTabIndex = 0;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("ゲーム", panels.viewportTabIndex == 1)) {
-        panels.viewportTabIndex = 1;
-    }
-    ImGui::SameLine();
     ImGui::TextUnformatted(
         inspector.isPlayMode ?
         "F1 表示 / F2 停止 / F4 ゲームデバッグ" :
-        "F1 表示 / F2 再生 / F3 シーンカメラ");
+        "F1 表示 / F2 再生 / F3 編集カメラ");
     ImGui::End();
 
     ImGui::SetNextWindowPos(
@@ -486,7 +559,11 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
         ImGui::SetTooltip("プリミティブを追加");
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(inspector.selectedObjectIndex < 1);
+    const bool selectedReadOnly =
+        0 <= inspector.selectedObjectIndex &&
+        inspector.selectedObjectIndex < inspector.objectCount &&
+        inspector.objects[inspector.selectedObjectIndex].readOnly;
+    ImGui::BeginDisabled(inspector.selectedObjectIndex < 1 || selectedReadOnly);
     if (ImGui::Button("D", ImVec2(28.0f, 0.0f))) {
         inspector.requestDuplicateObject = true;
     }
@@ -534,7 +611,10 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
                 *visible = !*visible;
             }
             ImGui::EndDisabled();
-            ImGui::BeginDisabled(inspector.isPlayMode || index < 1);
+            ImGui::BeginDisabled(
+                inspector.isPlayMode ||
+                index < 1 ||
+                inspector.objects[index].readOnly);
             if (ImGui::MenuItem("複製")) {
                 inspector.requestDuplicateObject = true;
             }
@@ -639,7 +719,9 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
             Object3d* selectedObject =
                 inspector.objects[inspector.selectedObjectIndex].object;
             if (selectedObject) {
-                ImGui::BeginDisabled(inspector.isPlayMode);
+                const bool selectedReadOnly =
+                    inspector.objects[inspector.selectedObjectIndex].readOnly;
+                ImGui::BeginDisabled(inspector.isPlayMode || selectedReadOnly);
                 if (BeginInspectorComponent("基本情報")) {
                 ImGui::TextUnformatted(
                     inspector.objects[inspector.selectedObjectIndex].name);
@@ -899,8 +981,13 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
             inspectorStatus_ = std::string("読み込みリクエスト: ") +
                 inspector.saveFilePath;
         }
+        const bool selectedReadOnly =
+            0 <= inspector.selectedObjectIndex &&
+            inspector.selectedObjectIndex < inspector.objectCount &&
+            inspector.objects[inspector.selectedObjectIndex].readOnly;
         if (inspector.selectedObjectIndex >= 0) {
             ImGui::SameLine();
+            ImGui::BeginDisabled(selectedReadOnly);
             if (ImGui::Button("選択中を複製")) {
                 inspector.requestDuplicateObject = true;
             }
@@ -911,6 +998,7 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
             if (ImGui::Button("プレハブ保存")) {
                 inspector.requestSavePrefab = true;
             }
+            ImGui::EndDisabled();
             ImGui::SameLine();
             if (ImGui::Button("プレハブ生成")) {
                 inspector.requestInstantiatePrefab = true;
@@ -996,18 +1084,20 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 void ImGuiManager::ShowGameView(
     D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
     const Math::Vector2& textureSize,
+    const Math::Matrix4x4& viewMatrix,
+    const Math::Matrix4x4& projectionMatrix,
     bool& isOpen,
     bool isPlayMode,
     bool& requestStartPlayMode,
     bool& requestStopPlayMode,
-    int& viewportTabIndex,
-    bool isSceneCameraEnabled,
     ObjectInspectorSettings& inspector)
 {
 #ifdef USE_IMGUI
     if (!isOpen) {
         return;
     }
+
+    ImGuizmo::BeginFrame();
 
     ImGui::SetNextWindowPos(
         ImVec2(kEditorCenterX, kEditorPanelTop),
@@ -1026,6 +1116,7 @@ void ImGuiManager::ShowGameView(
     }
 
     auto drawViewportImage = [&]() {
+        ViewportImageRect imageRect{};
         ImVec2 availableSize = ImGui::GetContentRegionAvail();
         const float aspect =
             textureSize.y > 0.0f ? textureSize.x / textureSize.y : 1.0f;
@@ -1043,44 +1134,33 @@ void ImGuiManager::ShowGameView(
         ImGui::Image(
             static_cast<ImTextureID>(textureHandle.ptr),
             ImVec2(imageWidth, imageHeight));
+        imageRect.min = ImGui::GetItemRectMin();
+        imageRect.max = ImGui::GetItemRectMax();
+        imageRect.isValid = true;
+        return imageRect;
     };
 
-    if (ImGui::BeginTabBar("ViewportTabs")) {
-        const ImGuiTabItemFlags sceneTabFlags =
-            viewportTabIndex == 0 ? ImGuiTabItemFlags_SetSelected : 0;
-        if (ImGui::BeginTabItem("シーン", nullptr, sceneTabFlags)) {
-            viewportTabIndex = 0;
-            ImGui::TextUnformatted(
-                isSceneCameraEnabled ?
-                "シーンカメラ: ON" :
-                "シーンカメラ: OFF");
-            ImGui::Separator();
-            drawViewportImage();
-            ImGui::EndTabItem();
+    if (isPlayMode) {
+        if (ImGui::Button("停止##ViewportStop")) {
+            requestStopPlayMode = true;
         }
-
-        const ImGuiTabItemFlags gameTabFlags =
-            viewportTabIndex == 1 ? ImGuiTabItemFlags_SetSelected : 0;
-        if (ImGui::BeginTabItem("ゲーム", nullptr, gameTabFlags)) {
-            viewportTabIndex = 1;
-            if (isPlayMode) {
-                if (ImGui::Button("停止##ViewportStop")) {
-                    requestStopPlayMode = true;
-                }
-                ImGui::SameLine();
-                ImGui::TextUnformatted("再生モード");
-            } else {
-                if (ImGui::Button("再生##ViewportPlay")) {
-                    requestStartPlayMode = true;
-                }
-                ImGui::SameLine();
-                ImGui::TextUnformatted("編集プレビュー");
-            }
-            ImGui::Separator();
-            drawViewportImage();
-            ImGui::EndTabItem();
+        ImGui::SameLine();
+        ImGui::TextUnformatted("再生モード");
+        ImGui::Separator();
+        drawViewportImage();
+    } else {
+        if (ImGui::Button("再生##ViewportPlay")) {
+            requestStartPlayMode = true;
         }
-        ImGui::EndTabBar();
+        ImGui::SameLine();
+        ImGui::TextUnformatted("編集モード");
+        ImGui::Separator();
+        const ViewportImageRect imageRect = drawViewportImage();
+        DrawTransformGizmo(
+            viewMatrix,
+            projectionMatrix,
+            imageRect,
+            inspector);
     }
 
     ImGui::End();
@@ -1244,12 +1324,12 @@ void ImGuiManager::ShowGameView(
 #else
     (void)textureHandle;
     (void)textureSize;
+    (void)viewMatrix;
+    (void)projectionMatrix;
     (void)isOpen;
     (void)isPlayMode;
     (void)requestStartPlayMode;
     (void)requestStopPlayMode;
-    (void)viewportTabIndex;
-    (void)isSceneCameraEnabled;
     (void)inspector;
 #endif
 }

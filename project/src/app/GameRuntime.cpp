@@ -1,6 +1,7 @@
 #include "app/GameRuntime.h"
 
 #include "engine/3d/ModelManager.h"
+#include "engine/3d/Skybox.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/io/Input.h"
 #include "engine/scene/SceneSerializer.h"
@@ -168,10 +169,16 @@ void GameRuntime::Initialize()
     camera_->SetRotate({ 0.15f, 0.0f, 0.0f });
     camera_->SetTranslate({ 0.0f, 2.5f, -13.0f });
     camera_->SetFovY(0.5f);
+    camera_->Update();
     object3dCommon_->SetDefaultCamera(camera_.get());
+
+    skybox_ = std::make_unique<Skybox>();
+    skybox_->Initialize(dxCommon_, srvManager_, environmentTexturePath);
+    skybox_->Update(camera_.get());
 
     player_ = std::make_unique<Player>();
     player_->Initialize(object3dCommon_.get(), playerModel_);
+    player_->SetRailZ(railDistance_);
     previousPlayerTranslate_ = player_->GetTranslate();
     cameraTranslate_ = camera_->GetTranslate();
 
@@ -186,6 +193,7 @@ void GameRuntime::Finalize()
     enemies_.clear();
     player_.reset();
     camera_.reset();
+    skybox_.reset();
     object3dCommon_.reset();
 }
 
@@ -199,8 +207,16 @@ void GameRuntime::Update()
         isDebugGuiVisible_ = !isDebugGuiVisible_;
     }
 
+    if (!isGameOver_ && !isGameClear_) {
+        railDistance_ += railSpeed_;
+    }
+
     player_->Update(input_);
+    player_->SetRailZ(railDistance_);
     UpdateGameCamera();
+    if (skybox_) {
+        skybox_->Update(camera_.get());
+    }
 
     if (!isGameOver_ && !isGameClear_) {
         if (shootCooldown_ > 0) {
@@ -256,6 +272,7 @@ void GameRuntime::Update()
         ImGui::Text("敵弾: %zu", enemyBullets_.size());
         ImGui::Text("敵数: %zu", enemies_.size());
         ImGui::Text("撃破数: %d / 20", defeatedEnemyCount_);
+        ImGui::Text("レール距離: %.1f", railDistance_);
         if (isGameClear_) {
             ImGui::TextUnformatted("ゲームクリア");
         }
@@ -309,6 +326,10 @@ void GameRuntime::LoadSceneObjects(const char* path)
 
 void GameRuntime::Draw()
 {
+    if (skybox_) {
+        skybox_->Draw();
+    }
+
     object3dCommon_->CommonDrawSetting();
     for (const auto& sceneObject : sceneObjects_) {
         sceneObject->Draw();
@@ -378,13 +399,21 @@ void GameRuntime::SpawnEnemy()
     const float yPositions[] = { -1.5f, 0.0f, 1.5f };
     const float x = xPositions[spawnIndex % 5];
     const float y = yPositions[(spawnIndex / 5) % 3];
+    const Enemy::Behavior behaviors[] = {
+        Enemy::Behavior::Formation,
+        Enemy::Behavior::Swoop,
+        Enemy::Behavior::StrafeShooter
+    };
+    const Enemy::Behavior behavior =
+        behaviors[spawnIndex % (sizeof(behaviors) / sizeof(behaviors[0]))];
     ++spawnIndex;
 
     auto enemy = std::make_unique<Enemy>();
     enemy->Initialize(
         object3dCommon_.get(),
         enemyModel_,
-        { x, y, 28.0f });
+        { x, y, railDistance_ + 28.0f },
+        behavior);
     enemies_.push_back(std::move(enemy));
 }
 
@@ -417,7 +446,7 @@ void GameRuntime::UpdateEnemyBullets()
 void GameRuntime::UpdateEnemies()
 {
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
-        (*iterator)->Update();
+        (*iterator)->Update(railDistance_);
         if ((*iterator)->IsDead()) {
             iterator = enemies_.erase(iterator);
         } else {
@@ -495,7 +524,7 @@ void GameRuntime::UpdateGameCamera()
     const Math::Vector3 playerVelocity = {
         playerTranslate.x - previousPlayerTranslate_.x,
         playerTranslate.y - previousPlayerTranslate_.y,
-        playerTranslate.z - previousPlayerTranslate_.z,
+        0.0f,
     };
     previousPlayerTranslate_ = playerTranslate;
 
@@ -520,7 +549,7 @@ void GameRuntime::UpdateGameCamera()
     const Math::Vector3 targetTranslate = {
         playerTranslate.x * 0.22f + playerVelocity.x * 1.1f + shakeX,
         2.55f + playerTranslate.y * 0.15f + playerVelocity.y * 0.8f + bob + shakeY,
-        -13.8f + resultZoom,
+        railDistance_ - 13.8f + resultZoom,
     };
 
     cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, 0.06f);

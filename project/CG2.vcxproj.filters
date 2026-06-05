@@ -7,6 +7,9 @@
     <Filter Include="externals\imgui">
       <UniqueIdentifier>{549d6903-40f3-409c-8cb1-dff71af74df4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="externals\ImGuizmo">
+      <UniqueIdentifier>{b2f9a740-44d9-441e-bf72-4e47b428e872}</UniqueIdentifier>
+    </Filter>
     <Filter Include="include">
       <UniqueIdentifier>{878d94c2-b98a-4e20-b168-a8efb07eee2c}</UniqueIdentifier>
     </Filter>
@@ -101,6 +104,9 @@
     </ClCompile>
     <ClCompile Include="externals\imgui\imgui_widgets.cpp">
       <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\ImGuizmo\ImGuizmo.cpp">
+      <Filter>externals\ImGuizmo</Filter>
     </ClCompile>
     <ClCompile Include="src\app\main.cpp">
       <Filter>src\app</Filter>
@@ -316,6 +322,9 @@
     <ClInclude Include="externals\imgui\imstb_truetype.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
+    <ClInclude Include="externals\ImGuizmo\ImGuizmo.h">
+      <Filter>externals\ImGuizmo</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\3d\ResourceObject.h">
       <Filter>include\engine\3d</Filter>
     </ClInclude>
@@ -441,6 +450,9 @@
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">
       <Filter>externals\imgui</Filter>
+    </Text>
+    <Text Include="externals\ImGuizmo\LICENSE">
+      <Filter>externals\ImGuizmo</Filter>
     </Text>
   </ItemGroup>
   <ItemGroup>

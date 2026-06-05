@@ -48,6 +48,9 @@ constexpr const char* kEditorSettingsPath =
 "resources/game_editor_settings.json";
 constexpr size_t kMaxTransformHistoryCount = 64;
 constexpr float kTransformHistoryEpsilon = 0.0001f;
+constexpr Math::Vector3 kGameCameraRotate = { 0.15f, 0.0f, 0.0f };
+constexpr Math::Vector3 kGameCameraTranslate = { 0.0f, 2.5f, -13.0f };
+constexpr float kGameCameraFovY = 0.5f;
 
 bool IsSameVector3(const Math::Vector3& lhs, const Math::Vector3& rhs)
 {
@@ -198,8 +201,9 @@ void EditorScene::Initialize() {
     object3dCommon_->SetEnvironmentTexturePath(environmentTexturePath);
 
     camera_ = std::make_unique<Camera>();
-    camera_->SetRotate({ 0.2f, 0.0f, 0.0f });
-    camera_->SetTranslate({ 0.0f, 6.0f, -24.0f });
+    camera_->SetRotate(kGameCameraRotate);
+    camera_->SetTranslate(kGameCameraTranslate);
+    camera_->SetFovY(kGameCameraFovY);
     object3dCommon_->SetDefaultCamera(camera_.get());
 
     playController_.SetSystems(
@@ -290,6 +294,27 @@ void EditorScene::Initialize() {
         "resources/uvChecker.png"
     );
     ModelManager::GetInstance()->CreateBox(
+        "game_player",
+        1.0f,
+        0.45f,
+        1.3f,
+        "resources/uvChecker.png"
+    );
+    ModelManager::GetInstance()->CreateSphere(
+        "game_enemy",
+        16,
+        32,
+        0.9f,
+        "resources/uvChecker.png"
+    );
+    ModelManager::GetInstance()->CreateSphere(
+        "game_bullet",
+        12,
+        24,
+        0.35f,
+        "resources/gradationLine.png"
+    );
+    ModelManager::GetInstance()->CreateBox(
         "debug_bone_box",
         1.0f,
         1.0f,
@@ -304,6 +329,9 @@ void EditorScene::Initialize() {
     editorManager_.SetSceneFilePath(kSceneFilePath);
     LoadEditorSettings();
     LoadPrimitiveObjectsFromSceneFile(editorManager_.GetSceneFilePath());
+    camera_->SetRotate(kGameCameraRotate);
+    camera_->SetTranslate(kGameCameraTranslate);
+    camera_->SetFovY(kGameCameraFovY);
 
     TextureManager::GetInstance()->LoadTexture("resources/uvChecker.png");
     TextureManager::GetInstance()->LoadTexture("resources/monsterBall.png");
@@ -367,8 +395,57 @@ bool EditorScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
         editorObjects_.push_back(std::move(editorObject));
     }
 
+    AddGameplayPreviewObjects();
     editorManager_.ResetSelectedObjectIndex();
     return true;
+}
+
+void EditorScene::AddGameplayPreviewObjects()
+{
+    AddGameplayPreviewObject(
+        "Player Preview",
+        "game_player",
+        { 0.0f, 0.0f, 0.0f },
+        { 0.8f, 0.35f, 1.0f },
+        { 0.25f, 0.65f, 1.0f, 1.0f });
+
+    const Math::Vector3 enemyPositions[] = {
+        { -4.0f, -1.5f, 18.0f },
+        { 0.0f, 0.0f, 22.0f },
+        { 4.0f, 1.5f, 26.0f }
+    };
+    for (int index = 0; index < 3; ++index) {
+        AddGameplayPreviewObject(
+            ("Enemy Preview " + std::to_string(index + 1)).c_str(),
+            "game_enemy",
+            enemyPositions[index],
+            { 0.9f, 0.9f, 0.9f },
+            { 1.0f, 0.25f, 0.25f, 1.0f });
+    }
+}
+
+void EditorScene::AddGameplayPreviewObject(
+    const char* name,
+    const char* modelName,
+    const Math::Vector3& translate,
+    const Math::Vector3& scale,
+    const Math::Vector4& color)
+{
+    auto previewObject = std::make_unique<Object3d>();
+    previewObject->Initialize(object3dCommon_.get());
+    previewObject->SetModel(modelName);
+    previewObject->SetTranslate(translate);
+    previewObject->SetScale(scale);
+    previewObject->SetColor(color);
+    previewObject->SetEnvironmentCoefficient(0.0f);
+
+    EditorObject editorObject{};
+    editorObject.name = name ? name : "Gameplay Preview";
+    editorObject.modelIndex = 0;
+    editorObject.visible = true;
+    editorObject.runtimePreview = true;
+    editorObject.object = std::move(previewObject);
+    editorObjects_.push_back(std::move(editorObject));
 }
 
 bool EditorScene::SaveSceneToFile(const char* path) const
@@ -418,6 +495,10 @@ void EditorScene::RemoveSelectedEditorObject()
         return;
     }
 
+    if (editorObjects_[objectIndex].runtimePreview) {
+        return;
+    }
+
     editorObjects_.erase(editorObjects_.begin() + objectIndex);
     editorManager_.ResetSelectedObjectIndex();
     ClearTransformHistory();
@@ -433,6 +514,10 @@ void EditorScene::DuplicateSelectedEditorObject()
     }
 
     const EditorObject& source = editorObjects_[objectIndex];
+    if (source.runtimePreview) {
+        return;
+    }
+
     auto duplicatedObject = std::make_unique<Object3d>();
     duplicatedObject->Initialize(object3dCommon_.get());
     duplicatedObject->SetModel(kInspectorModelItems[source.modelIndex]);
@@ -469,6 +554,10 @@ void EditorScene::SaveSelectedEditorObjectAsPrefab()
     }
 
     const EditorObject& source = editorObjects_[objectIndex];
+    if (source.runtimePreview) {
+        return;
+    }
+
     SceneSerializer::ObjectRecord record{};
     record.name = source.name;
     record.primitive = true;
@@ -539,7 +628,8 @@ void EditorScene::BuildInspectableObjects(
      editorObject.object.get(),
      &editorObject.modelIndex,
      &editorObject.name,
-     &editorObject.visible
+     &editorObject.visible,
+     editorObject.runtimePreview
             });
     }
 }
@@ -585,8 +675,7 @@ void EditorScene::ShowEditorGui(
             materialPanelOpen_,
             cylinderPanelOpen_,
             lightingPanelOpen_,
-            gameViewPanelOpen_,
-            viewportTabIndex_
+            gameViewPanelOpen_
         },
         editorManager_.CreateInspectorSettings(
             inspectObjects.data(),
@@ -597,12 +686,12 @@ void EditorScene::ShowEditorGui(
     imguiManager_->ShowGameView(
         dxCommon_->GetRenderTextureGpuDescriptorHandle(),
         dxCommon_->GetRenderTextureSize(),
+        camera_->GetViewMatrix(),
+        camera_->GetProjectionMatrix(),
         gameViewPanelOpen_,
         editorManager_.IsPlayMode(),
         debugSettings.inspector.requestStartPlayMode,
         debugSettings.inspector.requestStopPlayMode,
-        viewportTabIndex_,
-        isDebugCameraEnabled_,
         debugSettings.inspector);
 }
 
@@ -635,6 +724,10 @@ std::vector<SceneSerializer::ObjectRecord> EditorScene::BuildSceneObjectRecords(
         };
 
     for (const EditorObject& editorObject : editorObjects_) {
+        if (editorObject.runtimePreview) {
+            continue;
+        }
+
         appendObject(
             editorObject.name.c_str(),
             editorObject.object.get(),
@@ -750,7 +843,7 @@ void EditorScene::TrackTransformHistory(
     }
 
     Object3d* object = inspectObjects[selectedIndex].object;
-    if (!object) {
+    if (!object || inspectObjects[selectedIndex].readOnly) {
         lastTransformHistoryObjectIndex_ = -1;
         return;
     }
@@ -886,8 +979,6 @@ void EditorScene::UpdateAnimations(float deltaTime)
 
 void EditorScene::EnterPlayMode()
 {
-    viewportTabIndex_ = 1;
-    previousViewportTabIndex_ = viewportTabIndex_;
     isDebugCameraEnabled_ = false;
     SaveSceneToFile(editorManager_.GetSceneFilePath());
     playController_.Start();
@@ -898,6 +989,9 @@ void EditorScene::ExitPlayMode()
     playController_.Stop();
     editorManager_.SetPlayMode(false);
     wasPlayMode_ = false;
+    camera_->SetRotate(kGameCameraRotate);
+    camera_->SetTranslate(kGameCameraTranslate);
+    camera_->SetFovY(kGameCameraFovY);
 }
 
 void EditorScene::HandleEditorShortcuts()
@@ -912,9 +1006,6 @@ void EditorScene::HandleEditorShortcuts()
 
     if (!editorManager_.IsPlayMode() && input_ && input_->TriggerKey(DIK_F3)) {
         isDebugCameraEnabled_ = !isDebugCameraEnabled_;
-        if (isDebugCameraEnabled_) {
-            viewportTabIndex_ = 0;
-        }
     }
 
     if (!editorManager_.IsPlayMode() && input_) {
@@ -928,20 +1019,6 @@ void EditorScene::HandleEditorShortcuts()
             editorManager_.SetGizmoMode(2);
         }
     }
-}
-
-void EditorScene::ApplyViewportMode()
-{
-    if (viewportTabIndex_ == previousViewportTabIndex_) {
-        return;
-    }
-
-    previousViewportTabIndex_ = viewportTabIndex_;
-    if (editorManager_.IsPlayMode()) {
-        return;
-    }
-
-    isDebugCameraEnabled_ = viewportTabIndex_ == 0;
 }
 
 void EditorScene::ApplyPlayModeRequests(bool& startedPlayModeThisFrame)
@@ -983,7 +1060,6 @@ void EditorScene::Update() {
     editorManager_.ValidateSelectedObjectIndex(inspectObjectCount);
 
     ShowEditorGui(inspectObjects);
-    ApplyViewportMode();
 
     bool startedPlayModeThisFrame = false;
     ApplyPlayModeRequests(startedPlayModeThisFrame);
@@ -1040,7 +1116,6 @@ void EditorScene::LoadEditorSettings()
     int sceneFileIndex = 0;
     int prefabFileIndex = 0;
     int gizmoMode = 0;
-    int viewportTabIndex = 1;
     ExtractSettingsInt(json, "postEffectMode", postEffectMode_);
     ExtractSettingsBool(json, "showSkybox", showSkybox_);
     ExtractSettingsFloat(json, "environmentCoefficient", environmentCoefficient_);
@@ -1067,10 +1142,6 @@ void EditorScene::LoadEditorSettings()
     }
     if (ExtractSettingsInt(json, "gizmoMode", gizmoMode)) {
         editorManager_.SetGizmoMode(gizmoMode);
-    }
-    if (ExtractSettingsInt(json, "viewportTabIndex", viewportTabIndex)) {
-        viewportTabIndex_ = std::clamp(viewportTabIndex, 0, 1);
-        previousViewportTabIndex_ = viewportTabIndex_;
     }
 }
 
@@ -1117,8 +1188,7 @@ void EditorScene::SaveEditorSettings() const
         << (gameViewPanelOpen_ ? "true" : "false") << ",\n";
     file << "  \"sceneFileIndex\": " << editorManager_.GetSceneFileIndex() << ",\n";
     file << "  \"prefabFileIndex\": " << editorManager_.GetPrefabFileIndex() << ",\n";
-    file << "  \"gizmoMode\": " << editorManager_.GetGizmoMode() << ",\n";
-    file << "  \"viewportTabIndex\": " << viewportTabIndex_ << "\n";
+    file << "  \"gizmoMode\": " << editorManager_.GetGizmoMode() << "\n";
     file << "}\n";
 }
 

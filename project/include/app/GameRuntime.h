@@ -15,6 +15,7 @@ class DirectXCommon;
 class ImGuiManager;
 class Input;
 class Model;
+class Skybox;
 class SpriteCommon;
 class SrvManager;
 
@@ -57,6 +58,7 @@ private:
     Input* input_ = nullptr;
 
     std::unique_ptr<Object3dCommon> object3dCommon_;
+    std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Player> player_;
     std::vector<std::unique_ptr<Object3d>> sceneObjects_;
@@ -78,6 +80,8 @@ private:
     int cameraShakeDuration_ = 1;
     float cameraTimer_ = 0.0f;
     float cameraShakePower_ = 0.0f;
+    float railDistance_ = 0.0f;
+    float railSpeed_ = 0.045f;
     Math::Vector3 cameraTranslate_{ 0.0f, 2.5f, -13.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
     bool isGameOver_ = false;

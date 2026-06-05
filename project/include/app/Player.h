@@ -14,6 +14,7 @@ public:
     void Initialize(Object3dCommon* object3dCommon, Model* model);
     void Update(Input* input);
     void Draw();
+    void SetRailZ(float z);
 
     const Math::Vector3& GetTranslate() const { return translate_; }
     int GetHp() const { return hp_; }

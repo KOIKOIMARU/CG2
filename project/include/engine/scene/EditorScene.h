@@ -31,6 +31,7 @@ struct EditorObject {
     std::unique_ptr<Object3d> object;
     int modelIndex = 0;
     bool visible = true;
+    bool runtimePreview = false;
 };
 
 class EditorScene : public BaseScene {
@@ -64,6 +65,13 @@ private:
     void UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet);
     bool LoadPrimitiveObjectsFromSceneFile(const char* path);
     bool SaveSceneToFile(const char* path) const;
+    void AddGameplayPreviewObjects();
+    void AddGameplayPreviewObject(
+        const char* name,
+        const char* modelName,
+        const Math::Vector3& translate,
+        const Math::Vector3& scale,
+        const Math::Vector4& color);
     void AddEditorPrimitive(int modelIndex);
     void DuplicateSelectedEditorObject();
     void SaveSelectedEditorObjectAsPrefab();
@@ -77,7 +85,6 @@ private:
     void ApplyLightingToObject(Object3d* object);
     void UpdateAnimations(float deltaTime);
     void HandleEditorShortcuts();
-    void ApplyViewportMode();
     void ApplyPlayModeRequests(bool& startedPlayModeThisFrame);
     void EnterPlayMode();
     void ExitPlayMode();
@@ -119,7 +126,7 @@ private:
     Math::Vector3 spotLightPosition_{ 2.0f, 1.25f, 0.0f };
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
-    bool showSkybox_ = false;
+    bool showSkybox_ = true;
     int postEffectMode_ = 0;
     bool showRing_ = true;
     bool showCylinder_ = true;
@@ -139,8 +146,6 @@ private:
     bool cylinderPanelOpen_ = false;
     bool lightingPanelOpen_ = true;
     bool gameViewPanelOpen_ = true;
-    int viewportTabIndex_ = 1;
-    int previousViewportTabIndex_ = 1;
     bool wasPlayMode_ = false;
     std::vector<TransformHistoryRecord> undoStack_;
     std::vector<TransformHistoryRecord> redoStack_;

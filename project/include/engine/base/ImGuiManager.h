@@ -57,7 +57,6 @@ public:
         bool& cylinderOpen;
         bool& lightingOpen;
         bool& gameViewOpen;
-        int& viewportTabIndex;
     };
 
     enum class InspectableType {
@@ -74,6 +73,7 @@ public:
         int* selectedModelIndex = nullptr;
         std::string* editableName = nullptr;
         bool* visible = nullptr;
+        bool readOnly = false;
     };
 
     struct ObjectInspectorSettings {
@@ -123,12 +123,12 @@ public:
     void ShowGameView(
         D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
         const Math::Vector2& textureSize,
+        const Math::Matrix4x4& viewMatrix,
+        const Math::Matrix4x4& projectionMatrix,
         bool& isOpen,
         bool isPlayMode,
         bool& requestStartPlayMode,
         bool& requestStopPlayMode,
-        int& viewportTabIndex,
-        bool isSceneCameraEnabled,
         ObjectInspectorSettings& inspector);
 
 private:

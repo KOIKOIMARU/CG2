@@ -49,6 +49,15 @@ void Player::Draw()
     }
 }
 
+void Player::SetRailZ(float z)
+{
+    translate_.z = z;
+    if (object_) {
+        object_->SetTranslate(translate_);
+        object_->Update();
+    }
+}
+
 void Player::Damage(int amount)
 {
     hp_ -= amount;

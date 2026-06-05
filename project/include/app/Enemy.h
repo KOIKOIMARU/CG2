@@ -10,11 +10,18 @@ class Object3dCommon;
 
 class Enemy {
 public:
+    enum class Behavior {
+        Formation,
+        Swoop,
+        StrafeShooter
+    };
+
     void Initialize(
         Object3dCommon* object3dCommon,
         Model* model,
-        const Math::Vector3& position);
-    void Update();
+        const Math::Vector3& position,
+        Behavior behavior);
+    void Update(float railDistance);
     void Draw();
 
     void Kill() { isDead_ = true; }
@@ -26,11 +33,11 @@ private:
     std::unique_ptr<Object3d> object_;
     Math::Vector3 baseTranslate_{};
     Math::Vector3 translate_{};
-    float speed_ = 0.08f;
     float moveTimer_ = 0.0f;
     float phase_ = 0.0f;
     float horizontalAmplitude_ = 1.2f;
     float verticalAmplitude_ = 0.55f;
     float collisionRadius_ = 0.8f;
+    Behavior behavior_ = Behavior::Formation;
     bool isDead_ = false;
 };

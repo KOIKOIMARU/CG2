@@ -22,6 +22,12 @@
 using namespace Microsoft::WRL;
 using Logger::Log;
 
+namespace {
+
+constexpr Math::Vector4 kRenderTextureClearColor{ 0.04f, 0.06f, 0.09f, 1.0f };
+
+}
+
 void DirectXCommon::Initialize(WinApp* winApp)
 {
     // WinAppを覚えておく
@@ -96,7 +102,12 @@ void DirectXCommon::PreDraw() {
     commandList_->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 
     // 4. クリア
-    float clearColor[] = { 1.0f, 0.0f, 0.0f, 1.0f };
+    float clearColor[] = {
+        kRenderTextureClearColor.x,
+        kRenderTextureClearColor.y,
+        kRenderTextureClearColor.z,
+        kRenderTextureClearColor.w
+    };
     commandList_->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
     commandList_->ClearDepthStencilView(
         dsvHandle,
@@ -927,14 +938,12 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
 
     constexpr DXGI_FORMAT kRenderTextureFormat =
         DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-    const Math::Vector4 kClearColor{ 1.0f, 0.0f, 0.0f, 1.0f };
-
     renderTextureResource_ = CreateRenderTextureResource(
         device_.Get(),
         WinApp::kClientWidth,
         WinApp::kClientHeight,
         kRenderTextureFormat,
-        kClearColor
+        kRenderTextureClearColor
     );
 
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
