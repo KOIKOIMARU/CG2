@@ -374,26 +374,9 @@ void ImGuiManager::Finalize() {
 #endif
 }
 
-void ImGuiManager::ShowSpriteController(Math::Vector2& spritePos) {
-#ifdef USE_IMGUI
-    ImGui::SetNextWindowSize(ImVec2(500, 100), ImGuiCond_Always);
-    ImGui::Begin("スプライト操作", nullptr,
-        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-
-    ImGui::SliderFloat("X", &spritePos.x, 0.0f, 1280.0f);
-    ImGui::SliderFloat("Y", &spritePos.y, 0.0f, 720.0f);
-    ImGui::Text("座標 : %07.1f , %07.1f", spritePos.x, spritePos.y);
-
-    ImGui::End();
-#else
-    (void)spritePos;
-#endif
-}
-
 void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 {
     auto& rendering = settings.rendering;
-    auto& cylinder = settings.cylinder;
     auto& lighting = settings.lighting;
     auto& panels = settings.panels;
     auto& inspector = settings.inspector;
@@ -466,7 +449,6 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
         }
 
         if (ImGui::BeginMenu("ウィンドウ")) {
-            ImGui::MenuItem("ゲームビュー", nullptr, &panels.gameViewOpen);
             ImGui::MenuItem("描画", nullptr, &panels.renderingOpen);
             ImGui::MenuItem("オブジェクト", nullptr, &panels.objectsOpen);
             ImGui::MenuItem(
@@ -474,10 +456,6 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
                 nullptr,
                 &panels.inspectorOpen);
             ImGui::MenuItem("マテリアル", nullptr, &panels.materialOpen);
-            ImGui::MenuItem(
-                "シリンダーエフェクト",
-                nullptr,
-                &panels.cylinderOpen);
             ImGui::MenuItem("ライティング", nullptr, &panels.lightingOpen);
             ImGui::EndMenu();
         }
@@ -522,8 +500,6 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
         ImGui::SameLine();
         ImGui::TextUnformatted("編集モード");
     }
-    ImGui::SameLine();
-    ImGui::Checkbox("ゲームビュー", &panels.gameViewOpen);
     ImGui::SameLine();
     ImGui::TextUnformatted(
         inspector.isPlayMode ?
@@ -693,7 +669,11 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
         "放射ブラー",
         "ディゾルブ",
         "ランダム",
-        "ビネット + スムージング"
+        "ビネット + スムージング",
+        "ゲームトーン 自動",
+        "ゲームトーン 低HP",
+        "ゲームトーン クリア",
+        "ゲームトーン ゲームオーバー"
     };
     ImGui::Combo(
         "ポストエフェクト",
@@ -1012,30 +992,6 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 
     ImGui::Separator();
 
-    ImGui::SetNextItemOpen(panels.cylinderOpen, ImGuiCond_Always);
-    panels.cylinderOpen = ImGui::CollapsingHeader("シリンダーエフェクト");
-    if (panels.cylinderOpen) {
-    ImGui::BeginDisabled(inspector.isPlayMode);
-    ImGui::Text("シリンダーエフェクト");
-    ImGui::ColorEdit4("シリンダー色", &cylinder.cylinderColor.x);
-    ImGui::SliderFloat(
-        "シリンダー アルファ参照",
-        &cylinder.cylinderAlphaReference,
-        0.0f,
-        1.0f
-    );
-    ImGui::SliderFloat(
-        "シリンダーUV速度",
-        &cylinder.cylinderUVScrollSpeed,
-        -2.0f,
-        2.0f
-    );
-    ImGui::EndDisabled();
-
-    }
-
-    ImGui::Separator();
-
     ImGui::SetNextItemOpen(panels.lightingOpen, ImGuiCond_Always);
     panels.lightingOpen = ImGui::CollapsingHeader("ライティング");
     if (panels.lightingOpen) {
@@ -1073,15 +1029,13 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
     ImGui::End();
 #else
     (void)rendering;
-    (void)objects;
-    (void)cylinder;
     (void)lighting;
     (void)panels;
     (void)inspector;
 #endif
 }
 
-void ImGuiManager::ShowGameView(
+void ImGuiManager::ShowViewport(
     D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
     const Math::Vector2& textureSize,
     const Math::Matrix4x4& viewMatrix,
@@ -1106,7 +1060,7 @@ void ImGuiManager::ShowGameView(
         ImVec2(kEditorCenterWidth, kEditorViewportHeight),
         ImGuiCond_Always);
     if (!ImGui::Begin(
-        "ビューポート",
+        "ゲーム画面",
         &isOpen,
         ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoResize |

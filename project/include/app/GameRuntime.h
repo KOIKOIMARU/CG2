@@ -35,16 +35,55 @@ public:
     void Update();
     void Draw();
     void SetDebugGuiAllowed(bool isAllowed);
-    int GetPostEffectMode() const { return isGameOver_ ? 1 : 5; }
+    void SetRenderingOptions(bool showSkybox, int postEffectMode);
+    int GetPostEffectMode() const;
     bool IsExitRequested() const { return isExitRequested_; }
+    int GetPlayerHp() const;
+    int GetPlayerMaxHp() const { return 100; }
 
 private:
+    struct ExplosionEffect {
+        Math::Vector3 worldPosition{};
+        int age = 0;
+        int duration = 24;
+        float strength = 1.0f;
+        bool isCoinCollect = false;
+    };
+
+    struct EnvironmentBonusCoin {
+        std::unique_ptr<Object3d> object;
+        Math::Vector3 basePosition{};
+        float collisionRadius = 0.95f;
+        float rotationSpeed = 0.035f;
+        float floatPhase = 0.0f;
+        bool isActive = true;
+    };
+
     void FirePlayerBullet();
     void FireEnemyBullet(const Math::Vector3& position);
     void SpawnEnemy();
+    void InitializeEnvironmentBonusCoins();
+    void UpdateEnvironmentBonusCoins();
+    void UpdateEnemyWave();
+    void AdvanceEnemyWaveIfCleared();
+    void UpdateLockOnTarget();
+    bool TryProjectToScreen(
+        const Math::Vector3& worldPosition,
+        Math::Vector2& screenPosition) const;
+    void AddExplosionEffect(
+        const Math::Vector3& worldPosition,
+        float strength = 1.0f);
+    void AddCoinCollectEffect(const Math::Vector3& worldPosition);
+    void UpdateExplosionEffects();
+    void DrawExplosionEffects();
+    void DrawHud();
+    void DrawLockOnHud();
+    void DrawResultOverlay();
     void UpdatePlayerBullets();
     void UpdateEnemyBullets();
     void UpdateEnemies();
+    void CheckBulletBonusCoinCollisions();
+    void CheckPlayerBonusCoinCollisions();
     void CheckBulletEnemyCollisions();
     void CheckEnemyBulletPlayerCollisions();
     void UpdateGameCamera();
@@ -65,6 +104,8 @@ private:
     std::list<std::unique_ptr<Bullet>> playerBullets_;
     std::list<std::unique_ptr<Bullet>> enemyBullets_;
     std::list<std::unique_ptr<Enemy>> enemies_;
+    std::vector<ExplosionEffect> explosionEffects_;
+    std::vector<EnvironmentBonusCoin> environmentBonusCoins_;
 
     Model* playerModel_ = nullptr;
     Model* bulletModel_ = nullptr;
@@ -73,9 +114,14 @@ private:
     int shootCooldown_ = 0;
     int enemySpawnTimer_ = 0;
     int enemyShotTimer_ = 60;
+    int currentWaveIndex_ = 0;
+    int spawnedEnemyCountInWave_ = 0;
+    int spawnSequenceIndex_ = 0;
     int score_ = 0;
     int defeatedEnemyCount_ = 0;
     int resultTransitionTimer_ = -1;
+    int chargeTimer_ = 0;
+    int chargeFlashTimer_ = 0;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
     float cameraTimer_ = 0.0f;
@@ -84,9 +130,15 @@ private:
     float railSpeed_ = 0.045f;
     Math::Vector3 cameraTranslate_{ 0.0f, 2.5f, -13.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
+    const Enemy* lockedEnemy_ = nullptr;
+    Math::Vector2 lockedEnemyScreen_{ 0.0f, 0.0f };
+    Math::Vector2 reticleScreen_{ 0.0f, 0.0f };
+    bool hasLockTarget_ = false;
+    int postEffectMode_ = 12;
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isDebugGuiVisible_ = true;
     bool isDebugGuiAllowed_ = true;
     bool isExitRequested_ = false;
+    bool showSkybox_ = true;
 };

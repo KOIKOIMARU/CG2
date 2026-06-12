@@ -20,7 +20,8 @@ public:
     // ★ バックバッファ数
     static constexpr UINT kBackBufferCount = 2;
     static constexpr UINT kRenderTextureRTVIndex = kBackBufferCount;
-    static constexpr UINT kRTVDescriptorCount = kBackBufferCount + 1;
+    static constexpr UINT kPostEffectTextureRTVIndex = kBackBufferCount + 1;
+    static constexpr UINT kRTVDescriptorCount = kBackBufferCount + 2;
 
     // 初期化（全部まとめ）
     void Initialize(WinApp* winApp);
@@ -123,6 +124,13 @@ private:
         float padding[3];
     };
 
+    struct GameToneParameter {
+        float vignetteStrength;
+        float saturation;
+        float contrast;
+        float damageTint;
+    };
+
     // --- ここから「Initialize」専用の内部関数たち ---
 
     // 部分初期化（外から呼ばせない）
@@ -174,15 +182,19 @@ private:
     // 深度バッファ
     Microsoft::WRL::ComPtr<ID3D12Resource> depthStencilResource_;
     Microsoft::WRL::ComPtr<ID3D12Resource> renderTextureResource_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> postEffectTextureResource_;
 
     // 各種デスクリプタヒープ
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap_;
     uint32_t renderTextureSrvIndex_ = 0;
+    uint32_t postEffectTextureSrvIndex_ = 0;
     uint32_t depthTextureSrvIndex_ = 0;
     uint32_t dissolveMaskTextureSrvIndex_ = 0;
     D3D12_RESOURCE_STATES renderTextureState_ =
+        D3D12_RESOURCE_STATE_RENDER_TARGET;
+    D3D12_RESOURCE_STATES postEffectTextureState_ =
         D3D12_RESOURCE_STATE_RENDER_TARGET;
 
     // 各ヒープのインクリメントサイズ
@@ -216,12 +228,15 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> radialBlurPipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> dissolvePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> randomPipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> gameTonePipelineState_;
     Microsoft::WRL::ComPtr<ID3D12Resource> radialBlurParameterResource_;
     RadialBlurParameter* radialBlurParameterData_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> dissolveParameterResource_;
     DissolveParameter* dissolveParameterData_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> randomParameterResource_;
     RandomParameter* randomParameterData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> gameToneParameterResource_;
+    GameToneParameter* gameToneParameterData_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> dissolveMaskTextureResource_;
     float dissolveThreshold_ = 0.0f;
     float randomTime_ = 1.0f;

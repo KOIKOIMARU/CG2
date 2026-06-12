@@ -1,5 +1,5 @@
 {
-  "postEffectMode": 0,
+  "postEffectMode": 12,
   "showSkybox": false,
   "environmentCoefficient": 0.2,
   "lightDirection": [0, -1, 0],
@@ -13,7 +13,6 @@
   "objectsPanelOpen": false,
   "inspectorPanelOpen": true,
   "materialPanelOpen": true,
-  "cylinderPanelOpen": false,
   "lightingPanelOpen": false,
   "sceneFileIndex": 0,
   "prefabFileIndex": 0,

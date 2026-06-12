@@ -22,7 +22,7 @@ public:
         Input* input);
     bool Start();
     void Stop();
-    void Update(bool isEditorGuiVisible);
+    void Update(bool isEditorGuiVisible, bool showSkybox, int postEffectMode);
     void Draw();
     int GetPostEffectMode() const;
     bool IsRunning() const;

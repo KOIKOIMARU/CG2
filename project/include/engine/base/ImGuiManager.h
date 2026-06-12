@@ -26,19 +26,6 @@ public:
         int& postEffectMode;
     };
 
-    struct ObjectDebugSettings {
-        bool& showRing;
-        bool& showCylinder;
-        bool& showSphere;
-        bool& showParticle;
-    };
-
-    struct CylinderEffectDebugSettings {
-        Math::Vector4& cylinderColor;
-        float& cylinderAlphaReference;
-        float& cylinderUVScrollSpeed;
-    };
-
     struct LightingDebugSettings {
         Math::Vector3& lightDirection;
         float& lightIntensity;
@@ -54,9 +41,8 @@ public:
         bool& objectsOpen;
         bool& inspectorOpen;
         bool& materialOpen;
-        bool& cylinderOpen;
         bool& lightingOpen;
-        bool& gameViewOpen;
+        bool& viewportOpen;
     };
 
     enum class InspectableType {
@@ -105,8 +91,6 @@ public:
 
     struct EditorDebugSettings {
         RenderingDebugSettings rendering;
-        ObjectDebugSettings objects;
-        CylinderEffectDebugSettings cylinder;
         LightingDebugSettings lighting;
         EditorPanelSettings panels;
         ObjectInspectorSettings inspector;
@@ -118,9 +102,8 @@ public:
     void Draw();
     void Finalize();
 
-    void ShowSpriteController(Math::Vector2& spritePos);
     void ShowEditorController(EditorDebugSettings& settings);
-    void ShowGameView(
+    void ShowViewport(
         D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
         const Math::Vector2& textureSize,
         const Math::Matrix4x4& viewMatrix,

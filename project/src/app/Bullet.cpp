@@ -8,7 +8,8 @@ void Bullet::Initialize(
     const Math::Vector4& color,
     int lifeTimer,
     const Math::Vector3& scale,
-    float collisionRadius)
+    float collisionRadius,
+    int hitLimit)
 {
     object_ = std::make_unique<Object3d>();
     object_->Initialize(object3dCommon);
@@ -17,9 +18,11 @@ void Bullet::Initialize(
     object_->SetColor(color);
 
     translate_ = position;
+    startTranslate_ = position;
     velocity_ = velocity;
     lifeTimer_ = lifeTimer;
     collisionRadius_ = collisionRadius;
+    remainingHits_ = hitLimit;
     object_->SetTranslate(translate_);
     object_->Update();
 }
@@ -37,7 +40,12 @@ void Bullet::Update()
     object_->Update();
 
     --lifeTimer_;
-    if (lifeTimer_ <= 0 || translate_.z > 45.0f || translate_.z < -18.0f) {
+    const float dx = translate_.x - startTranslate_.x;
+    const float dy = translate_.y - startTranslate_.y;
+    const float dz = translate_.z - startTranslate_.z;
+    const float travelDistanceSq = dx * dx + dy * dy + dz * dz;
+    if (lifeTimer_ <= 0 ||
+        travelDistanceSq > maxTravelDistance_ * maxTravelDistance_) {
         isDead_ = true;
     }
 }
@@ -46,5 +54,13 @@ void Bullet::Draw()
 {
     if (!isDead_ && object_) {
         object_->Draw();
+    }
+}
+
+void Bullet::RegisterHit()
+{
+    --remainingHits_;
+    if (remainingHits_ <= 0) {
+        isDead_ = true;
     }
 }

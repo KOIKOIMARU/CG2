@@ -25,6 +25,7 @@ public:
     void Draw();
 
     void Kill() { isDead_ = true; }
+    bool CanShoot() const;
     bool IsDead() const { return isDead_; }
     const Math::Vector3& GetTranslate() const { return translate_; }
     float GetRadius() const { return collisionRadius_; }
@@ -33,6 +34,7 @@ private:
     std::unique_ptr<Object3d> object_;
     Math::Vector3 baseTranslate_{};
     Math::Vector3 translate_{};
+    int age_ = 0;
     float moveTimer_ = 0.0f;
     float phase_ = 0.0f;
     float horizontalAmplitude_ = 1.2f;

@@ -281,6 +281,9 @@
     <FxCompile Include="shaders\VignetteSmoothing.PS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>
+    <FxCompile Include="shaders\GameTone.PS.hlsl">
+      <Filter>shaders</Filter>
+    </FxCompile>
     <FxCompile Include="shaders\LuminanceBasedOutline.PS.hlsl">
       <Filter>shaders</Filter>
     </FxCompile>

@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 #include "engine/base/Math.h"
-#include "engine/2d/Sprite.h"
 #include "engine/3d/Object3dCommon.h"
 #include "engine/base/ImGuiManager.h"
 #include "engine/editor/EditorManager.h"
@@ -115,8 +114,6 @@ private:
     SkeletonDebugSet humanWalkDebug_;
     std::unique_ptr<ParticleEmitter> emitter_;
 
-    std::vector<Sprite> sprites_;
-    Math::Vector2 spritePos_{ 100.0f, 100.0f };
     Math::Vector3 lightDirection_{ 0.0f, -1.0f, 0.0f };
     float lightIntensity_ = 1.0f;
     int blendModeIndex_ = static_cast<int>(BlendMode::Normal);
@@ -127,15 +124,7 @@ private:
     Math::Vector3 spotLightDirection_{ -1.0f, 1.0f, 0.0f };
     float spotLightIntensity_ = 4.0f;
     bool showSkybox_ = true;
-    int postEffectMode_ = 0;
-    bool showRing_ = true;
-    bool showCylinder_ = true;
-    bool showSphere_ = true;
-    bool showParticle_ = true;
-    Math::Vector4 cylinderColor_{ 0.45f, 0.55f, 1.0f, 0.8f };
-    float cylinderAlphaReference_ = 0.01f;
-    float cylinderUVScrollSpeed_ = 0.35f;
-    float cylinderUVOffset_ = 0.0f;
+    int postEffectMode_ = 12;
     float animationTime_ = 0.0f;
     bool showSkinningSamples_ = true;
     bool showSkeletonDebug_ = true;
@@ -143,9 +132,8 @@ private:
     bool objectsPanelOpen_ = true;
     bool inspectorPanelOpen_ = true;
     bool materialPanelOpen_ = true;
-    bool cylinderPanelOpen_ = false;
     bool lightingPanelOpen_ = true;
-    bool gameViewPanelOpen_ = true;
+    bool viewportPanelOpen_ = true;
     bool wasPlayMode_ = false;
     std::vector<TransformHistoryRecord> undoStack_;
     std::vector<TransformHistoryRecord> redoStack_;

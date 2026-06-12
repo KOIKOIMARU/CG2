@@ -126,6 +126,7 @@ void DirectXCommon::PreDraw() {
 void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
 {
     assert(renderTextureResource_);
+    assert(postEffectTextureResource_);
     assert(fullscreenRootSignature_);
     assert(copyImagePipelineState_);
     assert(grayscalePipelineState_);
@@ -139,11 +140,14 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(radialBlurPipelineState_);
     assert(dissolvePipelineState_);
     assert(randomPipelineState_);
+    assert(gameTonePipelineState_);
     assert(srvDescriptorHeap_);
 
     const bool useDepthTexture = postEffectMode == 7;
     const bool useDissolve = postEffectMode == 9;
     const bool useRandom = postEffectMode == 10;
+    const bool useGameTone =
+        12 <= postEffectMode && postEffectMode <= 15;
     if (useDissolve) {
         dissolveThreshold_ += deltaTime_ * 0.25f;
         if (dissolveThreshold_ > 1.0f) {
@@ -155,6 +159,28 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         randomTime_ += deltaTime_;
         randomParameterData_->time = randomTime_;
     }
+    if (useGameTone) {
+        gameToneParameterData_->vignetteStrength = 0.52f;
+        gameToneParameterData_->saturation = 1.10f;
+        gameToneParameterData_->contrast = 1.08f;
+        gameToneParameterData_->damageTint = 0.0f;
+        if (postEffectMode == 13) {
+            gameToneParameterData_->vignetteStrength = 0.92f;
+            gameToneParameterData_->saturation = 0.92f;
+            gameToneParameterData_->contrast = 1.18f;
+            gameToneParameterData_->damageTint = 0.24f;
+        } else if (postEffectMode == 14) {
+            gameToneParameterData_->vignetteStrength = 0.36f;
+            gameToneParameterData_->saturation = 1.18f;
+            gameToneParameterData_->contrast = 1.12f;
+            gameToneParameterData_->damageTint = 0.0f;
+        } else if (postEffectMode == 15) {
+            gameToneParameterData_->vignetteStrength = 1.12f;
+            gameToneParameterData_->saturation = 0.25f;
+            gameToneParameterData_->contrast = 1.22f;
+            gameToneParameterData_->damageTint = 0.18f;
+        }
+    }
 
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -165,6 +191,21 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     commandList_->ResourceBarrier(1, &barrier);
     renderTextureState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+    if (postEffectTextureState_ != D3D12_RESOURCE_STATE_RENDER_TARGET) {
+        D3D12_RESOURCE_BARRIER postEffectBarrier{};
+        postEffectBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        postEffectBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        postEffectBarrier.Transition.pResource =
+            postEffectTextureResource_.Get();
+        postEffectBarrier.Transition.StateBefore = postEffectTextureState_;
+        postEffectBarrier.Transition.StateAfter =
+            D3D12_RESOURCE_STATE_RENDER_TARGET;
+        postEffectBarrier.Transition.Subresource =
+            D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        commandList_->ResourceBarrier(1, &postEffectBarrier);
+        postEffectTextureState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
 
     D3D12_RESOURCE_BARRIER depthBarrier{};
     if (useDepthTexture) {
@@ -179,12 +220,24 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         commandList_->ResourceBarrier(1, &depthBarrier);
     }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = GetCPUDescriptorHandle(
+    D3D12_CPU_DESCRIPTOR_HANDLE postEffectRtvHandle = GetCPUDescriptorHandle(
         rtvHeap_,
         rtvDescriptorSize_,
-        currentBackBufferIndex_
+        kPostEffectTextureRTVIndex
     );
-    commandList_->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+    commandList_->OMSetRenderTargets(1, &postEffectRtvHandle, FALSE, nullptr);
+    float clearColor[] = {
+        kRenderTextureClearColor.x,
+        kRenderTextureClearColor.y,
+        kRenderTextureClearColor.z,
+        kRenderTextureClearColor.w
+    };
+    commandList_->ClearRenderTargetView(
+        postEffectRtvHandle,
+        clearColor,
+        0,
+        nullptr
+    );
 
     commandList_->RSSetViewports(1, &viewport_);
     commandList_->RSSetScissorRects(1, &scissorRect_);
@@ -215,6 +268,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         pipelineState = randomPipelineState_.Get();
     } else if (postEffectMode == 11) {
         pipelineState = vignetteSmoothingPipelineState_.Get();
+    } else if (useGameTone) {
+        pipelineState = gameTonePipelineState_.Get();
     }
     commandList_->SetPipelineState(pipelineState);
     commandList_->SetGraphicsRootDescriptorTable(
@@ -239,6 +294,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     );
     commandList_->SetGraphicsRootConstantBufferView(
         2,
+        useGameTone ?
+        gameToneParameterResource_->GetGPUVirtualAddress() :
         useRandom ?
         randomParameterResource_->GetGPUVirtualAddress() :
         useDissolve ?
@@ -248,12 +305,71 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList_->DrawInstanced(3, 1, 0, 0);
 
+    D3D12_RESOURCE_BARRIER postEffectBarrier{};
+    postEffectBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    postEffectBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    postEffectBarrier.Transition.pResource = postEffectTextureResource_.Get();
+    postEffectBarrier.Transition.StateBefore =
+        D3D12_RESOURCE_STATE_RENDER_TARGET;
+    postEffectBarrier.Transition.StateAfter =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    postEffectBarrier.Transition.Subresource =
+        D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    commandList_->ResourceBarrier(1, &postEffectBarrier);
+    postEffectTextureState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
     if (useDepthTexture) {
         depthBarrier.Transition.StateBefore =
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
         depthBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
         commandList_->ResourceBarrier(1, &depthBarrier);
     }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = GetCPUDescriptorHandle(
+        rtvHeap_,
+        rtvDescriptorSize_,
+        currentBackBufferIndex_
+    );
+    commandList_->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+
+    commandList_->RSSetViewports(1, &viewport_);
+    commandList_->RSSetScissorRects(1, &scissorRect_);
+
+    commandList_->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+    commandList_->SetGraphicsRootSignature(fullscreenRootSignature_.Get());
+    commandList_->SetPipelineState(copyImagePipelineState_.Get());
+    commandList_->SetGraphicsRootDescriptorTable(
+        0,
+        GetGPUDescriptorHandle(
+            srvDescriptorHeap_,
+            device_->GetDescriptorHandleIncrementSize(
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+            ),
+            postEffectTextureSrvIndex_
+        )
+    );
+    commandList_->SetGraphicsRootDescriptorTable(
+        1,
+        GetGPUDescriptorHandle(
+            srvDescriptorHeap_,
+            device_->GetDescriptorHandleIncrementSize(
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV
+            ),
+            useDissolve ? dissolveMaskTextureSrvIndex_ : depthTextureSrvIndex_
+        )
+    );
+    commandList_->SetGraphicsRootConstantBufferView(
+        2,
+        useGameTone ?
+        gameToneParameterResource_->GetGPUVirtualAddress() :
+        useRandom ?
+        randomParameterResource_->GetGPUVirtualAddress() :
+        useDissolve ?
+        dissolveParameterResource_->GetGPUVirtualAddress() :
+        radialBlurParameterResource_->GetGPUVirtualAddress()
+    );
+    commandList_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList_->DrawInstanced(3, 1, 0, 0);
 
 }
 
@@ -266,7 +382,7 @@ DirectXCommon::GetRenderTextureGpuDescriptorHandle() const
         srvDescriptorHeap_,
         device_->GetDescriptorHandleIncrementSize(
             D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV),
-        renderTextureSrvIndex_);
+        postEffectTextureSrvIndex_);
 }
 
 Math::Vector2 DirectXCommon::GetRenderTextureSize() const
@@ -945,6 +1061,13 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         kRenderTextureFormat,
         kRenderTextureClearColor
     );
+    postEffectTextureResource_ = CreateRenderTextureResource(
+        device_.Get(),
+        WinApp::kClientWidth,
+        WinApp::kClientHeight,
+        kRenderTextureFormat,
+        kRenderTextureClearColor
+    );
 
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
     rtvDesc.Format = kRenderTextureFormat;
@@ -963,10 +1086,28 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         rtvHandle
     );
 
+    D3D12_CPU_DESCRIPTOR_HANDLE postEffectRtvHandle = GetCPUDescriptorHandle(
+        rtvHeap_,
+        rtvDescriptorSize_,
+        kPostEffectTextureRTVIndex
+    );
+    device_->CreateRenderTargetView(
+        postEffectTextureResource_.Get(),
+        &rtvDesc,
+        postEffectRtvHandle
+    );
+
     renderTextureSrvIndex_ = srvManager->Allocate();
     srvManager->CreateSRVforTexture2D(
         renderTextureSrvIndex_,
         renderTextureResource_.Get(),
+        kRenderTextureFormat,
+        1
+    );
+    postEffectTextureSrvIndex_ = srvManager->Allocate();
+    srvManager->CreateSRVforTexture2D(
+        postEffectTextureSrvIndex_,
+        postEffectTextureResource_.Get(),
         kRenderTextureFormat,
         1
     );
@@ -1026,6 +1167,8 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         CreateFullscreenPipelineState(L"shaders/Dissolve.PS.hlsl");
     randomPipelineState_ =
         CreateFullscreenPipelineState(L"shaders/Random.PS.hlsl");
+    gameTonePipelineState_ =
+        CreateFullscreenPipelineState(L"shaders/GameTone.PS.hlsl");
 
     radialBlurParameterResource_ =
         CreateBufferResource(sizeof(RadialBlurParameter));
@@ -1060,6 +1203,18 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     randomParameterData_->padding[0] = 0.0f;
     randomParameterData_->padding[1] = 0.0f;
     randomParameterData_->padding[2] = 0.0f;
+
+    gameToneParameterResource_ =
+        CreateBufferResource(sizeof(GameToneParameter));
+    gameToneParameterResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&gameToneParameterData_)
+    );
+    gameToneParameterData_->vignetteStrength = 0.52f;
+    gameToneParameterData_->saturation = 1.10f;
+    gameToneParameterData_->contrast = 1.08f;
+    gameToneParameterData_->damageTint = 0.0f;
 }
 
 void DirectXCommon::CreateFullscreenRootSignature()

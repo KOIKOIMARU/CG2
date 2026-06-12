@@ -3,6 +3,7 @@
 #include <wrl.h>
 #define DIRECTINPUT_VERSION 0x0800 // DirectInputのバージョン指定
 #include <dinput.h>
+#include "engine/base/Math.h"
 #include "engine/base/WinApp.h"
 
 // 入力
@@ -30,6 +31,8 @@ public:
 	/// <returns>トリガーか</returns>
 	bool TriggerKey(BYTE keyNumber);
 
+	const Math::Vector2& GetMousePosition() const { return mousePosition_; }
+
 private:
 	// メンバ変数
 	ComPtr<IDirectInputDevice8> keyboard; // キーボードデバイス
@@ -40,6 +43,7 @@ private:
 	// 全キーの状態
 	BYTE key[256] = {};
 	BYTE keyPre[256] = {};
+	Math::Vector2 mousePosition_{ 0.0f, 0.0f };
 
 	//WindowsAPI
 	WinApp* winApp = nullptr;

@@ -4,8 +4,6 @@
 #include "engine/3d/Object3d.h"
 #include "engine/3d/Model.h"
 #include "engine/3d/Camera.h"
-#include "engine/2d/Sprite.h"
-#include "engine/2d/SpriteCommon.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/ParticleEmitter.h"
@@ -339,10 +337,6 @@ void EditorScene::Initialize() {
     TextureManager::GetInstance()->LoadTexture("resources/gradationLine.png");
     TextureManager::GetInstance()->LoadTexture("resources/circle2.png");
 
-    showRing_ = false;
-    showCylinder_ = false;
-    showSphere_ = false;
-    showParticle_ = false;
     showSkinningSamples_ = false;
     showSkeletonDebug_ = false;
 
@@ -649,17 +643,6 @@ void EditorScene::ShowEditorGui(
             postEffectMode_
         },
         {
-            showRing_,
-            showCylinder_,
-            showSphere_,
-            showParticle_
-        },
-        {
-            cylinderColor_,
-            cylinderAlphaReference_,
-            cylinderUVScrollSpeed_
-        },
-        {
             lightDirection_,
             lightIntensity_,
             pointLightPosition_,
@@ -673,22 +656,23 @@ void EditorScene::ShowEditorGui(
             objectsPanelOpen_,
             inspectorPanelOpen_,
             materialPanelOpen_,
-            cylinderPanelOpen_,
             lightingPanelOpen_,
-            gameViewPanelOpen_
+            viewportPanelOpen_
         },
         editorManager_.CreateInspectorSettings(
             inspectObjects.data(),
             static_cast<int>(inspectObjects.size()))
     };
 
+    viewportPanelOpen_ = true;
+
     imguiManager_->ShowEditorController(debugSettings);
-    imguiManager_->ShowGameView(
+    imguiManager_->ShowViewport(
         dxCommon_->GetRenderTextureGpuDescriptorHandle(),
         dxCommon_->GetRenderTextureSize(),
         camera_->GetViewMatrix(),
         camera_->GetProjectionMatrix(),
-        gameViewPanelOpen_,
+        viewportPanelOpen_,
         editorManager_.IsPlayMode(),
         debugSettings.inspector.requestStartPlayMode,
         debugSettings.inspector.requestStopPlayMode,
@@ -1049,10 +1033,6 @@ void EditorScene::Update() {
         UpdateDebugCamera(deltaTime);
     }
 
-    if (!editorManager_.IsPlayMode() && editorManager_.IsEditorGuiVisible()) {
-        imguiManager_->ShowSpriteController(spritePos_);
-    }
-
     std::vector<ImGuiManager::InspectableObject> inspectObjects;
     BuildInspectableObjects(inspectObjects);
 
@@ -1066,7 +1046,10 @@ void EditorScene::Update() {
 
     if (editorManager_.IsPlayMode()) {
         if (playController_.IsRunning() && !startedPlayModeThisFrame) {
-            playController_.Update(editorManager_.IsEditorGuiVisible());
+            playController_.Update(
+                editorManager_.IsEditorGuiVisible(),
+                showSkybox_,
+                postEffectMode_);
             if (playController_.IsExitRequested()) {
                 ExitPlayMode();
             }
@@ -1076,11 +1059,6 @@ void EditorScene::Update() {
 
     TrackTransformHistory(inspectObjects);
     ProcessEditorRequests();
-
-    for (auto& sprite : sprites_) {
-        sprite.SetPosition(spritePos_);
-    }
-    cylinderUVOffset_ += cylinderUVScrollSpeed_ * deltaTime;
 
     UpdateAnimations(deltaTime);
 
@@ -1097,9 +1075,6 @@ void EditorScene::Update() {
         editorObject.object->Update();
     }
 
-    for (auto& s : sprites_) {
-        s.Update();
-    }
 }
 
 void EditorScene::LoadEditorSettings()
@@ -1130,9 +1105,7 @@ void EditorScene::LoadEditorSettings()
     ExtractSettingsBool(json, "objectsPanelOpen", objectsPanelOpen_);
     ExtractSettingsBool(json, "inspectorPanelOpen", inspectorPanelOpen_);
     ExtractSettingsBool(json, "materialPanelOpen", materialPanelOpen_);
-    ExtractSettingsBool(json, "cylinderPanelOpen", cylinderPanelOpen_);
     ExtractSettingsBool(json, "lightingPanelOpen", lightingPanelOpen_);
-    ExtractSettingsBool(json, "gameViewPanelOpen", gameViewPanelOpen_);
 
     if (ExtractSettingsInt(json, "sceneFileIndex", sceneFileIndex)) {
         editorManager_.SetSceneFileIndex(sceneFileIndex);
@@ -1180,12 +1153,8 @@ void EditorScene::SaveEditorSettings() const
         << (inspectorPanelOpen_ ? "true" : "false") << ",\n";
     file << "  \"materialPanelOpen\": "
         << (materialPanelOpen_ ? "true" : "false") << ",\n";
-    file << "  \"cylinderPanelOpen\": "
-        << (cylinderPanelOpen_ ? "true" : "false") << ",\n";
     file << "  \"lightingPanelOpen\": "
         << (lightingPanelOpen_ ? "true" : "false") << ",\n";
-    file << "  \"gameViewPanelOpen\": "
-        << (gameViewPanelOpen_ ? "true" : "false") << ",\n";
     file << "  \"sceneFileIndex\": " << editorManager_.GetSceneFileIndex() << ",\n";
     file << "  \"prefabFileIndex\": " << editorManager_.GetPrefabFileIndex() << ",\n";
     file << "  \"gizmoMode\": " << editorManager_.GetGizmoMode() << "\n";
@@ -1267,10 +1236,6 @@ void EditorScene::Draw() {
         }
     }
 
-    spriteCommon_->CommonDrawSetting();
-    for (auto& s : sprites_) {
-        s.Draw();
-    }
 }
 
 void EditorScene::Finalize() {

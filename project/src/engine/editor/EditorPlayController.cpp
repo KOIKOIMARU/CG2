@@ -46,13 +46,17 @@ void EditorPlayController::Stop()
     runtime_.reset();
 }
 
-void EditorPlayController::Update(bool isEditorGuiVisible)
+void EditorPlayController::Update(
+    bool isEditorGuiVisible,
+    bool showSkybox,
+    int postEffectMode)
 {
     if (!runtime_) {
         return;
     }
 
     runtime_->SetDebugGuiAllowed(isEditorGuiVisible);
+    runtime_->SetRenderingOptions(showSkybox, postEffectMode);
     runtime_->Update();
 }
 

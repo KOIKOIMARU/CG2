@@ -13,9 +13,7 @@
   "objectsPanelOpen": true,
   "inspectorPanelOpen": true,
   "materialPanelOpen": true,
-  "cylinderPanelOpen": false,
-  "lightingPanelOpen": true,
-  "gameViewPanelOpen": true,
+  "lightingPanelOpen": false,
   "sceneFileIndex": 0,
   "prefabFileIndex": 0,
   "gizmoMode": 0

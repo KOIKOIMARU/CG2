@@ -1,5 +1,6 @@
 #include "engine/io/Input.h"
 #include <cassert>
+#include <algorithm>
 
 
 #pragma comment(lib, "dinput8.lib")
@@ -42,6 +43,19 @@ void Input::Update() {
 	// キーの状態
 	memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
 	keyboard->GetDeviceState(sizeof(key), key);
+
+	POINT cursorPosition{};
+	if (winApp && GetCursorPos(&cursorPosition)) {
+		ScreenToClient(winApp->GetHwnd(), &cursorPosition);
+		mousePosition_.x = std::clamp(
+			static_cast<float>(cursorPosition.x),
+			0.0f,
+			static_cast<float>(WinApp::kClientWidth));
+		mousePosition_.y = std::clamp(
+			static_cast<float>(cursorPosition.y),
+			0.0f,
+			static_cast<float>(WinApp::kClientHeight));
+	}
 }
 
 bool Input::PushKey(BYTE keyNumber)
