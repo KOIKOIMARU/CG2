@@ -10,6 +10,21 @@
     <Filter Include="externals\ImGuizmo">
       <UniqueIdentifier>{b2f9a740-44d9-441e-bf72-4e47b428e872}</UniqueIdentifier>
     </Filter>
+    <Filter Include="externals\ImGuiFileDialog">
+      <UniqueIdentifier>{ca64e67d-8bb4-4d88-bd20-d39c76591745}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\implot">
+      <UniqueIdentifier>{c6d66bb8-93c9-4aae-9b7d-7421df87d9d2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\imgui-node-editor">
+      <UniqueIdentifier>{7161497c-2fb1-42de-88d5-e64abdbf0203}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\ImGuiColorTextEdit">
+      <UniqueIdentifier>{5fa2a078-89e1-4861-ac28-158d9325a0d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="externals\IconFontCppHeaders">
+      <UniqueIdentifier>{52ac0a30-2c98-4f0e-932f-ccdf5d3cdb0e}</UniqueIdentifier>
+    </Filter>
     <Filter Include="include">
       <UniqueIdentifier>{878d94c2-b98a-4e20-b168-a8efb07eee2c}</UniqueIdentifier>
     </Filter>
@@ -70,6 +85,9 @@
     <Filter Include="resources\skybox">
       <UniqueIdentifier>{28d6eb0f-1178-4c7e-9e58-6b2c9f40b482}</UniqueIdentifier>
     </Filter>
+    <Filter Include="resources\fonts">
+      <UniqueIdentifier>{1f00f675-8692-4e77-ab44-b77660e84354}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\engine\audio">
       <UniqueIdentifier>{db1bd0e5-aeaf-42eb-b084-3afc55d93ee8}</UniqueIdentifier>
     </Filter>
@@ -107,6 +125,30 @@
     </ClCompile>
     <ClCompile Include="externals\ImGuizmo\ImGuizmo.cpp">
       <Filter>externals\ImGuizmo</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\ImGuiFileDialog\ImGuiFileDialog.cpp">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\implot\implot.cpp">
+      <Filter>externals\implot</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\implot\implot_items.cpp">
+      <Filter>externals\implot</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui-node-editor\crude_json.cpp">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui-node-editor\imgui_canvas.cpp">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui-node-editor\imgui_node_editor.cpp">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui-node-editor\imgui_node_editor_api.cpp">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\ImGuiColorTextEdit\TextEditor.cpp">
+      <Filter>externals\ImGuiColorTextEdit</Filter>
     </ClCompile>
     <ClCompile Include="src\app\main.cpp">
       <Filter>src\app</Filter>
@@ -200,6 +242,9 @@
     </ClCompile>
     <ClCompile Include="src\app\Player.cpp">
       <Filter>src\app</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\scene\GameScene.cpp">
+      <Filter>src\engine\scene</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\scene\EditorScene.cpp">
       <Filter>src\engine\scene</Filter>
@@ -328,6 +373,60 @@
     <ClInclude Include="externals\ImGuizmo\ImGuizmo.h">
       <Filter>externals\ImGuizmo</Filter>
     </ClInclude>
+    <ClInclude Include="externals\ImGuiFileDialog\ImGuiFileDialog.h">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\ImGuiFileDialog\ImGuiFileDialogConfig.h">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\ImGuiFileDialog\dirent\dirent.h">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\ImGuiFileDialog\stb\stb_image.h">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\ImGuiFileDialog\stb\stb_image_resize2.h">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\implot\implot.h">
+      <Filter>externals\implot</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\implot\implot_internal.h">
+      <Filter>externals\implot</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\crude_json.h">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_bezier_math.h">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_bezier_math.inl">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_canvas.h">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_extra_math.h">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_extra_math.inl">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_node_editor.h">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_node_editor_internal.h">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui-node-editor\imgui_node_editor_internal.inl">
+      <Filter>externals\imgui-node-editor</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\ImGuiColorTextEdit\TextEditor.h">
+      <Filter>externals\ImGuiColorTextEdit</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\IconFontCppHeaders\IconsFontAwesome6.h">
+      <Filter>externals\IconFontCppHeaders</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\3d\ResourceObject.h">
       <Filter>include\engine\3d</Filter>
     </ClInclude>
@@ -419,6 +518,9 @@
     <ClInclude Include="include\app\Player.h">
       <Filter>include\app</Filter>
     </ClInclude>
+    <ClInclude Include="include\engine\scene\GameScene.h">
+      <Filter>include\engine\scene</Filter>
+    </ClInclude>
     <ClInclude Include="include\engine\scene\EditorScene.h">
       <Filter>include\engine\scene</Filter>
     </ClInclude>
@@ -457,10 +559,34 @@
     <Text Include="externals\ImGuizmo\LICENSE">
       <Filter>externals\ImGuizmo</Filter>
     </Text>
+    <Text Include="externals\ImGuiFileDialog\LICENSE">
+      <Filter>externals\ImGuiFileDialog</Filter>
+    </Text>
+    <Text Include="externals\implot\LICENSE">
+      <Filter>externals\implot</Filter>
+    </Text>
+    <Text Include="externals\imgui-node-editor\LICENSE">
+      <Filter>externals\imgui-node-editor</Filter>
+    </Text>
+    <Text Include="externals\ImGuiColorTextEdit\LICENSE">
+      <Filter>externals\ImGuiColorTextEdit</Filter>
+    </Text>
+    <Text Include="externals\IconFontCppHeaders\licence.txt">
+      <Filter>externals\IconFontCppHeaders</Filter>
+    </Text>
+    <Text Include="resources\fonts\FONT_AWESOME_LICENSE.txt">
+      <Filter>resources\fonts</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.hdr">
       <Filter>resources\skybox</Filter>
+    </None>
+    <None Include="resources\fonts\fa-solid-900.ttf">
+      <Filter>resources\fonts</Filter>
+    </None>
+    <None Include="resources\fonts\fa-regular-400.ttf">
+      <Filter>resources\fonts</Filter>
     </None>
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr">
       <Filter>resources\skybox</Filter>

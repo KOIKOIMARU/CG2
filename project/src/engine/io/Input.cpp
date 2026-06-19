@@ -47,14 +47,20 @@ void Input::Update() {
 	POINT cursorPosition{};
 	if (winApp && GetCursorPos(&cursorPosition)) {
 		ScreenToClient(winApp->GetHwnd(), &cursorPosition);
+		RECT clientRect{};
+		GetClientRect(winApp->GetHwnd(), &clientRect);
+		const float clientWidth = static_cast<float>(
+			(std::max)(clientRect.right - clientRect.left, 1L));
+		const float clientHeight = static_cast<float>(
+			(std::max)(clientRect.bottom - clientRect.top, 1L));
 		mousePosition_.x = std::clamp(
 			static_cast<float>(cursorPosition.x),
 			0.0f,
-			static_cast<float>(WinApp::kClientWidth));
+			clientWidth);
 		mousePosition_.y = std::clamp(
 			static_cast<float>(cursorPosition.y),
 			0.0f,
-			static_cast<float>(WinApp::kClientHeight));
+			clientHeight);
 	}
 }
 

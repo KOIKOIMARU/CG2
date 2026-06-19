@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "engine/base/Math.h"
+
 class DirectXCommon;
 class GameRuntime;
 class ImGuiManager;
@@ -23,6 +25,7 @@ public:
     bool Start();
     void Stop();
     void Update(bool isEditorGuiVisible, bool showSkybox, int postEffectMode);
+    void SetHudViewportRect(bool isEnabled, const Math::Vector2& min, const Math::Vector2& size);
     void Draw();
     int GetPostEffectMode() const;
     bool IsRunning() const;

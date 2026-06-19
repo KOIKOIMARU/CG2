@@ -16,21 +16,40 @@ public:
         StrafeShooter
     };
 
+    enum class EntryStyle {
+        Direct,
+        VFormation,
+        LeftSweep,
+        RightSweep,
+        PopShooter
+    };
+
+    enum class LifeState {
+        Alive,
+        Destroyed,
+        Escaped
+    };
+
     void Initialize(
         Object3dCommon* object3dCommon,
         Model* model,
         const Math::Vector3& position,
-        Behavior behavior);
+        Behavior behavior,
+        EntryStyle entryStyle = EntryStyle::Direct);
     void Update(float railDistance);
     void Draw();
 
-    void Kill() { isDead_ = true; }
+    void Kill() { lifeState_ = LifeState::Destroyed; }
     bool CanShoot() const;
-    bool IsDead() const { return isDead_; }
+    bool IsDead() const { return lifeState_ != LifeState::Alive; }
+    bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
+    bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
     const Math::Vector3& GetTranslate() const { return translate_; }
     float GetRadius() const { return collisionRadius_; }
 
 private:
+    void Escape() { lifeState_ = LifeState::Escaped; }
+
     std::unique_ptr<Object3d> object_;
     Math::Vector3 baseTranslate_{};
     Math::Vector3 translate_{};
@@ -41,5 +60,6 @@ private:
     float verticalAmplitude_ = 0.55f;
     float collisionRadius_ = 0.8f;
     Behavior behavior_ = Behavior::Formation;
-    bool isDead_ = false;
+    EntryStyle entryStyle_ = EntryStyle::Direct;
+    LifeState lifeState_ = LifeState::Alive;
 };

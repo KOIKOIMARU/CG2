@@ -7,6 +7,8 @@
 #include "engine/base/ImGuiManager.h"
 #include "engine/io/Input.h"
 #include "engine/scene/EditorScene.h"
+#include "engine/scene/GameScene.h"
+#include "engine/scene/SceneType.h"
 
 MyGame::MyGame() = default;
 MyGame::~MyGame() = default;
@@ -49,6 +51,9 @@ void MyGame::Draw() {
     if (auto* editorScene =
             dynamic_cast<EditorScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
         postEffectMode = editorScene->GetPostEffectMode();
+    } else if (auto* gameScene =
+            dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
+        postEffectMode = gameScene->GetPostEffectMode();
     }
     dxCommon_->DrawRenderTextureToSwapChain(postEffectMode);
 

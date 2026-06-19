@@ -60,17 +60,17 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IntDir>$(SolutionDir)..\generated\obj\$(ProjectName)\$(Configuration)\</IntDir>
     <OutDir>$(SolutionDir)..\generated\outputs\$(Configuration)\</OutDir>
-    <IncludePath>$(SolutionDir)externals\ImGuizmo;$(SolutionDir)externals\imgui;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)externals\ImGuizmo;$(SolutionDir)externals\ImGuiFileDialog;$(SolutionDir)externals\implot;$(SolutionDir)externals\imgui-node-editor;$(SolutionDir)externals\ImGuiColorTextEdit;$(SolutionDir)externals\IconFontCppHeaders;$(SolutionDir)externals\imgui;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Development|x64'">
     <IntDir>$(SolutionDir)..\generated\obj\$(ProjectName)\$(Configuration)\</IntDir>
     <OutDir>$(SolutionDir)..\generated\outputs\$(Configuration)\</OutDir>
-    <IncludePath>$(SolutionDir)externals\ImGuizmo;$(SolutionDir)externals\imgui;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)externals\ImGuizmo;$(SolutionDir)externals\ImGuiFileDialog;$(SolutionDir)externals\implot;$(SolutionDir)externals\imgui-node-editor;$(SolutionDir)externals\ImGuiColorTextEdit;$(SolutionDir)externals\IconFontCppHeaders;$(SolutionDir)externals\imgui;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IntDir>$(SolutionDir)..\generated\obj\$(ProjectName)\$(Configuration)\</IntDir>
     <OutDir>$(SolutionDir)..\generated\outputs\$(Configuration)\</OutDir>
-    <IncludePath>$(SolutionDir)externals\ImGuizmo;$(SolutionDir)externals\imgui;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)externals\ImGuizmo;$(SolutionDir)externals\ImGuiFileDialog;$(SolutionDir)externals\implot;$(SolutionDir)externals\imgui-node-editor;$(SolutionDir)externals\ImGuiColorTextEdit;$(SolutionDir)externals\IconFontCppHeaders;$(SolutionDir)externals\imgui;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -83,7 +83,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\ImGuizmo;$(ProjectDir)externals\imgui;$(ProjectDir)externals\assimp\include;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\ImGuizmo;$(ProjectDir)externals\ImGuiFileDialog;$(ProjectDir)externals\ImGuiFileDialog\dirent;$(ProjectDir)externals\ImGuiFileDialog\stb;$(ProjectDir)externals\implot;$(ProjectDir)externals\imgui-node-editor;$(ProjectDir)externals\ImGuiColorTextEdit;$(ProjectDir)externals\IconFontCppHeaders;$(ProjectDir)externals\imgui;$(ProjectDir)externals\assimp\include;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -110,7 +110,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\ImGuizmo;$(ProjectDir)externals\imgui;$(ProjectDir)externals\assimp\include;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\ImGuizmo;$(ProjectDir)externals\ImGuiFileDialog;$(ProjectDir)externals\ImGuiFileDialog\dirent;$(ProjectDir)externals\ImGuiFileDialog\stb;$(ProjectDir)externals\implot;$(ProjectDir)externals\imgui-node-editor;$(ProjectDir)externals\ImGuiColorTextEdit;$(ProjectDir)externals\IconFontCppHeaders;$(ProjectDir)externals\imgui;$(ProjectDir)externals\assimp\include;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -141,7 +141,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>false</WholeProgramOptimization>
-      <AdditionalIncludeDirectories>$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\ImGuizmo;$(ProjectDir)externals\imgui;$(ProjectDir)externals\assimp\include;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)externals\DirectXTex;$(ProjectDir)externals\ImGuizmo;$(ProjectDir)externals\ImGuiFileDialog;$(ProjectDir)externals\ImGuiFileDialog\dirent;$(ProjectDir)externals\ImGuiFileDialog\stb;$(ProjectDir)externals\implot;$(ProjectDir)externals\imgui-node-editor;$(ProjectDir)externals\ImGuiColorTextEdit;$(ProjectDir)externals\IconFontCppHeaders;$(ProjectDir)externals\imgui;$(ProjectDir)externals\assimp\include;$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -163,6 +163,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\scene\SceneFactory.cpp" />
     <ClCompile Include="src\engine\scene\SceneManager.cpp" />
     <ClCompile Include="src\engine\scene\BaseScene.cpp" />
+    <ClCompile Include="src\engine\scene\GameScene.cpp" />
     <ClCompile Include="src\engine\scene\EditorScene.cpp" />
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp" />
     <ClCompile Include="src\engine\editor\EditorManager.cpp" />
@@ -201,6 +202,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="externals\ImGuizmo\ImGuizmo.cpp">
       <DisableSpecificWarnings>4244;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
+    <ClCompile Include="externals\ImGuiFileDialog\ImGuiFileDialog.cpp" />
+    <ClCompile Include="externals\implot\implot.cpp" />
+    <ClCompile Include="externals\implot\implot_items.cpp" />
+    <ClCompile Include="externals\imgui-node-editor\crude_json.cpp" />
+    <ClCompile Include="externals\imgui-node-editor\imgui_canvas.cpp" />
+    <ClCompile Include="externals\imgui-node-editor\imgui_node_editor.cpp" />
+    <ClCompile Include="externals\imgui-node-editor\imgui_node_editor_api.cpp" />
+    <ClCompile Include="externals\ImGuiColorTextEdit\TextEditor.cpp" />
     <ClCompile Include="src\app\main.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">MaxSpeed</Optimization>
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</WholeProgramOptimization>
@@ -406,6 +415,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   <ItemGroup>
     <ClInclude Include="include\engine\scene\AbstractSceneFactory.h" />
     <ClInclude Include="include\engine\scene\BaseScene.h" />
+    <ClInclude Include="include\engine\scene\GameScene.h" />
     <ClInclude Include="include\engine\scene\EditorScene.h" />
     <ClInclude Include="include\engine\scene\SceneSerializer.h" />
     <ClInclude Include="include\engine\editor\EditorManager.h" />
@@ -424,6 +434,24 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
     <ClInclude Include="externals\ImGuizmo\ImGuizmo.h" />
+    <ClInclude Include="externals\ImGuiFileDialog\ImGuiFileDialog.h" />
+    <ClInclude Include="externals\ImGuiFileDialog\ImGuiFileDialogConfig.h" />
+    <ClInclude Include="externals\ImGuiFileDialog\dirent\dirent.h" />
+    <ClInclude Include="externals\ImGuiFileDialog\stb\stb_image.h" />
+    <ClInclude Include="externals\ImGuiFileDialog\stb\stb_image_resize2.h" />
+    <ClInclude Include="externals\implot\implot.h" />
+    <ClInclude Include="externals\implot\implot_internal.h" />
+    <ClInclude Include="externals\imgui-node-editor\crude_json.h" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_bezier_math.h" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_bezier_math.inl" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_canvas.h" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_extra_math.h" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_extra_math.inl" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_node_editor.h" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_node_editor_internal.h" />
+    <ClInclude Include="externals\imgui-node-editor\imgui_node_editor_internal.inl" />
+    <ClInclude Include="externals\ImGuiColorTextEdit\TextEditor.h" />
+    <ClInclude Include="externals\IconFontCppHeaders\IconsFontAwesome6.h" />
     <ClInclude Include="include\engine\3d\ResourceObject.h" />
     <ClInclude Include="include\engine\base\WinApp.h" />
     <ClInclude Include="include\engine\io\Input.h" />
@@ -458,6 +486,12 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
     <Text Include="externals\ImGuizmo\LICENSE" />
+    <Text Include="externals\ImGuiFileDialog\LICENSE" />
+    <Text Include="externals\implot\LICENSE" />
+    <Text Include="externals\imgui-node-editor\LICENSE" />
+    <Text Include="externals\ImGuiColorTextEdit\LICENSE" />
+    <Text Include="externals\IconFontCppHeaders\licence.txt" />
+    <Text Include="resources\fonts\FONT_AWESOME_LICENSE.txt" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="externals\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">
@@ -466,6 +500,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.hdr" />
+    <None Include="resources\fonts\fa-solid-900.ttf" />
+    <None Include="resources\fonts\fa-regular-400.ttf" />
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr" />
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k_cube.dds" />
     <None Include="resources\grass.png" />

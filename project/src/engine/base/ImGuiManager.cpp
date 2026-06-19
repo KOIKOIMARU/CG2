@@ -6,6 +6,8 @@
 #include "engine/scene/SceneSerializer.h"
 
 #include "ImGuizmo.h"
+#include "IconsFontAwesome6.h"
+#include "implot.h"
 
 #include <cassert>
 #include <cmath>
@@ -207,6 +209,19 @@ void FreeImGuiSrvDescriptor(
 #endif
 }
 
+bool ImGuiManager::GetLastViewportImageRect(
+    Math::Vector2& min,
+    Math::Vector2& size) const
+{
+    if (!hasLastViewportImageRect_) {
+        return false;
+    }
+
+    min = lastViewportImageMin_;
+    size = lastViewportImageSize_;
+    return true;
+}
+
 bool ImGuiManager::SaveInspectorTransforms(
     const ObjectInspectorSettings& inspector)
 {
@@ -308,8 +323,10 @@ void ImGuiManager::Initialize(
     srvManager_ = srvManager;
 
     ImGui::CreateContext();
+    ImPlot::CreateContext();
     ImGui::StyleColorsDark();
     ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImFont* japaneseFont = io.Fonts->AddFontFromFileTTF(
         "C:/Windows/Fonts/meiryo.ttc",
         16.0f,
@@ -320,6 +337,17 @@ void ImGuiManager::Initialize(
     } else {
         io.Fonts->AddFontDefault();
     }
+
+    ImFontConfig iconConfig{};
+    iconConfig.MergeMode = true;
+    iconConfig.PixelSnapH = true;
+    iconConfig.GlyphMinAdvanceX = 14.0f;
+    static const ImWchar iconRanges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+    io.Fonts->AddFontFromFileTTF(
+        "resources/fonts/fa-solid-900.ttf",
+        14.0f,
+        &iconConfig,
+        iconRanges);
 
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 
@@ -370,6 +398,7 @@ void ImGuiManager::Finalize() {
 #ifdef USE_IMGUI
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
 #endif
 }
@@ -462,9 +491,8 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 
         if (ImGui::BeginMenu("再生")) {
             if (inspector.isPlayMode) {
-                if (ImGui::MenuItem("停止")) {
-                    inspector.requestStopPlayMode = true;
-                }
+                ImGui::MenuItem("ゲーム表示中", nullptr, false, false);
+                ImGui::MenuItem("F2: タイトルへ戻る", nullptr, false, false);
             } else {
                 if (ImGui::MenuItem("再生")) {
                     inspector.requestStartPlayMode = true;
@@ -488,23 +516,19 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
     ImGui::SameLine();
 
     if (inspector.isPlayMode) {
-        if (ImGui::Button("停止")) {
-            inspector.requestStopPlayMode = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("再生モード");
+        ImGui::TextUnformatted("ゲーム表示中");
     } else {
         if (ImGui::Button("再生")) {
             inspector.requestStartPlayMode = true;
         }
         ImGui::SameLine();
-        ImGui::TextUnformatted("編集モード");
+        ImGui::TextUnformatted("編集表示");
     }
     ImGui::SameLine();
     ImGui::TextUnformatted(
         inspector.isPlayMode ?
-        "F1 表示 / F2 停止 / F4 ゲームデバッグ" :
-        "F1 表示 / F2 再生 / F3 編集カメラ");
+        "F1 表示 / F2 タイトルへ戻る" :
+        "F1 表示 / F3 編集カメラ");
     ImGui::End();
 
     ImGui::SetNextWindowPos(
@@ -1048,6 +1072,7 @@ void ImGuiManager::ShowViewport(
 {
 #ifdef USE_IMGUI
     if (!isOpen) {
+        hasLastViewportImageRect_ = false;
         return;
     }
 
@@ -1091,15 +1116,18 @@ void ImGuiManager::ShowViewport(
         imageRect.min = ImGui::GetItemRectMin();
         imageRect.max = ImGui::GetItemRectMax();
         imageRect.isValid = true;
+        lastViewportImageMin_ = { imageRect.min.x, imageRect.min.y };
+        lastViewportImageSize_ = {
+            imageRect.max.x - imageRect.min.x,
+            imageRect.max.y - imageRect.min.y
+        };
+        hasLastViewportImageRect_ =
+            lastViewportImageSize_.x > 1.0f && lastViewportImageSize_.y > 1.0f;
         return imageRect;
     };
 
     if (isPlayMode) {
-        if (ImGui::Button("停止##ViewportStop")) {
-            requestStopPlayMode = true;
-        }
-        ImGui::SameLine();
-        ImGui::TextUnformatted("再生モード");
+        ImGui::TextUnformatted("ゲーム表示中");
         ImGui::Separator();
         drawViewportImage();
     } else {
@@ -1107,7 +1135,7 @@ void ImGuiManager::ShowViewport(
             requestStartPlayMode = true;
         }
         ImGui::SameLine();
-        ImGui::TextUnformatted("編集モード");
+        ImGui::TextUnformatted("編集表示");
         ImGui::Separator();
         const ViewportImageRect imageRect = drawViewportImage();
         DrawTransformGizmo(
@@ -1263,8 +1291,7 @@ void ImGuiManager::ShowViewport(
             if (showInfoLogs) {
                 showConsoleLine("情報", "エディターレイアウト準備完了");
                 showConsoleLine("情報", "F1: エディター表示切り替え");
-                showConsoleLine("情報", "F2: 再生モード切り替え");
-                showConsoleLine("情報", "F4: 再生中のゲームデバッグ切り替え");
+                showConsoleLine("情報", "F2: タイトルへ戻る");
             }
             if (showOperationLogs && !inspectorStatus_.empty()) {
                 showConsoleLine("操作", inspectorStatus_.c_str());

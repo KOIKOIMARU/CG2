@@ -28,12 +28,17 @@ void Enemy::Initialize(
     Object3dCommon* object3dCommon,
     Model* model,
     const Math::Vector3& position,
-    Behavior behavior)
+    Behavior behavior,
+    EntryStyle entryStyle)
 {
     object_ = std::make_unique<Object3d>();
     object_->Initialize(object3dCommon);
     object_->SetModel(model);
     behavior_ = behavior;
+    entryStyle_ = entryStyle;
+    lifeState_ = LifeState::Alive;
+    age_ = 0;
+    moveTimer_ = 0.0f;
 
     switch (behavior_) {
     case Behavior::Swoop:
@@ -66,7 +71,7 @@ void Enemy::Initialize(
 
 void Enemy::Update(float railDistance)
 {
-    if (isDead_ || !object_) {
+    if (IsDead() || !object_) {
         return;
     }
 
@@ -75,40 +80,54 @@ void Enemy::Update(float railDistance)
 
     switch (behavior_) {
     case Behavior::Swoop: {
-        const float passRate = Clamp01(static_cast<float>(age_) / 150.0f);
-        const float side = SignNonZero(baseTranslate_.x);
+        const float passRate = Clamp01(static_cast<float>(age_) / 210.0f);
+        const float side =
+            entryStyle_ == EntryStyle::RightSweep ? -1.0f :
+            entryStyle_ == EntryStyle::LeftSweep ? 1.0f :
+            SignNonZero(baseTranslate_.x);
         const float curve = std::sin(passRate * kPi);
         translate_.x =
-            side * Lerp(6.8f, -6.2f, passRate) -
+            side * Lerp(8.8f, -10.2f, passRate) -
             side * curve * 1.8f;
         translate_.y =
             baseTranslate_.y +
-            curve * 2.2f -
-            passRate * 0.9f;
-        translate_.z = railDistance + 30.0f - curve * 9.0f;
+            curve * 2.5f -
+            passRate * 1.2f;
+        translate_.z =
+            railDistance +
+            Lerp(32.0f, 21.0f, curve) +
+            passRate * 7.0f;
         if (passRate >= 1.0f) {
-            isDead_ = true;
+            Escape();
             return;
         }
         break;
     }
     case Behavior::StrafeShooter: {
-        const float attackRate = Clamp01(static_cast<float>(age_) / 220.0f);
-        const float exitRate = Clamp01(static_cast<float>(age_ - 220) / 70.0f);
+        const float attackRate = Clamp01(static_cast<float>(age_) / 90.0f);
+        const float holdRate = Clamp01(static_cast<float>(age_ - 90) / 150.0f);
+        const float exitRate = Clamp01(static_cast<float>(age_ - 240) / 110.0f);
         const float exitSide = SignNonZero(std::sin(phase_));
+        const float entryArc =
+            entryStyle_ == EntryStyle::PopShooter ?
+            std::sin(attackRate * kPi) :
+            0.0f;
         translate_.x =
-            std::sin(moveTimer_ * 0.045f + phase_) * 4.2f +
-            exitSide * exitRate * 6.5f;
+            Lerp(baseTranslate_.x * 1.45f, baseTranslate_.x, attackRate) +
+            std::sin(moveTimer_ * 0.045f + phase_) * Lerp(1.5f, 4.0f, holdRate) +
+            exitSide * exitRate * 10.0f;
         translate_.y =
-            Lerp(baseTranslate_.y, baseTranslate_.y * 0.35f, attackRate) +
+            Lerp(baseTranslate_.y + 2.4f, baseTranslate_.y * 0.35f, attackRate) +
             std::cos(moveTimer_ * 0.038f + phase_) * 0.35f +
-            exitRate * 3.0f;
+            entryArc * 0.7f +
+            exitRate * 4.2f;
         translate_.z =
-            railDistance + 22.0f +
-            std::cos(moveTimer_ * 0.028f + phase_) * 1.2f +
-            exitRate * 8.0f;
+            railDistance +
+            Lerp(34.0f, 21.0f, attackRate) +
+            std::cos(moveTimer_ * 0.028f + phase_) * 1.0f +
+            exitRate * 10.0f;
         if (exitRate >= 1.0f) {
-            isDead_ = true;
+            Escape();
             return;
         }
         break;
@@ -116,24 +135,31 @@ void Enemy::Update(float railDistance)
     case Behavior::Formation:
     default:
     {
-        const float holdRate = Clamp01(static_cast<float>(age_) / 180.0f);
-        const float exitRate = Clamp01(static_cast<float>(age_ - 180) / 80.0f);
+        const float entryRate = Clamp01(static_cast<float>(age_) / 90.0f);
+        const float holdRate = Clamp01(static_cast<float>(age_ - 90) / 130.0f);
+        const float exitRate = Clamp01(static_cast<float>(age_ - 220) / 120.0f);
         const float exitSide = SignNonZero(baseTranslate_.x);
+        const float formationSpread =
+            entryStyle_ == EntryStyle::VFormation ?
+            std::sin(entryRate * kPi) * std::abs(baseTranslate_.x) * 0.35f :
+            0.0f;
         translate_.x =
-            baseTranslate_.x +
+            Lerp(baseTranslate_.x * 0.55f, baseTranslate_.x, entryRate) +
+            SignNonZero(baseTranslate_.x) * formationSpread +
             std::sin(moveTimer_ * 0.035f + phase_) * 0.75f +
             std::sin(moveTimer_ * 0.013f + phase_) * 0.35f +
-            exitSide * exitRate * 7.0f;
+            exitSide * exitRate * 10.5f;
         translate_.y =
             baseTranslate_.y +
             std::cos(moveTimer_ * 0.03f + phase_) * 0.45f +
-            exitRate * 2.4f;
+            exitRate * 3.4f;
         translate_.z =
             railDistance +
-            Lerp(27.0f, 23.5f, holdRate) +
+            Lerp(38.0f, 24.0f, entryRate) -
+            holdRate * 0.8f +
             std::sin(moveTimer_ * 0.02f + phase_) * 1.2f;
         if (exitRate >= 1.0f) {
-            isDead_ = true;
+            Escape();
             return;
         }
         break;
@@ -146,14 +172,14 @@ void Enemy::Update(float railDistance)
 
 void Enemy::Draw()
 {
-    if (!isDead_ && object_) {
+    if (!IsDead() && object_) {
         object_->Draw();
     }
 }
 
 bool Enemy::CanShoot() const
 {
-    return !isDead_ &&
+    return !IsDead() &&
         behavior_ == Behavior::StrafeShooter &&
         45 <= age_ &&
         age_ <= 220;

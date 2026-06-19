@@ -55,9 +55,19 @@ void EditorPlayController::Update(
         return;
     }
 
-    runtime_->SetDebugGuiAllowed(isEditorGuiVisible);
+    (void)isEditorGuiVisible;
     runtime_->SetRenderingOptions(showSkybox, postEffectMode);
     runtime_->Update();
+}
+
+void EditorPlayController::SetHudViewportRect(
+    bool isEnabled,
+    const Math::Vector2& min,
+    const Math::Vector2& size)
+{
+    if (runtime_) {
+        runtime_->SetHudViewportRect(isEnabled, min, size);
+    }
 }
 
 void EditorPlayController::Draw()

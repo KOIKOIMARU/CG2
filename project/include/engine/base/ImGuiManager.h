@@ -113,6 +113,7 @@ public:
         bool& requestStartPlayMode,
         bool& requestStopPlayMode,
         ObjectInspectorSettings& inspector);
+    bool GetLastViewportImageRect(Math::Vector2& min, Math::Vector2& size) const;
 
 private:
     bool SaveInspectorTransforms(const ObjectInspectorSettings& inspector);
@@ -122,4 +123,7 @@ private:
     SrvManager* srvManager_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap_;
     std::string inspectorStatus_;
+    Math::Vector2 lastViewportImageMin_{ 0.0f, 0.0f };
+    Math::Vector2 lastViewportImageSize_{ 0.0f, 0.0f };
+    bool hasLastViewportImageRect_ = false;
 };

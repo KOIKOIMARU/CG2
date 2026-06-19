@@ -3,34 +3,86 @@
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Skybox.h"
 #include "engine/3d/TextureManager.h"
+#include "engine/base/DirectXCommon.h"
 #include "engine/io/Input.h"
 #include "engine/scene/SceneSerializer.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>
+#include <IconsFontAwesome6.h>
+#include <ImGuiFileDialog.h>
+#include <implot.h>
+#include <imgui_node_editor.h>
+#include <TextEditor.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 namespace {
 
 constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
 
-struct WaveDefinition {
-    int enemyCount;
-    int spawnInterval;
-    float spawnLeadDistance;
+struct EnemySpawnPattern {
+    float x;
+    float y;
+    Enemy::Behavior behavior;
+    Enemy::EntryStyle entryStyle;
 };
 
-constexpr WaveDefinition kWaveDefinitions[] = {
-    { 6, 80, 26.0f },
-    { 8, 60, 30.0f },
-    { 10, 45, 34.0f }
+constexpr int kWaveCount = 3;
+
+constexpr EnemySpawnPattern kWaveOnePatterns[] = {
+    { -2.8f, -0.7f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    {  0.0f,  0.3f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    {  2.8f, -0.7f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    { -4.2f,  1.0f, Enemy::Behavior::Swoop, Enemy::EntryStyle::LeftSweep },
+    {  4.2f,  1.0f, Enemy::Behavior::Swoop, Enemy::EntryStyle::RightSweep },
+    {  0.0f, -1.1f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter }
 };
 
-constexpr int kWaveCount =
-    static_cast<int>(sizeof(kWaveDefinitions) / sizeof(kWaveDefinitions[0]));
+constexpr EnemySpawnPattern kWaveTwoPatterns[] = {
+    { -5.2f,  0.8f, Enemy::Behavior::Swoop, Enemy::EntryStyle::LeftSweep },
+    {  5.2f, -0.4f, Enemy::Behavior::Swoop, Enemy::EntryStyle::RightSweep },
+    { -2.2f,  1.2f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter },
+    {  2.2f,  1.2f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter },
+    { -3.4f, -1.1f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    {  0.0f, -0.2f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    {  3.4f, -1.1f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    {  0.0f,  1.8f, Enemy::Behavior::Swoop, Enemy::EntryStyle::RightSweep }
+};
 
-constexpr int kChargeShotThreshold = 70;
+constexpr EnemySpawnPattern kWaveThreePatterns[] = {
+    { -4.6f,  1.4f, Enemy::Behavior::Swoop, Enemy::EntryStyle::LeftSweep },
+    {  4.6f,  1.4f, Enemy::Behavior::Swoop, Enemy::EntryStyle::RightSweep },
+    { -2.8f,  0.4f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter },
+    {  2.8f,  0.4f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter },
+    {  0.0f, -1.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    { -3.8f, -0.7f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    {  3.8f, -0.7f, Enemy::Behavior::Formation, Enemy::EntryStyle::VFormation },
+    { -1.4f,  1.8f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter },
+    {  1.4f,  1.8f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter },
+    {  0.0f,  0.6f, Enemy::Behavior::Swoop, Enemy::EntryStyle::LeftSweep }
+};
+
+EnemySpawnPattern GetEnemySpawnPattern(int waveIndex, int sequenceIndex)
+{
+    if (waveIndex == 0) {
+        return kWaveOnePatterns[
+            sequenceIndex %
+            (sizeof(kWaveOnePatterns) / sizeof(kWaveOnePatterns[0]))];
+    }
+    if (waveIndex == 1) {
+        return kWaveTwoPatterns[
+            sequenceIndex %
+            (sizeof(kWaveTwoPatterns) / sizeof(kWaveTwoPatterns[0]))];
+    }
+    return kWaveThreePatterns[
+        sequenceIndex %
+        (sizeof(kWaveThreePatterns) / sizeof(kWaveThreePatterns[0]))];
+}
+
 constexpr int kChargeShotMax = 100;
 
 constexpr const char* kRuntimeSceneModelItems[] = {
@@ -71,15 +123,6 @@ Math::Vector3 Lerp(const Math::Vector3& start, const Math::Vector3& end, float r
     };
 }
 
-int GetTotalEnemyCount()
-{
-    int total = 0;
-    for (const WaveDefinition& wave : kWaveDefinitions) {
-        total += wave.enemyCount;
-    }
-    return total;
-}
-
 } // namespace
 
 GameRuntime::GameRuntime() = default;
@@ -102,6 +145,22 @@ void GameRuntime::SetSystems(
 void GameRuntime::Initialize()
 {
     isExitRequested_ = false;
+    isGameClear_ = false;
+    isGameOver_ = false;
+    currentWaveIndex_ = 0;
+    spawnedEnemyCountInWave_ = 0;
+    defeatedEnemyCountInWave_ = 0;
+    spawnSequenceIndex_ = 0;
+    defeatedEnemyCount_ = 0;
+    score_ = 0;
+    enemySpawnTimer_ = 0;
+    enemyShotTimer_ = 60;
+    resultTransitionTimer_ = -1;
+    railDistance_ = 0.0f;
+    shootCooldown_ = 0;
+    chargeTimer_ = 0;
+    chargeFlashTimer_ = 0;
+    cameraShakeTimer_ = 0;
 
     const std::string environmentTexturePath =
         "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
@@ -110,6 +169,7 @@ void GameRuntime::Initialize()
     object3dCommon_->Initialize(dxCommon_, srvManager_);
     object3dCommon_->SetEnvironmentTexturePath(environmentTexturePath);
 
+    ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
     ModelManager::GetInstance()->SetEnvironmentTexturePath(environmentTexturePath);
     TextureManager::GetInstance()->LoadTexture(environmentTexturePath);
     ModelManager::GetInstance()->CreateBox(
@@ -229,18 +289,51 @@ void GameRuntime::Finalize()
 
 void GameRuntime::Update()
 {
-    if (input_ && input_->TriggerKey(DIK_F2)) {
-        isExitRequested_ = true;
+    if (HandleRuntimeShortcuts()) {
         return;
     }
-    if (input_ && input_->TriggerKey(DIK_F4)) {
-        isDebugGuiVisible_ = !isDebugGuiVisible_;
+
+    UpdateRailProgress();
+    UpdatePlayerAndCamera();
+
+    if (!isGameOver_ && !isGameClear_) {
+        UpdatePlayerShooting();
+        UpdateEnemyActions();
     }
 
+    UpdateWorldEntities();
+    UpdateGameplayCollisions();
+    AdvanceEnemyWaveIfCleared();
+    UpdateLockOnTarget();
+    DrawHud();
+    DrawResultOverlay();
+    DrawEditorOverlayGuiRich();
+
+    UpdateResultAndSceneObjects();
+}
+
+bool GameRuntime::HandleRuntimeShortcuts()
+{
+    if (input_ && input_->TriggerKey(DIK_F1)) {
+        isEditorOverlayVisible_ = !isEditorOverlayVisible_;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F2)) {
+        isExitRequested_ = true;
+        return true;
+    }
+    return false;
+}
+
+void GameRuntime::UpdateRailProgress()
+{
     if (!isGameOver_ && !isGameClear_) {
         railDistance_ += railSpeed_;
     }
+}
 
+void GameRuntime::UpdatePlayerAndCamera()
+{
     player_->Update(input_);
     player_->SetRailZ(railDistance_);
     UpdateGameCamera();
@@ -248,52 +341,69 @@ void GameRuntime::Update()
         skybox_->Update(camera_.get());
     }
     UpdateLockOnTarget();
+}
 
-    if (!isGameOver_ && !isGameClear_) {
-        if (shootCooldown_ > 0) {
-            --shootCooldown_;
-        }
-        const bool isShootPressed = input_ && input_->PushKey(DIK_SPACE);
-        if (isShootPressed && shootCooldown_ <= 0) {
-            const bool isCharged = chargeTimer_ >= kChargeShotThreshold;
-            FirePlayerBullet();
-            AddCameraShake(isCharged ? 0.085f : 0.035f, isCharged ? 14 : 8);
-            shootCooldown_ = isCharged ? 14 : 8;
-        } else if (!isShootPressed) {
-            chargeTimer_ =
-                (std::min)(chargeTimer_ + 1, kChargeShotMax);
-        }
-        if (chargeFlashTimer_ > 0) {
-            --chargeFlashTimer_;
-        }
-
-        UpdateEnemyWave();
-
-        --enemyShotTimer_;
-        if (enemyShotTimer_ <= 0) {
-            for (const auto& enemy : enemies_) {
-                if (enemy->CanShoot()) {
-                    FireEnemyBullet(enemy->GetTranslate());
-                }
-            }
-            enemyShotTimer_ = 75;
-        }
+void GameRuntime::UpdatePlayerShooting()
+{
+    if (shootCooldown_ > 0) {
+        --shootCooldown_;
     }
 
+    const bool isShootPressed = input_ && input_->PushKey(DIK_SPACE);
+    if (isShootPressed && shootCooldown_ <= 0) {
+        const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
+        const bool hasLockedShot = hasLockTarget_;
+        FirePlayerBullet();
+        AddCameraShake(
+            isCharged ? (hasLockedShot ? 0.105f : 0.085f) :
+                        (hasLockedShot ? 0.048f : 0.035f),
+            isCharged ? (hasLockedShot ? 16 : 14) :
+                        (hasLockedShot ? 10 : 8));
+        shootCooldown_ =
+            isCharged ? chargedShootCooldown_ : normalShootCooldown_;
+    } else if (!isShootPressed) {
+        chargeTimer_ = (std::min)(chargeTimer_ + 1, kChargeShotMax);
+    }
+
+    if (chargeFlashTimer_ > 0) {
+        --chargeFlashTimer_;
+    }
+}
+
+void GameRuntime::UpdateEnemyActions()
+{
+    UpdateEnemyWave();
+
+    --enemyShotTimer_;
+    if (enemyShotTimer_ <= 0) {
+        for (const auto& enemy : enemies_) {
+            if (enemy->CanShoot()) {
+                FireEnemyBullet(enemy->GetTranslate());
+            }
+        }
+        enemyShotTimer_ = enemyShotInterval_;
+    }
+}
+
+void GameRuntime::UpdateWorldEntities()
+{
     UpdatePlayerBullets();
     UpdateEnemyBullets();
     UpdateEnemies();
     UpdateExplosionEffects();
     UpdateEnvironmentBonusCoins();
+}
+
+void GameRuntime::UpdateGameplayCollisions()
+{
     CheckBulletBonusCoinCollisions();
     CheckPlayerBonusCoinCollisions();
     CheckBulletEnemyCollisions();
     CheckEnemyBulletPlayerCollisions();
-    AdvanceEnemyWaveIfCleared();
-    UpdateLockOnTarget();
-    DrawHud();
-    DrawResultOverlay();
+}
 
+void GameRuntime::UpdateResultAndSceneObjects()
+{
     if (resultTransitionTimer_ > 0) {
         --resultTransitionTimer_;
     }
@@ -301,44 +411,8 @@ void GameRuntime::Update()
     for (const auto& sceneObject : sceneObjects_) {
         sceneObject->Update();
     }
-
-    if (isDebugGuiAllowed_ && isDebugGuiVisible_) {
-        ImGui::Begin("ゲームデバッグ");
-        ImGui::TextUnformatted("F4: ゲームデバッグ表示切り替え");
-        ImGui::Text("プレイヤーHP: %d", player_->GetHp());
-        ImGui::Text("スコア: %d", score_);
-        ImGui::Text("自弾: %zu", playerBullets_.size());
-        ImGui::Text("敵弾: %zu", enemyBullets_.size());
-        ImGui::Text("敵数: %zu", enemies_.size());
-        ImGui::Text(
-            "ウェーブ: %d / %d",
-            (std::min)(currentWaveIndex_ + 1, kWaveCount),
-            kWaveCount);
-        ImGui::Text(
-            "ウェーブ出現数: %d / %d",
-            currentWaveIndex_ < kWaveCount ? spawnedEnemyCountInWave_ : 0,
-            currentWaveIndex_ < kWaveCount ?
-                kWaveDefinitions[currentWaveIndex_].enemyCount :
-                0);
-        ImGui::Text(
-            "撃破数: %d / %d",
-            defeatedEnemyCount_,
-            GetTotalEnemyCount());
-        ImGui::Text("レール距離: %.1f", railDistance_);
-        if (isGameClear_) {
-            ImGui::TextUnformatted("ゲームクリア");
-        }
-        if (isGameOver_) {
-            ImGui::TextUnformatted("ゲームオーバー - グレースケール演出");
-        }
-        ImGui::End();
-    }
 }
 
-void GameRuntime::SetDebugGuiAllowed(bool isAllowed)
-{
-    isDebugGuiAllowed_ = isAllowed;
-}
 
 void GameRuntime::SetRenderingOptions(bool showSkybox, int postEffectMode)
 {
@@ -349,6 +423,37 @@ void GameRuntime::SetRenderingOptions(bool showSkybox, int postEffectMode)
 int GameRuntime::GetPlayerHp() const
 {
     return player_ ? player_->GetHp() : 0;
+}
+
+void GameRuntime::SetHudViewportRect(
+    bool isEnabled,
+    const Math::Vector2& min,
+    const Math::Vector2& size)
+{
+    isHudViewportRectEnabled_ = isEnabled && size.x > 1.0f && size.y > 1.0f;
+    hudViewportMin_ = min;
+    hudViewportSize_ = size;
+}
+
+void GameRuntime::GetEffectiveHudViewportRect(
+    Math::Vector2& min,
+    Math::Vector2& size) const
+{
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    min = { viewport->Pos.x, viewport->Pos.y };
+    size = { viewport->Size.x, viewport->Size.y };
+
+    if (isHudViewportRectEnabled_) {
+        min = hudViewportMin_;
+        size = hudViewportSize_;
+        return;
+    }
+
+    if (isEditorOverlayVisible_ && hasEditorOverlayViewportRect_) {
+        min = editorOverlayViewportMin_;
+        size = editorOverlayViewportSize_;
+        return;
+    }
 }
 
 void GameRuntime::InitializeEnvironmentBonusCoins()
@@ -436,14 +541,88 @@ int GameRuntime::GetPostEffectMode() const
     return 12;
 }
 
-void GameRuntime::LoadSceneObjects(const char* path)
+std::vector<SceneSerializer::ObjectRecord> GameRuntime::BuildRuntimeSceneRecords() const
 {
-    sceneObjects_.clear();
+    std::vector<SceneSerializer::ObjectRecord> records = sceneObjectRecords_;
+    if (records.size() < sceneObjects_.size()) {
+        records.resize(sceneObjects_.size());
+    }
 
+    for (size_t index = 0; index < sceneObjects_.size(); ++index) {
+        const Object3d* object = sceneObjects_[index].get();
+        if (!object) {
+            continue;
+        }
+
+        SceneSerializer::ObjectRecord& record = records[index];
+        if (record.name.empty()) {
+            record.name = "Runtime Object " + std::to_string(index);
+        }
+        if (record.modelIndex < 0) {
+            record.primitive = true;
+            record.modelIndex = 0;
+        }
+        record.translate = object->GetTranslate();
+        record.rotate = object->GetRotate();
+        record.scale = object->GetScale();
+        record.color = object->GetColor();
+        record.alphaReference = object->GetAlphaReference();
+        record.lightingMode = object->GetLightingMode();
+        record.textureFilePath = object->GetTextureFilePath();
+    }
+
+    records.resize(sceneObjects_.size());
+    return records;
+}
+
+SceneSerializer::SceneSettings GameRuntime::BuildRuntimeSceneSettings() const
+{
+    SceneSerializer::SceneSettings settings{};
+    if (camera_) {
+        settings.hasCamera = true;
+        settings.cameraTranslate = camera_->GetTranslate();
+        settings.cameraRotate = camera_->GetRotate();
+    }
+    return settings;
+}
+
+bool GameRuntime::SaveSceneObjects(const char* path)
+{
+    if (!path || path[0] == '\0') {
+        editorStatusMessage_ = "保存失敗: パスが無効です。";
+        return false;
+    }
+
+    const std::vector<SceneSerializer::ObjectRecord> records =
+        BuildRuntimeSceneRecords();
+    const bool saved =
+        SceneSerializer::SaveScene(path, records, BuildRuntimeSceneSettings());
+    if (!saved) {
+        editorStatusMessage_ = "保存失敗: " + std::string(path);
+        return false;
+    }
+
+    sceneObjectRecords_ = records;
+    currentSceneFilePath_ = path;
+    editorStatusMessage_ = "保存しました: " + currentSceneFilePath_;
+    return true;
+}
+
+bool GameRuntime::LoadSceneObjects(const char* path)
+{
     std::vector<SceneSerializer::ObjectRecord> records;
     SceneSerializer::SceneSettings settings{};
     if (!SceneSerializer::LoadScene(path, records, settings)) {
-        return;
+        editorStatusMessage_ = "読み込み失敗: " + std::string(path ? path : "");
+        return false;
+    }
+
+    sceneObjects_.clear();
+    sceneObjectRecords_.clear();
+
+    if (settings.hasCamera && camera_) {
+        camera_->SetTranslate(settings.cameraTranslate);
+        camera_->SetRotate(settings.cameraRotate);
     }
 
     const int modelItemCount =
@@ -469,7 +648,12 @@ void GameRuntime::LoadSceneObjects(const char* path)
         sceneObject->SetEnvironmentCoefficient(0.0f);
         sceneObject->Update();
         sceneObjects_.push_back(std::move(sceneObject));
+        sceneObjectRecords_.push_back(record);
     }
+
+    currentSceneFilePath_ = path ? path : "";
+    editorStatusMessage_ = "読み込みました: " + currentSceneFilePath_;
+    return true;
 }
 
 void GameRuntime::Draw()
@@ -509,13 +693,13 @@ void GameRuntime::FirePlayerBullet()
 
     Math::Vector3 spawnPosition = player_->GetTranslate();
     spawnPosition.z += 1.2f;
-    Math::Vector3 velocity{ 0.0f, 0.0f, 0.65f };
+    Math::Vector3 velocity{ 0.0f, 0.0f, playerBulletSpeed_ };
     Math::Vector4 color{ 1.0f, 0.85f, 0.25f, 1.0f };
     Math::Vector3 scale{ 0.34f, 0.34f, 0.95f };
     float collisionRadius = 0.46f;
     int lifeTimer = 180;
     int hitLimit = 1;
-    const bool isCharged = chargeTimer_ >= kChargeShotThreshold;
+    const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
 
     if (hasLockTarget_ && lockedEnemy_) {
         Math::Vector3 targetPosition = lockedEnemy_->GetTranslate();
@@ -524,21 +708,21 @@ void GameRuntime::FirePlayerBullet()
             targetPosition.x - spawnPosition.x,
             targetPosition.y - spawnPosition.y,
             targetPosition.z - spawnPosition.z
-        }) * 0.82f;
+        }) * lockBulletSpeed_;
         color = { 0.35f, 0.95f, 1.0f, 1.0f };
         scale = { 0.48f, 0.48f, 1.25f };
         collisionRadius = 0.62f;
         lifeTimer = 220;
     }
     if (isCharged) {
-        velocity = velocity * 1.18f;
+        velocity = velocity * chargedBulletSpeedMultiplier_;
         color = hasLockTarget_ ?
-            Math::Vector4{ 0.72f, 1.0f, 1.0f, 1.0f } :
+            Math::Vector4{ 0.58f, 1.0f, 0.92f, 1.0f } :
             Math::Vector4{ 1.0f, 0.96f, 0.38f, 1.0f };
         scale = hasLockTarget_ ?
-            Math::Vector3{ 0.76f, 0.76f, 1.75f } :
+            Math::Vector3{ 0.92f, 0.92f, 2.05f } :
             Math::Vector3{ 0.66f, 0.66f, 1.55f };
-        collisionRadius = hasLockTarget_ ? 0.95f : 0.82f;
+        collisionRadius = hasLockTarget_ ? 1.05f : 0.82f;
         lifeTimer = 260;
         hitLimit = 4;
     }
@@ -575,7 +759,7 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         object3dCommon_.get(),
         bulletModel_,
         spawnPosition,
-        { 0.0f, 0.0f, -0.28f },
+        { 0.0f, 0.0f, -enemyBulletSpeed_ },
         { 1.0f, 0.25f, 0.25f, 1.0f },
         240,
         { 0.42f, 0.42f, 0.42f },
@@ -589,18 +773,9 @@ void GameRuntime::SpawnEnemy()
         return;
     }
 
-    const WaveDefinition& wave = kWaveDefinitions[currentWaveIndex_];
-    const float xPositions[] = { -4.0f, -2.0f, 0.0f, 2.0f, 4.0f };
-    const float yPositions[] = { -1.5f, 0.0f, 1.5f };
-    const float x = xPositions[spawnSequenceIndex_ % 5];
-    const float y = yPositions[(spawnSequenceIndex_ / 5) % 3];
-    const Enemy::Behavior behaviors[] = {
-        Enemy::Behavior::Formation,
-        Enemy::Behavior::Swoop,
-        Enemy::Behavior::StrafeShooter
-    };
-    const Enemy::Behavior behavior =
-        behaviors[spawnSequenceIndex_ % (sizeof(behaviors) / sizeof(behaviors[0]))];
+    const WaveTuning& wave = waveTuning_[currentWaveIndex_];
+    const EnemySpawnPattern pattern =
+        GetEnemySpawnPattern(currentWaveIndex_, spawnSequenceIndex_);
     ++spawnSequenceIndex_;
     ++spawnedEnemyCountInWave_;
 
@@ -608,8 +783,9 @@ void GameRuntime::SpawnEnemy()
     enemy->Initialize(
         object3dCommon_.get(),
         enemyModel_,
-        { x, y, railDistance_ + wave.spawnLeadDistance },
-        behavior);
+        { pattern.x, pattern.y, railDistance_ + wave.spawnLeadDistance },
+        pattern.behavior,
+        pattern.entryStyle);
     enemies_.push_back(std::move(enemy));
 }
 
@@ -619,7 +795,7 @@ void GameRuntime::UpdateEnemyWave()
         return;
     }
 
-    const WaveDefinition& wave = kWaveDefinitions[currentWaveIndex_];
+    const WaveTuning& wave = waveTuning_[currentWaveIndex_];
     if (spawnedEnemyCountInWave_ >= wave.enemyCount) {
         return;
     }
@@ -639,14 +815,15 @@ void GameRuntime::AdvanceEnemyWaveIfCleared()
         return;
     }
 
-    const WaveDefinition& wave = kWaveDefinitions[currentWaveIndex_];
-    if (spawnedEnemyCountInWave_ < wave.enemyCount || !enemies_.empty()) {
+    const WaveTuning& wave = waveTuning_[currentWaveIndex_];
+    if (defeatedEnemyCountInWave_ < wave.enemyCount || !enemies_.empty()) {
         return;
     }
 
     ++currentWaveIndex_;
     spawnedEnemyCountInWave_ = 0;
-    enemySpawnTimer_ = 90;
+    defeatedEnemyCountInWave_ = 0;
+    enemySpawnTimer_ = waveStartDelay_;
 
     if (currentWaveIndex_ >= kWaveCount) {
         isGameClear_ = true;
@@ -659,17 +836,34 @@ void GameRuntime::UpdateLockOnTarget()
     lockedEnemy_ = nullptr;
     hasLockTarget_ = false;
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    Math::Vector2 viewportMin{};
+    Math::Vector2 viewportSize{};
+    GetEffectiveHudViewportRect(viewportMin, viewportSize);
+    const Math::Vector2 viewportMax{
+        viewportMin.x + viewportSize.x,
+        viewportMin.y + viewportSize.y
+    };
     if (input_) {
-        const Math::Vector2& mousePosition = input_->GetMousePosition();
+        Math::Vector2 mouseScreen{};
+        if (isEditorOverlayVisible_ && hasEditorOverlayViewportRect_) {
+            const ImVec2 imguiMouse = ImGui::GetMousePos();
+            mouseScreen = { imguiMouse.x, imguiMouse.y };
+        } else {
+            const ImGuiViewport* viewport = ImGui::GetMainViewport();
+            const Math::Vector2& mousePosition = input_->GetMousePosition();
+            mouseScreen = {
+                viewport->Pos.x + mousePosition.x,
+                viewport->Pos.y + mousePosition.y
+            };
+        }
         reticleScreen_ = {
-            viewport->Pos.x + std::clamp(mousePosition.x, 0.0f, viewport->Size.x),
-            viewport->Pos.y + std::clamp(mousePosition.y, 0.0f, viewport->Size.y)
+            std::clamp(mouseScreen.x, viewportMin.x, viewportMax.x),
+            std::clamp(mouseScreen.y, viewportMin.y, viewportMax.y)
         };
     } else {
         reticleScreen_ = {
-            viewport->Pos.x + viewport->Size.x * 0.5f,
-            viewport->Pos.y + viewport->Size.y * 0.5f
+            viewportMin.x + viewportSize.x * 0.5f,
+            viewportMin.y + viewportSize.y * 0.5f
         };
     }
 
@@ -677,8 +871,8 @@ void GameRuntime::UpdateLockOnTarget()
         return;
     }
 
-    constexpr float kLockRadius = 118.0f;
-    constexpr float kLockRadiusSq = kLockRadius * kLockRadius;
+    const float lockRadius = (std::max)(lockRadius_, 1.0f);
+    const float kLockRadiusSq = lockRadius * lockRadius;
     float bestScore = kLockRadiusSq;
 
     for (const auto& enemy : enemies_) {
@@ -738,10 +932,12 @@ bool GameRuntime::TryProjectToScreen(
         return false;
     }
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    Math::Vector2 viewportMin{};
+    Math::Vector2 viewportSize{};
+    GetEffectiveHudViewportRect(viewportMin, viewportSize);
     screenPosition = {
-        viewport->Pos.x + (ndcX + 1.0f) * 0.5f * viewport->Size.x,
-        viewport->Pos.y + (1.0f - ndcY) * 0.5f * viewport->Size.y
+        viewportMin.x + (ndcX + 1.0f) * 0.5f * viewportSize.x,
+        viewportMin.y + (1.0f - ndcY) * 0.5f * viewportSize.y
     };
     return true;
 }
@@ -752,8 +948,10 @@ void GameRuntime::AddExplosionEffect(
 {
     ExplosionEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 26;
+    effect.duration = 32;
     effect.strength = strength;
+    effect.scoreValue = 100;
+    effect.isEnemyBurst = true;
     explosionEffects_.push_back(effect);
 }
 
@@ -834,27 +1032,6 @@ void GameRuntime::DrawExplosionEffects()
                 30,
                 1.5f);
 
-            constexpr int kSparkCount = 6;
-            for (int index = 0; index < kSparkCount; ++index) {
-                const float angle =
-                    (static_cast<float>(index) / static_cast<float>(kSparkCount)) *
-                    6.2831853f +
-                    0.35f;
-                const float inner = coinRadius * 0.35f;
-                const float outer = coinRadius * (0.92f + 0.18f * pop);
-                const ImVec2 start(
-                    center.x + std::cos(angle) * inner,
-                    center.y + std::sin(angle) * inner);
-                const ImVec2 end(
-                    center.x + std::cos(angle) * outer,
-                    center.y + std::sin(angle) * outer);
-                drawList->AddLine(
-                    start,
-                    end,
-                    IM_COL32(255, 236, 132, goldAlpha),
-                    2.0f);
-            }
-
             drawList->AddText(
                 scorePosition,
                 IM_COL32(255, 235, 120, goldAlpha),
@@ -865,43 +1042,466 @@ void GameRuntime::DrawExplosionEffects()
         drawList->AddCircleFilled(
             center,
             radius * 0.42f,
-            IM_COL32(255, 242, 130, alphaSoft),
+            IM_COL32(255, 252, 210, alphaSoft),
             36);
-        drawList->AddCircle(
-            center,
-            radius,
-            IM_COL32(255, 176, 76, alphaStrong),
-            48,
-            3.0f);
-        drawList->AddCircle(
-            center,
-            radius * 0.56f,
-            IM_COL32(118, 232, 255, alphaStrong),
-            40,
-            2.0f);
-
-        constexpr int kSparkCount = 8;
-        for (int index = 0; index < kSparkCount; ++index) {
-            const float angle =
-                (static_cast<float>(index) / static_cast<float>(kSparkCount)) *
-                6.2831853f;
-            const float inner = radius * 0.34f;
-            const float outer = radius * (0.72f + 0.22f * rate);
-            const ImVec2 start(
-                center.x + std::cos(angle) * inner,
-                center.y + std::sin(angle) * inner);
-            const ImVec2 end(
-                center.x + std::cos(angle) * outer,
-                center.y + std::sin(angle) * outer);
-            drawList->AddLine(
-                start,
-                end,
-                IM_COL32(255, 246, 176, alphaStrong),
-                2.0f);
+        if (effect.age < 4) {
+            drawList->AddCircleFilled(
+                center,
+                (30.0f - 4.5f * static_cast<float>(effect.age)) * effect.strength,
+                IM_COL32(255, 255, 255, 170 - effect.age * 36),
+                36);
+        }
+        if (effect.scoreValue > 0) {
+            const std::string scorePopup =
+                "+" + std::to_string(effect.scoreValue);
+            const ImVec2 textSize = ImGui::CalcTextSize(scorePopup.c_str());
+            const float pop =
+                std::sin((std::min)(rate, 0.42f) / 0.42f * 1.5707963f);
+            const ImVec2 scorePosition(
+                center.x - textSize.x * 0.5f,
+                center.y - 38.0f - 42.0f * rate - 8.0f * pop);
+            drawList->AddText(
+                ImVec2(scorePosition.x + 2.0f, scorePosition.y + 2.0f),
+                IM_COL32(0, 0, 0, alphaSoft),
+                scorePopup.c_str());
+            drawList->AddText(
+                scorePosition,
+                IM_COL32(255, 238, 114, alphaStrong),
+                scorePopup.c_str());
         }
     }
 }
 
+void GameRuntime::DrawEditorOverlayGuiRich()
+{
+    if (!isEditorOverlayVisible_) {
+        hasEditorOverlayViewportRect_ = false;
+        return;
+    }
+
+    hasEditorOverlayViewportRect_ = false;
+
+    const char* kWindowHierarchy = "ヒエラルキー";
+    const char* kWindowInspector = "インスペクター";
+    const char* kWindowGameView = "ゲームビュー";
+    const char* kWindowProject = "プロジェクト";
+    const char* kWindowConsole = "コンソール";
+    const char* kWindowStats = "統計";
+    const char* kWindowTuning = "ゲーム調整";
+    const char* kWindowNodeGraph = "ノードグラフ";
+    const char* kWindowTextView = "テキスト表示";
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const ImGuiID dockspaceId = ImGui::GetID("GameOverlayDockSpace");
+    const ImGuiDockNodeFlags dockspaceFlags =
+        ImGuiDockNodeFlags_NoWindowMenuButton |
+        ImGuiDockNodeFlags_NoCloseButton;
+    bool requestDockLayoutReset = false;
+    static bool showAdvancedDebugPanels = false;
+
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("\xE3\x83\x95\xE3\x82\xA1\xE3\x82\xA4\xE3\x83\xAB")) {
+            if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN " \xE8\xAA\xAD\xE3\x81\xBF\xE8\xBE\xBC\xE3\x81\xBF", "Ctrl+O")) {
+                IGFD::FileDialogConfig config{};
+                config.path = "resources";
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "GameSceneOpenDialog",
+                    "シーンを開く",
+                    ".json",
+                    config);
+            }
+            if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK " \xE4\xBF\x9D\xE5\xAD\x98", "Ctrl+S")) {
+                SaveSceneObjects(currentSceneFilePath_.c_str());
+            }
+            if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK " 名前を付けて保存")) {
+                IGFD::FileDialogConfig config{};
+                config.path = "resources";
+                config.fileName = "game_scene.json";
+                ImGuiFileDialog::Instance()->OpenDialog(
+                    "GameSceneSaveDialog",
+                    "名前を付けてシーンを保存",
+                    ".json",
+                    config);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("\xE3\x82\xBF\xE3\x82\xA4\xE3\x83\x88\xE3\x83\xAB\xE3\x81\xB8\xE6\x88\xBB\xE3\x82\x8B", "F2")) {
+                isExitRequested_ = true;
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("\xE7\xB7\xA8\xE9\x9B\x86")) {
+            ImGui::MenuItem(ICON_FA_ROTATE_LEFT " \xE5\x85\x83\xE3\x81\xAB\xE6\x88\xBB\xE3\x81\x99", "Ctrl+Z", false, false);
+            ImGui::MenuItem(ICON_FA_ROTATE_RIGHT " \xE3\x82\x84\xE3\x82\x8A\xE7\x9B\xB4\xE3\x81\x97", "Ctrl+Y", false, false);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("\xE3\x82\xB2\xE3\x83\xBC\xE3\x83\xA0\xE3\x82\xAA\xE3\x83\x96\xE3\x82\xB8\xE3\x82\xA7\xE3\x82\xAF\xE3\x83\x88")) {
+            ImGui::MenuItem(ICON_FA_USER " プレイヤー", nullptr, false, false);
+            ImGui::MenuItem(ICON_FA_BULLSEYE " 敵", nullptr, false, false);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("\xE3\x82\xA6\xE3\x82\xA3\xE3\x83\xB3\xE3\x83\x89\xE3\x82\xA6")) {
+            if (ImGui::MenuItem(ICON_FA_TABLE_COLUMNS " \xE5\x88\x9D\xE6\x9C\x9F\xE3\x83\xAC\xE3\x82\xA4\xE3\x82\xA2\xE3\x82\xA6\xE3\x83\x88\xE3\x81\xAB\xE6\x88\xBB\xE3\x81\x99")) {
+                requestDockLayoutReset = true;
+            }
+            ImGui::MenuItem(
+                ICON_FA_CODE_BRANCH " 詳細デバッグパネル",
+                nullptr,
+                &showAdvancedDebugPanels);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("\xE5\x86\x8D\xE7\x94\x9F")) {
+            ImGui::MenuItem(ICON_FA_PLAY " \xE3\x82\xB2\xE3\x83\xBC\xE3\x83\xA0\xE8\xA1\xA8\xE7\xA4\xBA\xE4\xB8\xAD", nullptr, true, false);
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("F1 GUI表示切り替え / F2 タイトルへ戻る");
+        ImGui::EndMainMenuBar();
+    }
+
+    ImGui::DockSpaceOverViewport(dockspaceId, viewport, dockspaceFlags);
+
+    static bool hasBuiltDefaultDockLayout = false;
+    if (!hasBuiltDefaultDockLayout || requestDockLayoutReset) {
+        hasBuiltDefaultDockLayout = true;
+        ImGui::DockBuilderRemoveNode(dockspaceId);
+        ImGui::DockBuilderAddNode(dockspaceId, dockspaceFlags | ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
+
+        ImGuiID mainId = dockspaceId;
+        ImGuiID leftId = 0;
+        ImGuiID rightId = 0;
+        ImGuiID rightBottomId = 0;
+        ImGuiID bottomId = 0;
+        ImGuiID centerId = 0;
+        leftId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Left, 0.22f, nullptr, &mainId);
+        rightId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Right, 0.27f, nullptr, &mainId);
+        bottomId = ImGui::DockBuilderSplitNode(mainId, ImGuiDir_Down, 0.24f, nullptr, &centerId);
+        rightBottomId = ImGui::DockBuilderSplitNode(rightId, ImGuiDir_Down, 0.48f, nullptr, &rightId);
+
+        ImGui::DockBuilderDockWindow(kWindowHierarchy, leftId);
+        ImGui::DockBuilderDockWindow(kWindowInspector, rightId);
+        ImGui::DockBuilderDockWindow(kWindowProject, bottomId);
+        ImGui::DockBuilderDockWindow(kWindowConsole, bottomId);
+        ImGui::DockBuilderDockWindow(kWindowTuning, rightBottomId);
+        ImGui::DockBuilderDockWindow(kWindowStats, rightBottomId);
+        ImGui::DockBuilderDockWindow(kWindowNodeGraph, bottomId);
+        ImGui::DockBuilderDockWindow(kWindowTextView, bottomId);
+        ImGui::DockBuilderDockWindow(kWindowGameView, centerId);
+        ImGui::DockBuilderFinish(dockspaceId);
+    }
+
+    const ImGuiWindowFlags panelFlags = ImGuiWindowFlags_NoCollapse;
+
+    if (ImGui::Begin(kWindowHierarchy, nullptr, panelFlags)) {
+        ImGui::TextUnformatted("検索");
+        ImGui::SameLine();
+        ImGui::Button(ICON_FA_PLUS, ImVec2(32.0f, 0.0f));
+        ImGui::SameLine();
+        ImGui::Button(ICON_FA_MINUS, ImVec2(32.0f, 0.0f));
+        ImGui::Separator();
+        ImGui::Selectable(ICON_FA_USER " プレイヤー", true);
+        ImGui::Selectable((std::string(ICON_FA_BULLSEYE " 敵 x ") + std::to_string(enemies_.size())).c_str(), false);
+        ImGui::Selectable((std::string(ICON_FA_CIRCLE " 自弾 x ") + std::to_string(playerBullets_.size())).c_str(), false);
+        ImGui::Selectable((std::string(ICON_FA_CIRCLE_DOT " 敵弾 x ") + std::to_string(enemyBullets_.size())).c_str(), false);
+        ImGui::Selectable((std::string(ICON_FA_COINS " ボーナスコイン x ") + std::to_string(environmentBonusCoins_.size())).c_str(), false);
+        ImGui::Selectable((std::string(ICON_FA_CUBE " シーンオブジェクト x ") + std::to_string(sceneObjects_.size())).c_str(), false);
+        ImGui::Separator();
+        ImGui::Text("ウェーブ: %d / %d", (std::min)(currentWaveIndex_ + 1, kWaveCount), kWaveCount);
+        ImGui::Text(
+            "出現数: %d / %d",
+            currentWaveIndex_ < kWaveCount ? spawnedEnemyCountInWave_ : 0,
+            currentWaveIndex_ < kWaveCount ? waveTuning_[currentWaveIndex_].enemyCount : 0);
+    }
+    ImGui::End();
+
+    if (ImGui::Begin(kWindowInspector, nullptr, panelFlags)) {
+        if (ImGui::CollapsingHeader(ICON_FA_PALETTE " 描画", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox(ICON_FA_EYE " スカイボックス", &showSkybox_);
+            const char* postEffectItems[] = {
+                "なし", "グレースケール", "ヴィネット", "ボックス 3x3", "ボックス 5x5",
+                "ガウシアン", "輝度アウトライン", "深度アウトライン", "ラジアルブラー",
+                "ディゾルブ", "ランダム", "ヴィネット + スムージング", "ゲーム調 自動",
+                "ゲーム調 低HP", "ゲーム調 クリア", "ゲーム調 ゲームオーバー"
+            };
+            ImGui::Combo("ポストエフェクト", &postEffectMode_, postEffectItems, IM_ARRAYSIZE(postEffectItems));
+        }
+        if (ImGui::CollapsingHeader(ICON_FA_USER " プレイヤー", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("HP: %d / %d", GetPlayerHp(), GetPlayerMaxHp());
+            ImGui::Text("スコア: %d", score_);
+            ImGui::Text("チャージ: %s", chargeTimer_ >= chargeShotThreshold_ ? "完了" : "蓄積中");
+            ImGui::Text("ロックオン: %s", hasLockTarget_ ? "ON" : "OFF");
+        }
+        if (ImGui::CollapsingHeader(ICON_FA_LOCATION_DOT " トランスフォーム", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const Math::Vector3 playerPosition = player_ ? player_->GetTranslate() : Math::Vector3{};
+            ImGui::Text("位置 X: %.2f", playerPosition.x);
+            ImGui::Text("位置 Y: %.2f", playerPosition.y);
+            ImGui::Text("位置 Z: %.2f", playerPosition.z);
+            ImGui::Text("レール距離: %.1f", railDistance_);
+        }
+        if (ImGui::CollapsingHeader(ICON_FA_GAMEPAD " ゲーム進行", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("撃破数: %d / %d", defeatedEnemyCount_, GetTotalEnemyTargetCount());
+            ImGui::Text("敵数: %zu", enemies_.size());
+            ImGui::Text("自弾: %zu", playerBullets_.size());
+            ImGui::Text("敵弾: %zu", enemyBullets_.size());
+        }
+    }
+    ImGui::End();
+
+    if (ImGui::Begin(kWindowGameView, nullptr, panelFlags)) {
+        const ImVec2 contentMin = ImGui::GetCursorScreenPos();
+        const ImVec2 contentAvail = ImGui::GetContentRegionAvail();
+        constexpr float kGameViewAspect = 16.0f / 9.0f;
+        ImVec2 imageSize(
+            (std::max)(contentAvail.x, 1.0f),
+            (std::max)(contentAvail.y, 1.0f));
+        if (imageSize.x / imageSize.y > kGameViewAspect) {
+            imageSize.x = imageSize.y * kGameViewAspect;
+        } else {
+            imageSize.y = imageSize.x / kGameViewAspect;
+        }
+        const ImVec2 imageOffset(
+            (std::max)(contentAvail.x - imageSize.x, 0.0f) * 0.5f,
+            (std::max)(contentAvail.y - imageSize.y, 0.0f) * 0.5f);
+        ImGui::SetCursorScreenPos(
+            ImVec2(contentMin.x + imageOffset.x, contentMin.y + imageOffset.y));
+        if (dxCommon_) {
+            ImGui::Image(
+                static_cast<ImTextureID>(dxCommon_->GetRenderTextureGpuDescriptorHandle().ptr),
+                imageSize);
+            editorOverlayViewportMin_ = {
+                contentMin.x + imageOffset.x,
+                contentMin.y + imageOffset.y
+            };
+            editorOverlayViewportSize_ = { imageSize.x, imageSize.y };
+            hasEditorOverlayViewportRect_ = imageSize.x > 1.0f && imageSize.y > 1.0f;
+        }
+    }
+    ImGui::End();
+
+    if (ImGui::Begin(kWindowProject, nullptr, panelFlags)) {
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN " 開く")) {
+            IGFD::FileDialogConfig config{};
+            config.path = "resources";
+            ImGuiFileDialog::Instance()->OpenDialog(
+                "ProjectAssetDialog",
+                "アセットを開く",
+                ".json,.png,.gltf,.obj,.dds",
+                config);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("ImGuiFileDialog");
+        ImGui::Text("現在のシーン: %s", currentSceneFilePath_.c_str());
+        ImGui::TextDisabled("%s", editorStatusMessage_.c_str());
+        ImGui::Separator();
+        ImGui::Columns(4, "GameOverlayAssetsRich", false);
+        ImGui::TextUnformatted("シーン");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("プレハブ");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("モデル");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("テクスチャ");
+        ImGui::NextColumn();
+        ImGui::Separator();
+        ImGui::TextUnformatted("resources/game_scene.json");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("resources/prefab_00.json");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("game_player");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("resources/checkerBoard.png");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("resources/scene_01.json");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("resources/prefab_01.json");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("primitive_sphere");
+        ImGui::NextColumn();
+        ImGui::TextUnformatted("resources/uvChecker.png");
+        ImGui::Columns(1);
+    }
+    ImGui::End();
+
+    if (ImGui::Begin(kWindowStats, nullptr, panelFlags)) {
+        static float historyTime[120]{};
+        static float enemyHistory[120]{};
+        static float bulletHistory[120]{};
+        static int historyOffset = 0;
+        historyTime[historyOffset] = static_cast<float>(historyOffset);
+        enemyHistory[historyOffset] = static_cast<float>(enemies_.size());
+        bulletHistory[historyOffset] =
+            static_cast<float>(playerBullets_.size() + enemyBullets_.size());
+        historyOffset = (historyOffset + 1) % 120;
+
+        ImGui::Text("スコア: %d", score_);
+        ImGui::Text("敵数: %zu", enemies_.size());
+        ImGui::Text("弾数: %zu", playerBullets_.size() + enemyBullets_.size());
+        if (ImPlot::BeginPlot("実行中カウント", ImVec2(-1.0f, 170.0f))) {
+            ImPlot::SetupAxes("フレーム", "数", ImPlotAxisFlags_NoTickLabels, 0);
+            ImPlot::PlotLine("敵", historyTime, enemyHistory, 120);
+            ImPlot::PlotLine("弾", historyTime, bulletHistory, 120);
+            ImPlot::EndPlot();
+        }
+    }
+    ImGui::End();
+
+    if (ImGui::Begin(kWindowTuning, nullptr, panelFlags)) {
+        if (ImGui::Button(ICON_FA_ROTATE_LEFT " 調整をリセット")) {
+            waveTuning_ = { {
+                { 6, 80, 26.0f },
+                { 8, 60, 30.0f },
+                { 10, 45, 34.0f }
+            } };
+            railSpeed_ = 0.045f;
+            playerBulletSpeed_ = 0.65f;
+            lockBulletSpeed_ = 0.82f;
+            chargedBulletSpeedMultiplier_ = 1.18f;
+            enemyBulletSpeed_ = 0.28f;
+            lockRadius_ = 118.0f;
+            chargeShotThreshold_ = 70;
+            normalShootCooldown_ = 8;
+            chargedShootCooldown_ = 14;
+            enemyShotInterval_ = 75;
+            waveStartDelay_ = 90;
+            editorStatusMessage_ = "ゲーム調整をリセットしました。";
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_FORWARD_STEP " 今すぐ出現")) {
+            enemySpawnTimer_ = 0;
+        }
+
+        if (ImGui::CollapsingHeader(ICON_FA_WAND_MAGIC_SPARKLES " 操作感", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.120f, "%.3f");
+            ImGui::SliderFloat("自弾速度", &playerBulletSpeed_, 0.30f, 1.20f, "%.2f");
+            ImGui::SliderFloat("ロック弾速度", &lockBulletSpeed_, 0.40f, 1.50f, "%.2f");
+            ImGui::SliderFloat("チャージ弾速度倍率", &chargedBulletSpeedMultiplier_, 1.00f, 2.00f, "%.2f");
+            ImGui::SliderFloat("敵弾速度", &enemyBulletSpeed_, 0.12f, 0.70f, "%.2f");
+            ImGui::SliderFloat("ロック範囲", &lockRadius_, 40.0f, 260.0f, "%.0f px");
+            ImGui::SliderInt("チャージ必要フレーム", &chargeShotThreshold_, 20, kChargeShotMax);
+            ImGui::SliderInt("通常射撃クールダウン", &normalShootCooldown_, 2, 24);
+            ImGui::SliderInt("チャージ射撃クールダウン", &chargedShootCooldown_, 4, 36);
+            ImGui::SliderInt("敵射撃間隔", &enemyShotInterval_, 20, 180);
+        }
+
+        if (ImGui::CollapsingHeader(ICON_FA_LAYER_GROUP " ウェーブ", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::SliderInt("ウェーブ開始待ち", &waveStartDelay_, 0, 180);
+            for (int index = 0; index < kWaveCount; ++index) {
+                ImGui::PushID(index);
+                char label[32]{};
+                std::snprintf(label, sizeof(label), "ウェーブ %d", index + 1);
+                if (ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::SliderInt("敵数", &waveTuning_[index].enemyCount, 1, 30);
+                    ImGui::SliderInt("出現間隔", &waveTuning_[index].spawnInterval, 10, 180);
+                    ImGui::SliderFloat("出現距離", &waveTuning_[index].spawnLeadDistance, 12.0f, 60.0f, "%.1f");
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::Text("現在のウェーブ: %d / %d", (std::min)(currentWaveIndex_ + 1, kWaveCount), kWaveCount);
+        ImGui::Text("出現済み: %d", spawnedEnemyCountInWave_);
+        ImGui::Text("次の出現タイマー: %d", enemySpawnTimer_);
+        ImGui::Text("合計敵数: %d", GetTotalEnemyTargetCount());
+    }
+    ImGui::End();
+
+    if (showAdvancedDebugPanels) {
+        if (ImGui::Begin(kWindowNodeGraph, &showAdvancedDebugPanels, panelFlags)) {
+            namespace ed = ax::NodeEditor;
+            static ed::EditorContext* editorContext = ed::CreateEditor();
+            ed::SetCurrentEditor(editorContext);
+            ed::Begin("RuntimeFlow");
+            ed::BeginNode(1);
+            ImGui::TextUnformatted(ICON_FA_PLAY " 実行処理");
+            ed::BeginPin(11, ed::PinKind::Output);
+            ImGui::TextUnformatted("更新");
+            ed::EndPin();
+            ed::EndNode();
+            ed::BeginNode(2);
+            ImGui::TextUnformatted(ICON_FA_CHART_LINE " 統計");
+            ed::BeginPin(21, ed::PinKind::Input);
+            ImGui::Text("スコア %d", score_);
+            ed::EndPin();
+            ed::EndNode();
+            ed::Link(100, 11, 21);
+            ed::End();
+            ed::SetCurrentEditor(nullptr);
+        }
+        ImGui::End();
+
+        if (ImGui::Begin(kWindowTextView, &showAdvancedDebugPanels, panelFlags)) {
+            static TextEditor editor;
+            static bool isEditorInitialized = false;
+            if (!isEditorInitialized) {
+                editor.SetLanguageDefinition(TextEditor::LanguageDefinition::HLSL());
+                editor.SetReadOnly(true);
+                editor.SetText(
+                    "{\n"
+                    "  \"scene\": \"resources/game_scene.json\",\n"
+                    "  \"score\": 0,\n"
+                    "  \"features\": [\"ImGuiFileDialog\", \"ImPlot\", \"NodeEditor\", \"ColorTextEdit\"]\n"
+                    "}\n");
+                isEditorInitialized = true;
+            }
+            static std::string lastTextViewScenePath;
+            static int lastTextViewScore = -1;
+            if (lastTextViewScenePath != currentSceneFilePath_ ||
+                lastTextViewScore != score_) {
+                char buffer[512]{};
+                std::snprintf(
+                    buffer,
+                    sizeof(buffer),
+                    "{\n"
+                    "  \"scene\": \"%s\",\n"
+                    "  \"score\": %d,\n"
+                    "  \"sceneObjects\": %zu,\n"
+                    "  \"features\": [\"ImGuiFileDialog\", \"ImPlot\", \"NodeEditor\", \"ColorTextEdit\"]\n"
+                    "}\n",
+                    currentSceneFilePath_.c_str(),
+                    score_,
+                    sceneObjects_.size());
+                editor.SetText(buffer);
+                lastTextViewScenePath = currentSceneFilePath_;
+                lastTextViewScore = score_;
+            }
+            ImGui::TextDisabled("ImGuiColorTextEdit");
+            editor.Render("RuntimeJsonPreview", ImVec2(-1.0f, -1.0f));
+        }
+        ImGui::End();
+    }
+
+    if (ImGui::Begin(kWindowConsole, nullptr, panelFlags)) {
+        ImGui::TextUnformatted("F1: GUI表示切り替え");
+        ImGui::TextUnformatted("F2: タイトルへ戻る");
+        ImGui::TextUnformatted("タブをドラッグするとレイアウトを並べ替えできます。");
+        ImGui::Separator();
+        ImGui::TextWrapped("%s", editorStatusMessage_.c_str());
+    }
+    ImGui::End();
+
+    if (ImGuiFileDialog::Instance()->Display("GameSceneOpenDialog", ImGuiWindowFlags_NoCollapse, ImVec2(760, 460))) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            LoadSceneObjects(ImGuiFileDialog::Instance()->GetFilePathName().c_str());
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+    if (ImGuiFileDialog::Instance()->Display("GameSceneSaveDialog", ImGuiWindowFlags_NoCollapse, ImVec2(760, 460))) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            SaveSceneObjects(ImGuiFileDialog::Instance()->GetFilePathName().c_str());
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+    if (ImGuiFileDialog::Instance()->Display("ProjectAssetDialog", ImGuiWindowFlags_NoCollapse, ImVec2(760, 460))) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            editorStatusMessage_ =
+                "選択中のアセット: " +
+                ImGuiFileDialog::Instance()->GetFilePathName();
+        }
+        ImGuiFileDialog::Instance()->Close();
+    }
+}
 void GameRuntime::DrawHud()
 {
     if (!player_) {
@@ -909,87 +1509,169 @@ void GameRuntime::DrawHud()
     }
 
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    const ImVec2 origin = ImGui::GetMainViewport()->Pos;
-    const ImVec2 panelMin(origin.x + 22.0f, origin.y + 22.0f);
-    const ImVec2 panelMax(panelMin.x + 238.0f, panelMin.y + 78.0f);
-    const ImVec2 barMin(panelMin.x + 16.0f, panelMin.y + 30.0f);
-    const ImVec2 barMax(barMin.x + 190.0f, barMin.y + 12.0f);
-    const ImVec2 chargeBarMin(panelMin.x + 16.0f, panelMin.y + 58.0f);
-    const ImVec2 chargeBarMax(chargeBarMin.x + 190.0f, chargeBarMin.y + 8.0f);
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 origin(hudMin.x, hudMin.y);
+    const ImVec2 drawSize(hudSize.x, hudSize.y);
 
     const int maxHp = (std::max)(GetPlayerMaxHp(), 1);
     const int hp = (std::clamp)(GetPlayerHp(), 0, maxHp);
     const float hpRate =
         static_cast<float>(hp) / static_cast<float>(maxHp);
-    const ImVec2 fillMax(
-        barMin.x + (barMax.x - barMin.x) * hpRate,
-        barMax.y);
-
-    drawList->AddRectFilled(
-        panelMin,
-        panelMax,
-        IM_COL32(10, 15, 26, 178),
-        5.0f);
-    drawList->AddRect(
-        panelMin,
-        panelMax,
-        IM_COL32(120, 170, 220, 80),
-        5.0f);
-    drawList->AddText(
-        ImVec2(panelMin.x + 14.0f, panelMin.y + 8.0f),
-        IM_COL32(235, 244, 255, 235),
-        "HP");
-    drawList->AddText(
-        ImVec2(panelMin.x + 178.0f, panelMin.y + 8.0f),
-        IM_COL32(210, 224, 238, 220),
-        (std::to_string(hp) + "/" + std::to_string(maxHp)).c_str());
-    drawList->AddRectFilled(
-        barMin,
-        barMax,
-        IM_COL32(28, 36, 52, 230),
-        3.0f);
-    drawList->AddRectFilled(
-        barMin,
-        fillMax,
-        IM_COL32(84, 230, 142, 245),
-        3.0f);
-    drawList->AddRect(
-        barMin,
-        barMax,
-        IM_COL32(235, 245, 255, 105),
-        3.0f);
-
     const float chargeRate = (std::clamp)(
-        static_cast<float>(chargeTimer_) / static_cast<float>(kChargeShotThreshold),
+        static_cast<float>(chargeTimer_) /
+        static_cast<float>((std::max)(chargeShotThreshold_, 1)),
         0.0f,
         1.0f);
-    const bool isChargeReady = chargeTimer_ >= kChargeShotThreshold;
-    const ImVec2 chargeFillMax(
-        chargeBarMin.x + (chargeBarMax.x - chargeBarMin.x) * chargeRate,
-        chargeBarMax.y);
-    drawList->AddText(
-        ImVec2(panelMin.x + 14.0f, panelMin.y + 44.0f),
-        IM_COL32(220, 235, 248, 210),
-        "CHG");
+    const bool isChargeReady = chargeTimer_ >= chargeShotThreshold_;
+    auto drawBar = [drawList](
+                       const ImVec2& min,
+                       const ImVec2& max,
+                       float rate,
+                       ImU32 fillColor) {
+        const ImVec2 fillMax(
+            min.x + (max.x - min.x) * (std::clamp)(rate, 0.0f, 1.0f),
+            max.y);
+        drawList->AddRectFilled(min, max, IM_COL32(17, 24, 38, 225), 4.0f);
+        drawList->AddRectFilled(min, fillMax, fillColor, 4.0f);
+        drawList->AddRect(min, max, IM_COL32(228, 242, 255, 95), 4.0f);
+    };
+
+    if (hpRate <= 0.34f && !isGameOver_) {
+        const int alertAlpha = static_cast<int>(
+            28.0f + (0.34f - hpRate) * 170.0f +
+            18.0f * (0.5f + 0.5f * std::sin(cameraTimer_ * 8.0f)));
+        drawList->AddRectFilled(
+            origin,
+            ImVec2(origin.x + drawSize.x, origin.y + drawSize.y),
+            IM_COL32(210, 34, 58, (std::clamp)(alertAlpha, 0, 86)));
+    }
+
+    const ImVec2 playerPanelMin(origin.x + 18.0f, origin.y + 18.0f);
+    const ImVec2 playerPanelMax(playerPanelMin.x + 300.0f, playerPanelMin.y + 116.0f);
+    const ImVec2 hpBarMin(playerPanelMin.x + 18.0f, playerPanelMin.y + 48.0f);
+    const ImVec2 hpBarMax(hpBarMin.x + 244.0f, hpBarMin.y + 15.0f);
+    const ImVec2 chargeBarMin(playerPanelMin.x + 18.0f, playerPanelMin.y + 84.0f);
+    const ImVec2 chargeBarMax(chargeBarMin.x + 244.0f, chargeBarMin.y + 10.0f);
+    const std::string hpText = std::to_string(hp) + " / " + std::to_string(maxHp);
+    const ImU32 hpColor =
+        hpRate < 0.3f ? IM_COL32(255, 86, 94, 245) :
+        hpRate < 0.55f ? IM_COL32(255, 205, 88, 245) :
+                         IM_COL32(86, 232, 148, 245);
+
     drawList->AddRectFilled(
-        chargeBarMin,
-        chargeBarMax,
-        IM_COL32(26, 34, 48, 215),
-        3.0f);
+        ImVec2(playerPanelMin.x + 4.0f, playerPanelMin.y + 5.0f),
+        ImVec2(playerPanelMax.x + 4.0f, playerPanelMax.y + 5.0f),
+        IM_COL32(0, 0, 0, 80),
+        6.0f);
     drawList->AddRectFilled(
-        chargeBarMin,
-        chargeFillMax,
-        isChargeReady ?
-            IM_COL32(105, 235, 255, 245) :
-            IM_COL32(245, 205, 82, 225),
-        3.0f);
+        playerPanelMin,
+        playerPanelMax,
+        IM_COL32(8, 13, 25, 188),
+        6.0f);
     drawList->AddRect(
+        playerPanelMin,
+        playerPanelMax,
+        IM_COL32(110, 178, 232, 95),
+        6.0f);
+    drawList->AddRectFilled(
+        playerPanelMin,
+        ImVec2(playerPanelMax.x, playerPanelMin.y + 4.0f),
+        IM_COL32(104, 225, 255, 210),
+        6.0f);
+    drawList->AddText(
+        ImVec2(playerPanelMin.x + 16.0f, playerPanelMin.y + 14.0f),
+        IM_COL32(232, 244, 255, 245),
+        "プレイヤー");
+    drawList->AddText(
+        ImVec2(playerPanelMax.x - 74.0f, playerPanelMin.y + 14.0f),
+        IM_COL32(168, 222, 255, 225),
+        hasLockTarget_ ? "ロック" : "照準");
+    drawList->AddText(
+        ImVec2(hpBarMin.x, hpBarMin.y - 18.0f),
+        IM_COL32(196, 214, 232, 215),
+        "HP");
+    drawList->AddText(
+        ImVec2(hpBarMax.x - ImGui::CalcTextSize(hpText.c_str()).x, hpBarMin.y - 18.0f),
+        IM_COL32(232, 244, 255, 235),
+        hpText.c_str());
+    drawBar(hpBarMin, hpBarMax, hpRate, hpColor);
+
+    drawList->AddText(
+        ImVec2(chargeBarMin.x, chargeBarMin.y - 18.0f),
+        IM_COL32(196, 214, 232, 215),
+        "チャージ");
+    const char* chargeStatusText = isChargeReady ? "準備完了" : "蓄積中";
+    const ImVec2 chargeStatusSize = ImGui::CalcTextSize(chargeStatusText);
+    drawList->AddText(
+        ImVec2(chargeBarMax.x - chargeStatusSize.x, chargeBarMin.y - 18.0f),
+        isChargeReady ? IM_COL32(116, 242, 255, 245) :
+                        IM_COL32(198, 214, 232, 190),
+        chargeStatusText);
+    drawBar(
         chargeBarMin,
         chargeBarMax,
-        isChargeReady || chargeFlashTimer_ > 0 ?
-            IM_COL32(175, 250, 255, 180) :
-            IM_COL32(235, 245, 255, 85),
-        3.0f);
+        chargeRate,
+        isChargeReady ? IM_COL32(112, 232, 255, 245) :
+                        IM_COL32(248, 205, 82, 230));
+    if (isChargeReady) {
+        drawList->AddRect(
+            ImVec2(chargeBarMin.x - 2.0f, chargeBarMin.y - 2.0f),
+            ImVec2(chargeBarMax.x + 2.0f, chargeBarMax.y + 2.0f),
+            IM_COL32(154, 248, 255, 120),
+            5.0f,
+            0,
+            2.0f);
+    }
+
+    const ImVec2 scorePanelMax(
+        origin.x + drawSize.x - 18.0f,
+        origin.y + 90.0f);
+    const ImVec2 scorePanelMin(scorePanelMax.x - 242.0f, origin.y + 18.0f);
+    const int waveNumber = currentWaveIndex_ < kWaveCount ? currentWaveIndex_ + 1 : kWaveCount;
+    const int waveEnemyCount =
+        currentWaveIndex_ < kWaveCount ? waveTuning_[currentWaveIndex_].enemyCount : 0;
+    const std::string scoreText = std::to_string(score_);
+    const std::string waveText =
+        "ウェーブ " + std::to_string(waveNumber) + " / " + std::to_string(kWaveCount);
+    const std::string enemyText =
+        "敵 " + std::to_string(enemies_.size()) + "  出現 " +
+        std::to_string(currentWaveIndex_ < kWaveCount ? spawnedEnemyCountInWave_ : waveEnemyCount) +
+        " / " + std::to_string(waveEnemyCount);
+
+    drawList->AddRectFilled(
+        ImVec2(scorePanelMin.x + 4.0f, scorePanelMin.y + 5.0f),
+        ImVec2(scorePanelMax.x + 4.0f, scorePanelMax.y + 5.0f),
+        IM_COL32(0, 0, 0, 72),
+        6.0f);
+    drawList->AddRectFilled(
+        scorePanelMin,
+        scorePanelMax,
+        IM_COL32(8, 13, 25, 170),
+        6.0f);
+    drawList->AddRect(
+        scorePanelMin,
+        scorePanelMax,
+        IM_COL32(245, 219, 126, 100),
+        6.0f);
+    drawList->AddText(
+        ImVec2(scorePanelMin.x + 14.0f, scorePanelMin.y + 10.0f),
+        IM_COL32(248, 225, 128, 240),
+        "スコア");
+    drawList->AddText(
+        ImVec2(scorePanelMax.x - 16.0f - ImGui::CalcTextSize(scoreText.c_str()).x,
+               scorePanelMin.y + 10.0f),
+        IM_COL32(255, 246, 185, 255),
+        scoreText.c_str());
+    drawList->AddText(
+        ImVec2(scorePanelMin.x + 14.0f, scorePanelMin.y + 36.0f),
+        IM_COL32(205, 224, 242, 220),
+        waveText.c_str());
+    drawList->AddText(
+        ImVec2(scorePanelMin.x + 14.0f, scorePanelMin.y + 54.0f),
+        IM_COL32(180, 202, 222, 205),
+        enemyText.c_str());
 
     DrawExplosionEffects();
     DrawLockOnHud();
@@ -1029,6 +1711,14 @@ void GameRuntime::DrawLockOnHud()
         ImVec2(reticleScreen_.x, reticleScreen_.y + kReticleSize + kReticleGap),
         reticleColor,
         2.0f);
+
+    const char* reticleLabel = hasLockTarget_ ? "ロック中" : "照準";
+    const ImVec2 labelSize = ImGui::CalcTextSize(reticleLabel);
+    drawList->AddText(
+        ImVec2(reticleScreen_.x - labelSize.x * 0.5f, reticleScreen_.y + 34.0f),
+        hasLockTarget_ ? IM_COL32(110, 255, 190, 235) :
+                         IM_COL32(210, 226, 244, 160),
+        reticleLabel);
 
     if (!hasLockTarget_) {
         return;
@@ -1093,11 +1783,15 @@ void GameRuntime::DrawResultOverlay()
         return;
     }
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 origin(hudMin.x, hudMin.y);
+    const ImVec2 drawSize(hudSize.x, hudSize.y);
     const ImVec2 center(
-        viewport->Pos.x + viewport->Size.x * 0.5f,
-        viewport->Pos.y + viewport->Size.y * 0.44f);
+        origin.x + drawSize.x * 0.5f,
+        origin.y + drawSize.y * 0.44f);
     const ImVec2 panelSize(340.0f, 112.0f);
     const ImVec2 panelMin(
         center.x - panelSize.x * 0.5f,
@@ -1107,7 +1801,7 @@ void GameRuntime::DrawResultOverlay()
         center.y + panelSize.y * 0.5f);
 
     const char* title = isGameClear_ ? "MISSION CLEAR" : "GAME OVER";
-    const char* guide = "F2: 編集モードへ戻る";
+    const char* guide = "F2: タイトルへ戻る";
     const ImVec2 titleSize = ImGui::CalcTextSize(title);
     const ImVec2 guideSize = ImGui::CalcTextSize(guide);
 
@@ -1166,11 +1860,23 @@ void GameRuntime::UpdateEnemies()
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
         (*iterator)->Update(railDistance_);
         if ((*iterator)->IsDead()) {
+            if ((*iterator)->HasEscaped() && spawnedEnemyCountInWave_ > defeatedEnemyCountInWave_) {
+                --spawnedEnemyCountInWave_;
+            }
             iterator = enemies_.erase(iterator);
         } else {
             ++iterator;
         }
     }
+}
+
+int GameRuntime::GetTotalEnemyTargetCount() const
+{
+    int total = 0;
+    for (const WaveTuning& wave : waveTuning_) {
+        total += wave.enemyCount;
+    }
+    return total;
 }
 
 void GameRuntime::CheckBulletBonusCoinCollisions()
@@ -1239,14 +1945,16 @@ void GameRuntime::CheckBulletEnemyCollisions()
             if (DistanceSquared(
                 bullet->GetTranslate(),
                 enemy->GetTranslate()) <= radius * radius) {
+                const bool isChargedHit = bullet->GetRadius() >= 0.8f;
                 AddExplosionEffect(
                     enemy->GetTranslate(),
-                    bullet->GetRadius() >= 0.8f ? 1.28f : 1.0f);
+                    isChargedHit ? 1.32f : 1.0f);
                 bullet->RegisterHit();
                 enemy->Kill();
-                AddCameraShake(0.045f, 8);
+                AddCameraShake(isChargedHit ? 0.075f : 0.045f, isChargedHit ? 11 : 8);
                 score_ += 100;
                 ++defeatedEnemyCount_;
+                ++defeatedEnemyCountInWave_;
                 if (bullet->IsDead()) {
                     break;
                 }

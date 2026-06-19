@@ -45,16 +45,18 @@ void WinApp::Initialize()
 
 	// ウィンドウサイズを表す構造体にクライアント領域を入れる
 	RECT wrc = { 0, 0, kClientWidth, kClientHeight };
+	const DWORD windowStyle =
+		WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX;
 
 	// クライアント領域を元に実際のサイズにwrcを変更してもらう
-	AdjustWindowRect(&wrc, WS_OVERLAPPEDWINDOW, false);
+	AdjustWindowRect(&wrc, windowStyle, false);
 
 
 	// ウィンドウの作成
 	hwnd = CreateWindow(
 		wc.lpszClassName, // ウィンドウクラス名
 		L"CG2", // ウィンドウ名
-		WS_OVERLAPPEDWINDOW, // ウィンドウスタイル
+		windowStyle, // ウィンドウスタイル
 		CW_USEDEFAULT, // 表示X座標(Windowsに任せる
 		CW_USEDEFAULT, // 表示Y座標
 		wrc.right - wrc.left, // ウィンドウ横幅

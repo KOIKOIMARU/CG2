@@ -9,7 +9,7 @@ public:
     MyGame();
     ~MyGame() override;
 
-    void Initialize() override; 
+    void Initialize() override;
     void Finalize() override;
     void Update() override;
     void Draw() override;

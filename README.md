@@ -1,3 +1,62 @@
-[![DebugBuild](https://github.com/KOIKOIMARU/CG2/actions/workflows/DebugBuild.yml/badge.svg)](https://github.com/KOIKOIMARU/CG2/actions/workflows/DebugBuild.yml)
-[![ReleaseBuild](https://github.com/KOIKOIMARU/CG2/actions/workflows/ReleaseBuild.yml/badge.svg)](https://github.com/KOIKOIMARU/CG2/actions/workflows/ReleaseBuild.yml)
-[![DevelopmentBuild](https://github.com/KOIKOIMARU/CG2/actions/workflows/DevelopmentBuild.yml/badge.svg)](https://github.com/KOIKOIMARU/CG2/actions/workflows/DevelopmentBuild.yml)
+# LE3B_07_コイズミ_リョウ
+
+## 課題内容
+
+個人制作ゲーム内で使用している HitEffect の紹介用 ReadMe です。
+
+本作品は、空中を進みながら敵を撃破していく 3D レールシューティングです。プレイヤーは照準を動かして敵を狙い、通常弾やチャージショットで敵を倒します。ゲーム内の演出として、敵撃破時と環境マッピング付きコイン取得時に HitEffect を表示しています。
+
+## 実装している HitEffect
+
+### 敵撃破エフェクト
+
+敵に弾が当たって撃破された位置に、短時間の白いフラッシュと柔らかい円形グローを表示します。撃破したことが分かりやすいように、同時にスコア加算表示も出ます。
+
+- 発生条件: プレイヤー弾が敵に命中して撃破した時
+- 表示内容: 白い瞬間フラッシュ、フェードする円形グロー、`+100` スコア表示
+- 目的: 命中感、撃破感、スコア獲得を一瞬で伝える
+- 実装箇所:
+  - `project/src/app/GameRuntime.cpp`
+  - `GameRuntime::AddExplosionEffect`
+  - `GameRuntime::DrawExplosionEffects`
+
+### コイン取得エフェクト
+
+キューブマップテクスチャによる環境マッピングを使用した金色のコインを取得した時に、金色の発光とスコア表示を出します。敵撃破エフェクトとは色を変え、報酬を得たことが伝わりやすい見た目にしています。
+
+- 発生条件: プレイヤーまたは弾がボーナスコインに触れた時
+- 表示内容: 金色の円形グロー、フェードする円形アウトライン、`+250` スコア表示
+- 目的: アイテム取得の気持ちよさと報酬感を出す
+- 実装箇所:
+  - `project/src/app/GameRuntime.cpp`
+  - `GameRuntime::AddCoinCollectEffect`
+  - `GameRuntime::DrawExplosionEffects`
+
+## 工夫した点
+
+- 実際のゲーム中に使う演出として、画面を邪魔しすぎない短い表示時間にしています。
+- 敵撃破とコイン取得で色を分け、プレイヤーが何を起こしたのか分かりやすくしています。
+- スコア表示をエフェクトと同時に出すことで、フィードバック・ループを強くしています。
+- 線や破片を大量に出すのではなく、円形の光と文字表示中心にして、ゲーム画面の視認性を保っています。
+
+## 操作方法
+
+- `Enter`: タイトルからゲーム開始
+- `Mouse`: 照準移動
+- `Left Click`: 射撃
+- `Space`: チャージショット
+- `F1`: GUI 表示切り替え
+- `F2`: タイトルへ戻る
+
+## 動画で見せるポイント
+
+30 秒以内の紹介動画では、以下の流れで撮影すると分かりやすいです。
+
+1. ゲーム開始直後に敵を撃破し、白い HitEffect と `+100` 表示を見せる。
+2. コインを取得し、金色の取得エフェクトと `+250` 表示を見せる。
+3. 可能ならチャージショットで複数の敵を倒し、ゲーム中で自然に使われている演出だと分かる場面を入れる。
+
+## ビルド
+
+Visual Studio で `project/CG2.sln` または `project/CG2.vcxproj` を開き、`Debug x64` または `Release x64` でビルドしてください。
+

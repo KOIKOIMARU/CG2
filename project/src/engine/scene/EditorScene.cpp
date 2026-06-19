@@ -13,6 +13,7 @@
 #include "engine/base/SrvManager.h"
 #include "engine/scene/SceneSerializer.h"
 #include "engine/scene/SceneManager.h"
+#include "engine/scene/SceneType.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
 #include <algorithm>
@@ -984,10 +985,6 @@ void EditorScene::HandleEditorShortcuts()
         editorManager_.ToggleEditorGuiVisible();
     }
 
-    if (input_ && input_->TriggerKey(DIK_F2)) {
-        editorManager_.SetPlayMode(!editorManager_.IsPlayMode());
-    }
-
     if (!editorManager_.IsPlayMode() && input_ && input_->TriggerKey(DIK_F3)) {
         isDebugCameraEnabled_ = !isDebugCameraEnabled_;
     }
@@ -1010,9 +1007,7 @@ void EditorScene::ApplyPlayModeRequests(bool& startedPlayModeThisFrame)
     if (editorManager_.ConsumeStartPlayModeRequest()) {
         editorManager_.SetMode(EditorManager::EditorMode::Play);
     }
-    if (editorManager_.ConsumeStopPlayModeRequest()) {
-        editorManager_.SetMode(EditorManager::EditorMode::Edit);
-    }
+    editorManager_.ConsumeStopPlayModeRequest();
 
     const bool isPlayMode = editorManager_.IsPlayMode();
     if (isPlayMode && !wasPlayMode_) {
@@ -1041,6 +1036,13 @@ void EditorScene::Update() {
 
     ShowEditorGui(inspectObjects);
 
+    Math::Vector2 hudViewportMin{};
+    Math::Vector2 hudViewportSize{};
+    const bool hasHudViewport =
+        imguiManager_ &&
+        imguiManager_->GetLastViewportImageRect(hudViewportMin, hudViewportSize);
+    playController_.SetHudViewportRect(hasHudViewport, hudViewportMin, hudViewportSize);
+
     bool startedPlayModeThisFrame = false;
     ApplyPlayModeRequests(startedPlayModeThisFrame);
 
@@ -1052,6 +1054,9 @@ void EditorScene::Update() {
                 postEffectMode_);
             if (playController_.IsExitRequested()) {
                 ExitPlayMode();
+                if (sceneManager_) {
+                    sceneManager_->SetNextScene(SceneType::Title);
+                }
             }
         }
         return;
@@ -1221,6 +1226,12 @@ void EditorScene::UpdateDebugCamera(float deltaTime)
 
 void EditorScene::Draw() {
     if (editorManager_.IsPlayMode() && playController_.IsRunning()) {
+        Math::Vector2 hudViewportMin{};
+        Math::Vector2 hudViewportSize{};
+        const bool hasHudViewport =
+            imguiManager_ &&
+            imguiManager_->GetLastViewportImageRect(hudViewportMin, hudViewportSize);
+        playController_.SetHudViewportRect(hasHudViewport, hudViewportMin, hudViewportSize);
         playController_.Draw();
         return;
     }
