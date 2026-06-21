@@ -748,8 +748,8 @@ void GameRuntime::FirePlayerBullet()
     const Math::Vector3 aimDirection = CalculateAimDirection(spawnPosition);
     Math::Vector3 velocity = aimDirection * playerBulletSpeed_;
     Math::Vector4 color{ 1.0f, 0.90f, 0.42f, 1.0f };
-    Math::Vector3 scale{ 0.32f, 0.32f, 1.12f };
-    float collisionRadius = 0.44f;
+    Math::Vector3 scale{ 0.24f, 0.24f, 0.92f };
+    float collisionRadius = 0.40f;
     int lifeTimer = 180;
     int hitLimit = 1;
     const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
@@ -757,7 +757,7 @@ void GameRuntime::FirePlayerBullet()
     if (isCharged) {
         velocity = aimDirection * lockBulletSpeed_ * chargedBulletSpeedMultiplier_;
         color = { 0.58f, 1.0f, 0.92f, 1.0f };
-        scale = { 0.62f, 0.62f, 1.82f };
+        scale = { 0.44f, 0.44f, 1.48f };
         collisionRadius = 0.82f;
         lifeTimer = 260;
         hitLimit = 1;
@@ -776,26 +776,26 @@ void GameRuntime::FirePlayerBullet()
         hitLimit,
         effectBulletGlowModel_,
         isCharged ?
-            Math::Vector4{ 0.18f, 0.88f, 1.0f, 0.42f } :
-            Math::Vector4{ 1.0f, 0.82f, 0.30f, 0.34f },
+            Math::Vector4{ 0.28f, 0.95f, 1.0f, 0.34f } :
+            Math::Vector4{ 1.0f, 0.84f, 0.34f, 0.26f },
         isCharged ?
-            Math::Vector3{ 1.08f, 1.08f, 1.0f } :
-            Math::Vector3{ 0.58f, 0.58f, 1.0f },
-        effectBulletGlowModel_,
+            Math::Vector3{ 0.76f, 0.76f, 1.0f } :
+            Math::Vector3{ 0.42f, 0.42f, 1.0f },
+        effectBulletTrailModel_,
         isCharged ?
-            Math::Vector4{ 0.20f, 0.94f, 1.0f, 0.62f } :
-            Math::Vector4{ 1.0f, 0.72f, 0.16f, 0.46f },
+            Math::Vector4{ 0.50f, 1.0f, 0.94f, 0.72f } :
+            Math::Vector4{ 1.0f, 0.82f, 0.26f, 0.58f },
         isCharged ?
-            Math::Vector3{ 0.38f, 1.95f, 1.0f } :
-            Math::Vector3{ 0.22f, 1.18f, 1.0f },
-        isCharged ? 1.42f : 0.82f,
+            Math::Vector3{ 0.22f, 2.95f, 1.0f } :
+            Math::Vector3{ 0.13f, 1.82f, 1.0f },
+        isCharged ? 2.10f : 1.18f,
         effectSparkStarModel_,
         isCharged ?
-            Math::Vector4{ 0.82f, 1.0f, 0.92f, 0.76f } :
-            Math::Vector4{ 1.0f, 0.92f, 0.46f, 0.52f },
+            Math::Vector4{ 0.86f, 1.0f, 0.90f, 0.84f } :
+            Math::Vector4{ 1.0f, 0.95f, 0.56f, 0.68f },
         isCharged ?
-            Math::Vector3{ 0.20f, 0.20f, 1.0f } :
-            Math::Vector3{ 0.12f, 0.12f, 1.0f });
+            Math::Vector3{ 0.13f, 0.13f, 1.0f } :
+            Math::Vector3{ 0.075f, 0.075f, 1.0f });
     if (isCharged) {
         bullet->EnableHoming(0.075f);
         if (lockedEnemy_) {
@@ -803,7 +803,9 @@ void GameRuntime::FirePlayerBullet()
         }
     }
     playerBullets_.push_back(std::move(bullet));
-    AddMuzzleFlashEffect(spawnPosition, isCharged);
+    if (isCharged) {
+        AddMuzzleFlashEffect(spawnPosition, true);
+    }
     chargeTimer_ = 0;
     if (isCharged) {
         chargeFlashTimer_ = 18;
@@ -825,18 +827,21 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         bulletModel_,
         spawnPosition,
         { 0.0f, 0.0f, -enemyBulletSpeed_ },
-        { 1.0f, 0.18f, 0.14f, 1.0f },
+        { 1.0f, 0.12f, 0.20f, 1.0f },
         240,
-        { 0.56f, 0.56f, 0.54f },
+        { 0.42f, 0.42f, 0.60f },
         0.55f,
         1,
         effectBulletGlowModel_,
-        { 1.0f, 0.10f, 0.08f, 0.22f },
-        { 0.58f, 0.58f, 1.0f },
-        effectBulletGlowModel_,
-        { 1.0f, 0.08f, 0.06f, 0.24f },
-        { 0.15f, 0.82f, 1.0f },
-        0.56f);
+        { 1.0f, 0.05f, 0.14f, 0.46f },
+        { 0.82f, 0.82f, 1.0f },
+        effectBulletTrailModel_,
+        { 1.0f, 0.08f, 0.22f, 0.62f },
+        { 0.30f, 1.42f, 1.0f },
+        0.74f,
+        effectSparkStarModel_,
+        { 1.0f, 0.32f, 0.44f, 0.68f },
+        { 0.08f, 0.08f, 1.0f });
     enemyBullets_.push_back(std::move(bullet));
 }
 

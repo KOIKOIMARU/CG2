@@ -40,6 +40,8 @@ void Bullet::Initialize(
     initialLifeTimer_ = lifeTimer;
     object_->SetScale(bodyBaseScale_);
     object_->SetColor(bodyBaseColor_);
+    object_->SetLightingMode(0);
+    object_->SetEnvironmentCoefficient(0.0f);
 
     translate_ = position;
     startTranslate_ = position;
@@ -250,10 +252,11 @@ void Bullet::DrawGlow(const Math::Vector3& cameraRotate)
             trail->Draw();
         };
 
-        drawTrailNode(trailEchoObjects_[2].get(), 3.15f, 1.70f, 0.36f);
-        drawTrailNode(trailEchoObjects_[1].get(), 2.35f, 1.42f, 0.52f);
-        drawTrailNode(trailEchoObjects_[0].get(), 1.65f, 1.18f, 0.72f);
-        drawTrailNode(trailObject_.get(), 0.92f, 0.96f, 0.94f);
+        drawTrailNode(trailEchoObjects_[3].get(), 5.40f, 1.22f, 0.20f);
+        drawTrailNode(trailEchoObjects_[2].get(), 3.95f, 1.08f, 0.36f);
+        drawTrailNode(trailEchoObjects_[1].get(), 2.55f, 0.96f, 0.56f);
+        drawTrailNode(trailEchoObjects_[0].get(), 1.45f, 0.86f, 0.78f);
+        drawTrailNode(trailObject_.get(), 0.70f, 0.82f, 0.98f);
     }
     if (!isDead_ && glowObject_) {
         glowObject_->SetRotate(cameraRotate);
@@ -278,13 +281,15 @@ void Bullet::DrawGlow(const Math::Vector3& cameraRotate)
             }
 
             const float indexF = static_cast<float>(index);
-            const float phase = static_cast<float>(age_) * (0.42f + indexF * 0.07f) + indexF * 1.73f;
-            const float lane = indexF - 2.0f;
-            const float offsetScale = 1.15f + indexF * 0.44f;
-            const float side = std::sin(phase) * (0.055f + indexF * 0.006f);
-            const float up = std::cos(phase * 0.83f) * (0.045f + indexF * 0.005f);
-            const float sparklePulse = 0.72f + 0.28f * std::sin(phase * 1.31f);
-            const float fade = (1.0f - indexF * 0.08f) * (0.78f + 0.22f * lifeRate);
+            const float centerIndex =
+                (static_cast<float>(sparkleObjects_.size()) - 1.0f) * 0.5f;
+            const float phase = static_cast<float>(age_) * (0.56f + indexF * 0.045f) + indexF * 1.37f;
+            const float lane = indexF - centerIndex;
+            const float offsetScale = 0.95f + indexF * 0.72f;
+            const float side = std::sin(phase) * (0.035f + indexF * 0.0035f);
+            const float up = std::cos(phase * 0.83f) * (0.030f + indexF * 0.0030f);
+            const float sparklePulse = 0.66f + 0.34f * std::sin(phase * 1.31f);
+            const float fade = (1.0f - indexF * 0.055f) * (0.72f + 0.28f * lifeRate);
 
             sparkle->SetRotate({
                 cameraRotate.x,
@@ -292,15 +297,15 @@ void Bullet::DrawGlow(const Math::Vector3& cameraRotate)
                 cameraRotate.z + phase * 0.45f
             });
             sparkle->SetScale({
-                sparkleBaseScale_.x * sparklePulse * (1.0f + indexF * 0.10f),
-                sparkleBaseScale_.y * sparklePulse * (1.0f + indexF * 0.10f),
+                sparkleBaseScale_.x * sparklePulse * (0.86f + indexF * 0.045f),
+                sparkleBaseScale_.y * sparklePulse * (0.86f + indexF * 0.045f),
                 sparkleBaseScale_.z
             });
             Math::Vector4 sparkleColor = sparkleBaseColor_;
-            sparkleColor.w *= fade * (0.72f + 0.38f * sparklePulse);
+            sparkleColor.w *= fade * (0.58f + 0.42f * sparklePulse);
             sparkle->SetColor(sparkleColor);
             sparkle->SetTranslate({
-                translate_.x + trailOffset_.x * offsetScale + side + lane * 0.014f,
+                translate_.x + trailOffset_.x * offsetScale + side + lane * 0.008f,
                 translate_.y + trailOffset_.y * offsetScale + up,
                 translate_.z + trailOffset_.z * offsetScale
             });
