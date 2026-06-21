@@ -1,0 +1,16 @@
+﻿提出物メモ
+
+1. 実行ファイルセット
+   generated/outputs/Release/CG2.exe
+   generated/outputs/Release/dxcompiler.dll
+   generated/outputs/Release/dxil.dll
+   ※実行時の作業ディレクトリは project フォルダ推奨です。
+
+2. プロジェクトフォルダ
+   project フォルダ一式
+
+3. Effect紹介動画
+   最大30秒。録画後、このフォルダに mp4 を入れてください。
+
+4. 補足ドキュメント
+   README.md
