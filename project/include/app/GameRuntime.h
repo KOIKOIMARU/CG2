@@ -105,6 +105,9 @@ private:
     void AddEnemyImpactEffect(
         const Math::Vector3& worldPosition,
         float strength = 1.0f);
+    void AddMuzzleFlashEffect(
+        const Math::Vector3& worldPosition,
+        bool isCharged);
     void AddCoinCollectEffect(const Math::Vector3& worldPosition);
     void AddPlayerDamageEffect(const Math::Vector3& worldPosition);
     void AddHitEffectVisual(
@@ -226,7 +229,7 @@ private:
     std::string editorStatusMessage_{ "Ready." };
     bool hasLockTarget_ = false;
     bool isReticleOnTarget_ = false;
-    int postEffectMode_ = 16;
+    int postEffectMode_ = 12;
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isEditorOverlayVisible_ = false;

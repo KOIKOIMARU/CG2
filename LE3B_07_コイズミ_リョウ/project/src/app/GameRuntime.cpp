@@ -776,19 +776,26 @@ void GameRuntime::FirePlayerBullet()
         hitLimit,
         effectBulletGlowModel_,
         isCharged ?
-            Math::Vector4{ 0.18f, 0.88f, 1.0f, 0.28f } :
-            Math::Vector4{ 1.0f, 0.82f, 0.30f, 0.22f },
+            Math::Vector4{ 0.18f, 0.88f, 1.0f, 0.42f } :
+            Math::Vector4{ 1.0f, 0.82f, 0.30f, 0.34f },
         isCharged ?
-            Math::Vector3{ 0.94f, 0.94f, 1.0f } :
-            Math::Vector3{ 0.50f, 0.50f, 1.0f },
+            Math::Vector3{ 1.08f, 1.08f, 1.0f } :
+            Math::Vector3{ 0.58f, 0.58f, 1.0f },
         effectBulletGlowModel_,
         isCharged ?
-            Math::Vector4{ 0.20f, 0.94f, 1.0f, 0.40f } :
-            Math::Vector4{ 1.0f, 0.72f, 0.16f, 0.30f },
+            Math::Vector4{ 0.20f, 0.94f, 1.0f, 0.62f } :
+            Math::Vector4{ 1.0f, 0.72f, 0.16f, 0.46f },
         isCharged ?
-            Math::Vector3{ 1.10f, 1.10f, 1.0f } :
-            Math::Vector3{ 0.58f, 0.58f, 1.0f },
-        isCharged ? 1.28f : 0.78f);
+            Math::Vector3{ 0.38f, 1.95f, 1.0f } :
+            Math::Vector3{ 0.22f, 1.18f, 1.0f },
+        isCharged ? 1.42f : 0.82f,
+        effectSparkStarModel_,
+        isCharged ?
+            Math::Vector4{ 0.82f, 1.0f, 0.92f, 0.76f } :
+            Math::Vector4{ 1.0f, 0.92f, 0.46f, 0.52f },
+        isCharged ?
+            Math::Vector3{ 0.20f, 0.20f, 1.0f } :
+            Math::Vector3{ 0.12f, 0.12f, 1.0f });
     if (isCharged) {
         bullet->EnableHoming(0.075f);
         if (lockedEnemy_) {
@@ -796,6 +803,7 @@ void GameRuntime::FirePlayerBullet()
         }
     }
     playerBullets_.push_back(std::move(bullet));
+    AddMuzzleFlashEffect(spawnPosition, isCharged);
     chargeTimer_ = 0;
     if (isCharged) {
         chargeFlashTimer_ = 18;
@@ -827,8 +835,8 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         { 0.58f, 0.58f, 1.0f },
         effectBulletGlowModel_,
         { 1.0f, 0.08f, 0.06f, 0.24f },
-        { 0.52f, 0.52f, 1.0f },
-        0.76f);
+        { 0.15f, 0.82f, 1.0f },
+        0.56f);
     enemyBullets_.push_back(std::move(bullet));
 }
 
@@ -1047,16 +1055,52 @@ void GameRuntime::AddEnemyImpactEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 28;
+    effect.duration = 20;
     effect.strength = strength;
     effect.type = HitEffectType::EnemyImpact;
 
     AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.84f, 0.32f, 0.58f }, 0.58f, 0.44f, 0.0f, 0.0f, 1.0f, 1.0f, {});
+        { 1.0f, 0.96f, 0.72f, 0.66f }, 0.34f, 0.30f, 0.0f, 0.0f, 1.0f, 1.0f, {});
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.70f, 0.18f, 0.78f }, 0.64f, 1.14f, -1.05f, 0.0f, 1.55f, 0.68f, {});
-    AddHitEffectVisual(effect, effectGlowRingModel_, worldPosition,
-        { 0.42f, 0.92f, 1.0f, 0.56f }, 0.48f, 1.80f, 0.45f, 0.02f, 1.0f, 1.0f, {});
+        { 0.72f, 0.96f, 1.0f, 0.72f }, 0.28f, 0.56f, -1.05f, 0.0f, 1.18f, 0.62f, { -0.020f, 0.018f, 0.0f });
+    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
+        { 1.0f, 0.78f, 0.22f, 0.58f }, 0.22f, 0.48f, 1.20f, 0.04f, 0.94f, 0.58f, { 0.024f, -0.014f, 0.0f });
+
+    hitEffects_.push_back(std::move(effect));
+}
+
+void GameRuntime::AddMuzzleFlashEffect(
+    const Math::Vector3& worldPosition,
+    bool isCharged)
+{
+    HitEffect effect{};
+    effect.worldPosition = worldPosition;
+    effect.duration = isCharged ? 18 : 12;
+    effect.strength = isCharged ? 1.15f : 0.78f;
+    effect.type = HitEffectType::EnemyImpact;
+
+    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
+        isCharged ?
+            Math::Vector4{ 0.48f, 0.96f, 1.0f, 0.54f } :
+            Math::Vector4{ 1.0f, 0.82f, 0.30f, 0.42f },
+        isCharged ? 0.38f : 0.24f,
+        isCharged ? 0.28f : 0.18f,
+        0.0f,
+        0.0f,
+        1.25f,
+        0.72f,
+        {});
+    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
+        isCharged ?
+            Math::Vector4{ 0.72f, 1.0f, 0.92f, 0.58f } :
+            Math::Vector4{ 1.0f, 0.92f, 0.46f, 0.48f },
+        isCharged ? 0.24f : 0.16f,
+        0.36f,
+        isCharged ? 1.4f : -1.0f,
+        0.02f,
+        1.0f,
+        0.58f,
+        {});
 
     hitEffects_.push_back(std::move(effect));
 }
@@ -1878,12 +1922,12 @@ void GameRuntime::DrawHud()
 void GameRuntime::DrawLockOnHud()
 {
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    const bool assistActive = chargeTimer_ >= chargeShotThreshold_ && hasLockTarget_;
     const bool targetAligned = isReticleOnTarget_;
+    const bool isChargeReady = chargeTimer_ >= chargeShotThreshold_;
     const ImU32 reticleColor =
-        targetAligned ? IM_COL32(255, 224, 70, 255) : IM_COL32(255, 64, 64, 220);
+        targetAligned ? IM_COL32(255, 66, 70, 255) : IM_COL32(80, 255, 150, 230);
     const ImU32 reticleSoftColor =
-        targetAligned ? IM_COL32(255, 90, 44, 130) : IM_COL32(255, 40, 40, 70);
+        targetAligned ? IM_COL32(255, 48, 44, 105) : IM_COL32(58, 255, 145, 70);
     constexpr float kReticleSize = 18.0f;
     constexpr float kReticleGap = 5.0f;
     const float reticleThickness = targetAligned ? 3.0f : 2.0f;
@@ -1894,6 +1938,15 @@ void GameRuntime::DrawLockOnHud()
         reticleSoftColor,
         48,
         targetAligned ? 3.0f : 2.0f);
+
+    if (isChargeReady) {
+        drawList->AddCircle(
+            ImVec2(reticleScreen_.x, reticleScreen_.y),
+            kReticleSize + 10.0f,
+            targetAligned ? IM_COL32(255, 84, 86, 210) : IM_COL32(112, 255, 185, 190),
+            52,
+            2.0f);
+    }
 
     drawList->AddCircle(
         ImVec2(reticleScreen_.x, reticleScreen_.y),
@@ -1921,80 +1974,6 @@ void GameRuntime::DrawLockOnHud()
         ImVec2(reticleScreen_.x, reticleScreen_.y + kReticleSize + kReticleGap),
         reticleColor,
         reticleThickness);
-
-    const char* aimLabel = assistActive ? "CHARGE HIT" : (targetAligned ? "TARGET" : "AIM");
-    const ImVec2 aimLabelSize = ImGui::CalcTextSize(aimLabel);
-    drawList->AddText(
-        ImVec2(reticleScreen_.x - aimLabelSize.x * 0.5f, reticleScreen_.y + 34.0f),
-        assistActive ? IM_COL32(130, 255, 190, 250) :
-        targetAligned ? IM_COL32(255, 230, 80, 245) :
-                        IM_COL32(255, 136, 136, 180),
-        aimLabel);
-    return;
-
-    const char* reticleLabel = hasLockTarget_ ? "ロック中" : "照準";
-    const ImVec2 labelSize = ImGui::CalcTextSize(reticleLabel);
-    drawList->AddText(
-        ImVec2(reticleScreen_.x - labelSize.x * 0.5f, reticleScreen_.y + 34.0f),
-        hasLockTarget_ ? IM_COL32(110, 255, 190, 235) :
-                         IM_COL32(210, 226, 244, 160),
-        reticleLabel);
-
-    if (!hasLockTarget_) {
-        return;
-    }
-
-    constexpr float kMarkerHalf = 28.0f;
-    constexpr float kCorner = 11.0f;
-    const ImVec2 center(lockedEnemyScreen_.x, lockedEnemyScreen_.y);
-    const ImU32 markerColor = IM_COL32(104, 255, 188, 255);
-
-    drawList->AddCircle(center, kMarkerHalf, markerColor, 48, 2.0f);
-    drawList->AddLine(
-        ImVec2(center.x - kMarkerHalf, center.y - kMarkerHalf),
-        ImVec2(center.x - kMarkerHalf + kCorner, center.y - kMarkerHalf),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x - kMarkerHalf, center.y - kMarkerHalf),
-        ImVec2(center.x - kMarkerHalf, center.y - kMarkerHalf + kCorner),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x + kMarkerHalf, center.y - kMarkerHalf),
-        ImVec2(center.x + kMarkerHalf - kCorner, center.y - kMarkerHalf),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x + kMarkerHalf, center.y - kMarkerHalf),
-        ImVec2(center.x + kMarkerHalf, center.y - kMarkerHalf + kCorner),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x - kMarkerHalf, center.y + kMarkerHalf),
-        ImVec2(center.x - kMarkerHalf + kCorner, center.y + kMarkerHalf),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x - kMarkerHalf, center.y + kMarkerHalf),
-        ImVec2(center.x - kMarkerHalf, center.y + kMarkerHalf - kCorner),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x + kMarkerHalf, center.y + kMarkerHalf),
-        ImVec2(center.x + kMarkerHalf - kCorner, center.y + kMarkerHalf),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(center.x + kMarkerHalf, center.y + kMarkerHalf),
-        ImVec2(center.x + kMarkerHalf, center.y + kMarkerHalf - kCorner),
-        markerColor,
-        2.5f);
-    drawList->AddLine(
-        ImVec2(reticleScreen_.x, reticleScreen_.y),
-        center,
-        IM_COL32(104, 255, 188, 90),
-        1.5f);
 }
 
 void GameRuntime::DrawResultOverlay()
@@ -2238,7 +2217,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                 const bool isChargedHit = bullet->GetRadius() >= 0.8f;
                 const int damage = isChargedHit ? 3 : 1;
                 AddEnemyImpactEffect(
-                    enemy->GetTranslate(),
+                    bullet->GetTranslate(),
                     isChargedHit ? 1.16f : 1.0f);
                 bullet->RegisterHit();
                 const bool isDestroyed = enemy->Damage(damage);

@@ -27,7 +27,10 @@ public:
         Model* trailModel = nullptr,
         const Math::Vector4& trailColor = { 1.0f, 0.85f, 0.25f, 0.45f },
         const Math::Vector3& trailScale = { 0.42f, 1.75f, 1.0f },
-        float trailOffset = 0.9f);
+        float trailOffset = 0.9f,
+        Model* sparkleModel = nullptr,
+        const Math::Vector4& sparkleColor = { 1.0f, 0.95f, 0.55f, 0.45f },
+        const Math::Vector3& sparkleScale = { 0.12f, 0.12f, 1.0f });
     void Update();
     void Draw();
     void DrawGlow(const Math::Vector3& cameraRotate);
@@ -47,6 +50,7 @@ private:
     std::unique_ptr<Object3d> glowObject_;
     std::unique_ptr<Object3d> trailObject_;
     std::array<std::unique_ptr<Object3d>, 3> trailEchoObjects_;
+    std::array<std::unique_ptr<Object3d>, 5> sparkleObjects_;
     Math::Vector3 startTranslate_{};
     Math::Vector3 translate_{};
     Math::Vector3 velocity_{ 0.0f, 0.0f, 0.5f };
@@ -57,6 +61,8 @@ private:
     Math::Vector4 bodyBaseColor_{ 1.0f, 0.85f, 0.25f, 1.0f };
     Math::Vector4 glowBaseColor_{ 1.0f, 0.85f, 0.25f, 0.55f };
     Math::Vector4 trailBaseColor_{ 1.0f, 0.85f, 0.25f, 0.45f };
+    Math::Vector4 sparkleBaseColor_{ 1.0f, 0.95f, 0.55f, 0.45f };
+    Math::Vector3 sparkleBaseScale_{ 0.12f, 0.12f, 1.0f };
     float trailDistance_ = 0.9f;
     float trailRoll_ = 0.0f;
     float collisionRadius_ = 0.46f;
