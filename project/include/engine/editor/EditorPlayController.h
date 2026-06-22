@@ -28,6 +28,7 @@ public:
     void SetHudViewportRect(bool isEnabled, const Math::Vector2& min, const Math::Vector2& size);
     void Draw();
     int GetPostEffectMode() const;
+    const Math::Matrix4x4* GetProjectionMatrix() const;
     bool IsRunning() const;
     bool IsExitRequested() const;
 

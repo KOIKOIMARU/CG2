@@ -82,6 +82,11 @@ int EditorPlayController::GetPostEffectMode() const
     return runtime_ ? runtime_->GetPostEffectMode() : 0;
 }
 
+const Math::Matrix4x4* EditorPlayController::GetProjectionMatrix() const
+{
+    return runtime_ ? &runtime_->GetProjectionMatrix() : nullptr;
+}
+
 bool EditorPlayController::IsRunning() const
 {
     return runtime_ != nullptr;

@@ -5,6 +5,11 @@ Texture2D<float32_t> gDepthTexture : register(t1);
 SamplerState gSamplerLinear : register(s0);
 SamplerState gSamplerPoint : register(s1);
 
+cbuffer DepthOutlineParameter : register(b0)
+{
+    float4x4 gProjectionInverse;
+};
+
 struct PixelShaderOutput {
     float32_t4 color : SV_TARGET0;
 };
@@ -27,6 +32,22 @@ static const float32_t2 kIndex3x3[3][3] = {
     { { -1.0f,  1.0f }, { 0.0f,  1.0f }, { 1.0f,  1.0f } },
 };
 
+float32_t FetchViewDepth(float32_t2 texcoord)
+{
+    float32_t ndcDepth = gDepthTexture.Sample(gSamplerPoint, texcoord);
+    float32_t4 ndcPosition = float32_t4(
+        texcoord.x * 2.0f - 1.0f,
+        1.0f - texcoord.y * 2.0f,
+        ndcDepth,
+        1.0f);
+
+    float32_t4 viewPosition = mul(ndcPosition, gProjectionInverse);
+    float32_t safeW =
+        abs(viewPosition.w) < 0.00001f ? 0.00001f : viewPosition.w;
+    viewPosition.xyz /= safeW;
+    return viewPosition.z;
+}
+
 PixelShaderOutput main(VertexShaderOutput input) {
     uint32_t width;
     uint32_t height;
@@ -38,14 +59,13 @@ PixelShaderOutput main(VertexShaderOutput input) {
         for (int32_t y = 0; y < 3; ++y) {
             float32_t2 texcoord =
                 input.texcoord + kIndex3x3[x][y] * uvStepSize;
-            float32_t ndcDepth =
-                gDepthTexture.Sample(gSamplerPoint, texcoord);
-            difference.x += ndcDepth * kPrewittHorizontalKernel[x][y];
-            difference.y += ndcDepth * kPrewittVerticalKernel[x][y];
+            float32_t viewDepth = FetchViewDepth(texcoord);
+            difference.x += viewDepth * kPrewittHorizontalKernel[x][y];
+            difference.y += viewDepth * kPrewittVerticalKernel[x][y];
         }
     }
 
-    float32_t weight = length(difference);
+    float32_t weight = length(difference) * 6.0f;
     weight = saturate(weight);
 
     PixelShaderOutput output;

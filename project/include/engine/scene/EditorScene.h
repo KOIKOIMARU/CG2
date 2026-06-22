@@ -44,6 +44,7 @@ public:
     void Draw() override;
 
     int GetPostEffectMode() const;
+    const Math::Matrix4x4& GetProjectionMatrix() const;
 
 private:
     struct TransformHistoryRecord {

@@ -474,6 +474,12 @@ int GameRuntime::GetPlayerHp() const
     return player_ ? player_->GetHp() : 0;
 }
 
+const Math::Matrix4x4& GameRuntime::GetProjectionMatrix() const
+{
+    static const Math::Matrix4x4 kIdentity = Math::MakeIdentity4x4();
+    return camera_ ? camera_->GetProjectionMatrix() : kIdentity;
+}
+
 void GameRuntime::SetHudViewportRect(
     bool isEnabled,
     const Math::Vector2& min,

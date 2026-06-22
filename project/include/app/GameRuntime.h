@@ -40,6 +40,7 @@ public:
     void SetHudViewportRect(bool isEnabled, const Math::Vector2& min, const Math::Vector2& size);
     void SetRenderingOptions(bool showSkybox, int postEffectMode);
     int GetPostEffectMode() const;
+    const Math::Matrix4x4& GetProjectionMatrix() const;
     bool IsExitRequested() const { return isExitRequested_; }
     int GetPlayerHp() const;
     int GetPlayerMaxHp() const { return 100; }

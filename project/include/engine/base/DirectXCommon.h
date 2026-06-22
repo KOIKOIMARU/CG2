@@ -86,6 +86,7 @@ public:
     // 描画前処理
 	void PreDraw();
     void DrawRenderTextureToSwapChain(int postEffectMode);
+    void SetPostEffectProjectionMatrix(const Math::Matrix4x4& projectionMatrix);
 	// 描画後処理
 	void PostDraw();
 
@@ -133,6 +134,10 @@ private:
         float saturation;
         float contrast;
         float damageTint;
+    };
+
+    struct DepthOutlineParameter {
+        Math::Matrix4x4 projectionInverse;
     };
 
     struct BloomParameter {
@@ -280,6 +285,8 @@ private:
     RandomParameter* randomParameterData_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> gameToneParameterResource_;
     GameToneParameter* gameToneParameterData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthOutlineParameterResource_;
+    DepthOutlineParameter* depthOutlineParameterData_ = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> bloomParameterResource_;
     BloomParameter* bloomParameterData_ = nullptr;
     std::array<BloomRenderTexture, 4> bloomTextures_;

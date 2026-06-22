@@ -39,3 +39,8 @@ int GameScene::GetPostEffectMode() const
 {
     return runtime_.GetPostEffectMode();
 }
+
+const Math::Matrix4x4& GameScene::GetProjectionMatrix() const
+{
+    return runtime_.GetProjectionMatrix();
+}

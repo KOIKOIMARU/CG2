@@ -309,6 +309,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         2,
         useGameTone ?
         gameToneParameterResource_->GetGPUVirtualAddress() :
+        useDepthTexture ?
+        depthOutlineParameterResource_->GetGPUVirtualAddress() :
         useRandom ?
         randomParameterResource_->GetGPUVirtualAddress() :
         useDissolve ?
@@ -375,6 +377,8 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         2,
         useGameTone ?
         gameToneParameterResource_->GetGPUVirtualAddress() :
+        useDepthTexture ?
+        depthOutlineParameterResource_->GetGPUVirtualAddress() :
         useRandom ?
         randomParameterResource_->GetGPUVirtualAddress() :
         useDissolve ?
@@ -404,6 +408,17 @@ Math::Vector2 DirectXCommon::GetRenderTextureSize() const
         static_cast<float>(WinApp::kClientWidth),
         static_cast<float>(WinApp::kClientHeight)
     };
+}
+
+void DirectXCommon::SetPostEffectProjectionMatrix(
+    const Math::Matrix4x4& projectionMatrix)
+{
+    if (!depthOutlineParameterData_) {
+        return;
+    }
+
+    depthOutlineParameterData_->projectionInverse =
+        Math::Transpose(Math::Inverse(projectionMatrix));
 }
 
 
@@ -1483,6 +1498,16 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     gameToneParameterData_->saturation = 1.10f;
     gameToneParameterData_->contrast = 1.08f;
     gameToneParameterData_->damageTint = 0.0f;
+
+    depthOutlineParameterResource_ =
+        CreateBufferResource(sizeof(DepthOutlineParameter));
+    depthOutlineParameterResource_->Map(
+        0,
+        nullptr,
+        reinterpret_cast<void**>(&depthOutlineParameterData_)
+    );
+    depthOutlineParameterData_->projectionInverse =
+        Math::Transpose(Math::MakeIdentity4x4());
 
     bloomParameterResource_ =
         CreateBufferResource(sizeof(BloomParameter));

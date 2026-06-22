@@ -191,6 +191,18 @@ int EditorScene::GetPostEffectMode() const
     return postEffectMode_;
 }
 
+const Math::Matrix4x4& EditorScene::GetProjectionMatrix() const
+{
+    static const Math::Matrix4x4 kIdentity = Math::MakeIdentity4x4();
+    if (editorManager_.IsPlayMode() && playController_.IsRunning()) {
+        if (const Math::Matrix4x4* projection =
+                playController_.GetProjectionMatrix()) {
+            return *projection;
+        }
+    }
+    return camera_ ? camera_->GetProjectionMatrix() : kIdentity;
+}
+
 void EditorScene::Initialize() {
     const std::string environmentTexturePath =
         "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";

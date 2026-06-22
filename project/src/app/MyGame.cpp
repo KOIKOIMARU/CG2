@@ -51,9 +51,11 @@ void MyGame::Draw() {
     if (auto* editorScene =
             dynamic_cast<EditorScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
         postEffectMode = editorScene->GetPostEffectMode();
+        dxCommon_->SetPostEffectProjectionMatrix(editorScene->GetProjectionMatrix());
     } else if (auto* gameScene =
             dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
         postEffectMode = gameScene->GetPostEffectMode();
+        dxCommon_->SetPostEffectProjectionMatrix(gameScene->GetProjectionMatrix());
     }
     dxCommon_->DrawRenderTextureToSwapChain(postEffectMode);
 
