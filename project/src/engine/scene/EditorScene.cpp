@@ -993,6 +993,7 @@ void EditorScene::ExitPlayMode()
 
 void EditorScene::HandleEditorShortcuts()
 {
+#ifdef ENABLE_DEBUG_GUI
     if (input_ && input_->TriggerKey(DIK_F1)) {
         editorManager_.ToggleEditorGuiVisible();
     }
@@ -1000,6 +1001,7 @@ void EditorScene::HandleEditorShortcuts()
     if (!editorManager_.IsPlayMode() && input_ && input_->TriggerKey(DIK_F3)) {
         isDebugCameraEnabled_ = !isDebugCameraEnabled_;
     }
+#endif
 
     if (!editorManager_.IsPlayMode() && input_) {
         if (input_->TriggerKey(DIK_1)) {
@@ -1046,7 +1048,9 @@ void EditorScene::Update() {
     const int inspectObjectCount = static_cast<int>(inspectObjects.size());
     editorManager_.ValidateSelectedObjectIndex(inspectObjectCount);
 
+#ifdef ENABLE_DEBUG_GUI
     ShowEditorGui(inspectObjects);
+#endif
 
     Math::Vector2 hudViewportMin{};
     Math::Vector2 hudViewportSize{};

@@ -46,7 +46,9 @@ public:
     bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
     bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
     const Math::Vector3& GetTranslate() const { return translate_; }
+    Math::Vector3 GetAimPosition() const;
     float GetRadius() const { return collisionRadius_; }
+    float GetAimRadius() const { return aimRadius_; }
 
 private:
     void Escape() { lifeState_ = LifeState::Escaped; }
@@ -55,6 +57,7 @@ private:
     Math::Vector3 baseTranslate_{};
     Math::Vector3 translate_{};
     Math::Vector3 baseScale_{ 1.0f, 1.0f, 1.0f };
+    Math::Vector3 aimLocalCenter_{ 0.0f, 0.0f, 0.0f };
     Math::Vector4 baseColor_{ 1.0f, 0.25f, 0.25f, 1.0f };
     int age_ = 0;
     int hp_ = 1;
@@ -65,6 +68,7 @@ private:
     float horizontalAmplitude_ = 1.2f;
     float verticalAmplitude_ = 0.55f;
     float collisionRadius_ = 0.8f;
+    float aimRadius_ = 0.8f;
     Behavior behavior_ = Behavior::Formation;
     EntryStyle entryStyle_ = EntryStyle::Direct;
     LifeState lifeState_ = LifeState::Alive;

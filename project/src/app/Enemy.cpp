@@ -1,5 +1,7 @@
 #include "app/Enemy.h"
 
+#include "engine/3d/Model.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -20,6 +22,55 @@ float Lerp(float start, float end, float rate)
 float SignNonZero(float value)
 {
     return value < 0.0f ? -1.0f : 1.0f;
+}
+
+struct ModelAimBounds {
+    Math::Vector3 center{};
+    float radius = 0.0f;
+    bool isValid = false;
+};
+
+ModelAimBounds CalculateModelAimBounds(const Model* model)
+{
+    if (!model || model->GetVertices().empty()) {
+        return {};
+    }
+
+    const auto& vertices = model->GetVertices();
+    Math::Vector3 minPosition{
+        vertices.front().position.x,
+        vertices.front().position.y,
+        vertices.front().position.z
+    };
+    Math::Vector3 maxPosition = minPosition;
+
+    for (const auto& vertex : vertices) {
+        minPosition.x = (std::min)(minPosition.x, vertex.position.x);
+        minPosition.y = (std::min)(minPosition.y, vertex.position.y);
+        minPosition.z = (std::min)(minPosition.z, vertex.position.z);
+        maxPosition.x = (std::max)(maxPosition.x, vertex.position.x);
+        maxPosition.y = (std::max)(maxPosition.y, vertex.position.y);
+        maxPosition.z = (std::max)(maxPosition.z, vertex.position.z);
+    }
+
+    ModelAimBounds bounds{};
+    bounds.center = {
+        (minPosition.x + maxPosition.x) * 0.5f,
+        (minPosition.y + maxPosition.y) * 0.5f,
+        (minPosition.z + maxPosition.z) * 0.5f
+    };
+
+    float radiusSq = 0.0f;
+    for (const auto& vertex : vertices) {
+        const float dx = vertex.position.x - bounds.center.x;
+        const float dy = vertex.position.y - bounds.center.y;
+        const float dz = vertex.position.z - bounds.center.z;
+        radiusSq = (std::max)(radiusSq, dx * dx + dy * dy + dz * dz);
+    }
+
+    bounds.radius = std::sqrt(radiusSq);
+    bounds.isValid = true;
+    return bounds;
 }
 
 } // namespace
@@ -43,35 +94,48 @@ void Enemy::Initialize(
 
     switch (behavior_) {
     case Behavior::Swoop:
-        baseScale_ = { 0.75f, 0.75f, 0.75f };
+        baseScale_ = { 1.18f, 1.18f, 1.18f };
         baseColor_ = { 0.95f, 0.35f, 1.0f, 1.0f };
         maxHp_ = 2;
         horizontalAmplitude_ = 0.75f;
         verticalAmplitude_ = 0.35f;
-        collisionRadius_ = 0.7f;
+        collisionRadius_ = 0.85f;
         break;
     case Behavior::StrafeShooter:
-        baseScale_ = { 1.1f, 1.1f, 1.1f };
+        baseScale_ = { 1.62f, 1.62f, 1.62f };
         baseColor_ = { 1.0f, 0.65f, 0.2f, 1.0f };
         maxHp_ = 3;
         horizontalAmplitude_ = 1.9f;
         verticalAmplitude_ = 0.25f;
-        collisionRadius_ = 0.9f;
+        collisionRadius_ = 1.05f;
         break;
     case Behavior::Formation:
     default:
-        baseScale_ = { 0.9f, 0.9f, 0.9f };
+        baseScale_ = { 1.30f, 1.30f, 1.30f };
         baseColor_ = { 1.0f, 0.25f, 0.25f, 1.0f };
         maxHp_ = 2;
+        collisionRadius_ = 0.9f;
         break;
     }
     hp_ = maxHp_;
+
+    const ModelAimBounds aimBounds = CalculateModelAimBounds(model);
+    if (aimBounds.isValid) {
+        const float maxScale =
+            (std::max)(baseScale_.x, (std::max)(baseScale_.y, baseScale_.z));
+        aimLocalCenter_ = aimBounds.center;
+        aimRadius_ = (std::max)(collisionRadius_, aimBounds.radius * maxScale);
+    } else {
+        aimLocalCenter_ = { 0.0f, 0.0f, 0.0f };
+        aimRadius_ = collisionRadius_;
+    }
 
     baseTranslate_ = position;
     translate_ = position;
     phase_ = position.x * 0.75f + position.y * 1.35f;
     object_->SetScale(baseScale_);
     object_->SetColor(baseColor_);
+    object_->SetEnvironmentCoefficient(0.10f);
     object_->SetTranslate(translate_);
     object_->Update();
 }
@@ -226,6 +290,15 @@ bool Enemy::Damage(int damage)
         return true;
     }
     return false;
+}
+
+Math::Vector3 Enemy::GetAimPosition() const
+{
+    return {
+        translate_.x + aimLocalCenter_.x * baseScale_.x,
+        translate_.y + aimLocalCenter_.y * baseScale_.y,
+        translate_.z + aimLocalCenter_.z * baseScale_.z
+    };
 }
 
 bool Enemy::CanShoot() const

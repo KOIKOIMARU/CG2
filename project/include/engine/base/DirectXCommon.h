@@ -106,6 +106,21 @@ public:
 
     float GetDeltaTime() const { return deltaTime_; }
 
+    struct FrameTiming {
+        float updateMs = 0.0f;
+        float preDrawMs = 0.0f;
+        float sceneDrawMs = 0.0f;
+        float postEffectMs = 0.0f;
+        float imguiDrawMs = 0.0f;
+        float postDrawMs = 0.0f;
+        float presentMs = 0.0f;
+        float fenceWaitMs = 0.0f;
+        float fpsWaitMs = 0.0f;
+        float frameCpuMs = 0.0f;
+    };
+    FrameTiming& EditFrameTiming() { return frameTiming_; }
+    const FrameTiming& GetFrameTiming() const { return frameTiming_; }
+
     // ★追加：スワップチェーンリソース数（バックバッファ数）
     size_t GetSwapChainResourcesNum() const { return kBackBufferCount; }
 
@@ -306,4 +321,5 @@ private:
     UINT currentBackBufferIndex_ = 0;
 
     float deltaTime_ = 1.0f / 60.0f;
+    FrameTiming frameTiming_{};
 };

@@ -49,8 +49,8 @@ private:
     std::unique_ptr<Object3d> object_;
     std::unique_ptr<Object3d> glowObject_;
     std::unique_ptr<Object3d> trailObject_;
-    std::array<std::unique_ptr<Object3d>, 4> trailEchoObjects_;
-    std::array<std::unique_ptr<Object3d>, 5> sparkleObjects_;
+    std::array<std::unique_ptr<Object3d>, 1> trailEchoObjects_;
+    std::array<std::unique_ptr<Object3d>, 2> sparkleObjects_;
     Math::Vector3 startTranslate_{};
     Math::Vector3 translate_{};
     Math::Vector3 velocity_{ 0.0f, 0.0f, 0.5f };

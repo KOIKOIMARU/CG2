@@ -22,6 +22,7 @@ public:
     void Update();
     void Draw();
     BaseScene* GetCurrentScene() const { return scene_.get(); }
+    void FinalizeCurrentScene();
 
     void SetNextScene(SceneType sceneType);
     void SetSceneFactory(AbstractSceneFactory* sceneFactory);

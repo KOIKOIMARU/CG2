@@ -23,6 +23,23 @@
 namespace {
 
 constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
+constexpr const char* kFreePlayerModelPath = "free_models/kenney_space_kit/craft_speederA.glb";
+constexpr const char* kFreeEnemyModelPath = "free_models/kenney_space_kit/meteor_detailed.glb";
+constexpr int kInitialPlayerBulletPoolCount = 22;
+constexpr int kInitialEnemyBulletPoolCount = 8;
+constexpr int kTargetPlayerBulletPoolCount = 28;
+constexpr int kTargetEnemyBulletPoolCount = 16;
+constexpr int kBulletPoolWarmupStartDelayFrames = 45;
+constexpr int kBulletPoolWarmupIntervalFrames = 6;
+constexpr int kInitialHitEffectObjectPoolCount = 48;
+constexpr int kTargetHitEffectObjectPoolCount = 96;
+constexpr int kHitEffectPoolWarmupStartDelayFrames = 45;
+constexpr int kHitEffectPoolWarmupIntervalFrames = 4;
+constexpr int kRewardHeartPoolCount = 96;
+constexpr int kRewardHeartScoreValue = 25;
+constexpr float kTwoPi = 6.28318530718f;
+constexpr float kRailCameraCurveFrequency = 0.050f;
+constexpr float kRailCameraDriftFrequency = 0.027f;
 
 struct EnemySpawnPattern {
     float x;
@@ -163,6 +180,7 @@ void GameRuntime::Initialize()
     isExitRequested_ = false;
     isGameClear_ = false;
     isGameOver_ = false;
+    showSkybox_ = true;
     currentWaveIndex_ = 0;
     spawnedEnemyCountInWave_ = 0;
     defeatedEnemyCountInWave_ = 0;
@@ -174,9 +192,20 @@ void GameRuntime::Initialize()
     resultTransitionTimer_ = -1;
     railDistance_ = 0.0f;
     shootCooldown_ = 0;
+    shootBufferTimer_ = 0;
     chargeTimer_ = 0;
     chargeFlashTimer_ = 0;
     cameraShakeTimer_ = 0;
+    bulletPoolWarmupTimer_ = 0;
+    playerBulletPoolMisses_ = 0;
+    enemyBulletPoolMisses_ = 0;
+    hitEffectObjectPoolMisses_ = 0;
+    rewardHeartPoolMisses_ = 0;
+    maxActivePlayerBullets_ = 0;
+    maxActiveEnemyBullets_ = 0;
+    hitEffects_.clear();
+    hitEffects_.reserve(32);
+    hitEffectObjectPool_.clear();
 
     const std::string environmentTexturePath =
         "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
@@ -240,7 +269,7 @@ void GameRuntime::Initialize()
         "effect_spark_star",
         48,
         1.0f,
-        "resources/effects/spark_star.png");
+        "resources/effects/pal_star_spark.png");
     ModelManager::GetInstance()->CreateCircle(
         "effect_bullet_glow",
         48,
@@ -251,6 +280,36 @@ void GameRuntime::Initialize()
         1.0f,
         1.0f,
         "resources/effects/bullet_trail.png");
+    ModelManager::GetInstance()->CreatePlane(
+        "effect_player_bullet_core",
+        1.0f,
+        1.0f,
+        "resources/effects/pal_arrow_core.png");
+    ModelManager::GetInstance()->CreatePlane(
+        "effect_player_bullet_trail",
+        1.0f,
+        1.0f,
+        "resources/effects/pal_arrow_trail.png");
+    ModelManager::GetInstance()->CreatePlane(
+        "effect_enemy_bullet_core",
+        1.0f,
+        1.0f,
+        "resources/effects/pal_enemy_bullet_core.png");
+    ModelManager::GetInstance()->CreatePlane(
+        "effect_enemy_bullet_tail",
+        1.0f,
+        1.0f,
+        "resources/effects/pal_enemy_bullet_tail.png");
+    ModelManager::GetInstance()->CreatePlane(
+        "effect_impact_burst",
+        1.0f,
+        1.0f,
+        "resources/effects/pal_impact_burst.png");
+    ModelManager::GetInstance()->CreatePlane(
+        "effect_magic_shard",
+        1.0f,
+        1.0f,
+        "resources/effects/pal_magic_shard.png");
     ModelManager::GetInstance()->CreateRing(
         "primitive_ring",
         32,
@@ -293,15 +352,29 @@ void GameRuntime::Initialize()
     ModelManager::GetInstance()->LoadModel("simpleSkin/simpleSkin.gltf");
     ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
     ModelManager::GetInstance()->LoadModel("human/walk.gltf");
+    ModelManager::GetInstance()->LoadModel(kFreePlayerModelPath);
+    ModelManager::GetInstance()->LoadModel(kFreeEnemyModelPath);
 
-    playerModel_ = ModelManager::GetInstance()->FindModel("game_player");
+    playerModel_ = ModelManager::GetInstance()->FindModel(kFreePlayerModelPath);
+    if (!playerModel_) {
+        playerModel_ = ModelManager::GetInstance()->FindModel("game_player");
+    }
     bulletModel_ = ModelManager::GetInstance()->FindModel("game_bullet");
-    enemyModel_ = ModelManager::GetInstance()->FindModel("game_enemy");
+    enemyModel_ = ModelManager::GetInstance()->FindModel(kFreeEnemyModelPath);
+    if (!enemyModel_) {
+        enemyModel_ = ModelManager::GetInstance()->FindModel("game_enemy");
+    }
     effectGlowCoreModel_ = ModelManager::GetInstance()->FindModel("effect_glow_core");
     effectGlowRingModel_ = ModelManager::GetInstance()->FindModel("effect_glow_ring");
     effectSparkStarModel_ = ModelManager::GetInstance()->FindModel("effect_spark_star");
     effectBulletGlowModel_ = ModelManager::GetInstance()->FindModel("effect_bullet_glow");
     effectBulletTrailModel_ = ModelManager::GetInstance()->FindModel("effect_bullet_trail");
+    effectPlayerBulletCoreModel_ = ModelManager::GetInstance()->FindModel("effect_player_bullet_core");
+    effectPlayerBulletTrailModel_ = ModelManager::GetInstance()->FindModel("effect_player_bullet_trail");
+    effectEnemyBulletCoreModel_ = ModelManager::GetInstance()->FindModel("effect_enemy_bullet_core");
+    effectEnemyBulletTailModel_ = ModelManager::GetInstance()->FindModel("effect_enemy_bullet_tail");
+    effectImpactBurstModel_ = ModelManager::GetInstance()->FindModel("effect_impact_burst");
+    effectMagicShardModel_ = ModelManager::GetInstance()->FindModel("effect_magic_shard");
 
     camera_ = std::make_unique<Camera>();
     camera_->SetRotate({ 0.15f, 0.0f, 0.0f });
@@ -318,24 +391,66 @@ void GameRuntime::Initialize()
     player_->Initialize(object3dCommon_.get(), playerModel_);
     player_->SetRailZ(railDistance_);
     previousPlayerTranslate_ = player_->GetTranslate();
-    cameraTranslate_ = camera_->GetTranslate();
+    const Math::Vector3 initialPlayerTranslate = player_->GetTranslate();
+    cameraTranslate_ = {
+        initialPlayerTranslate.x * 0.22f,
+        2.55f + initialPlayerTranslate.y * 0.15f,
+        railDistance_ - 13.8f,
+    };
+    camera_->SetTranslate(cameraTranslate_);
+    camera_->SetRotate({
+        0.18f + initialPlayerTranslate.y * 0.006f,
+        -initialPlayerTranslate.x * 0.004f,
+        0.0f,
+    });
+    camera_->SetFovY(0.5f);
+    camera_->Update();
+    if (skybox_) {
+        skybox_->Update(camera_.get());
+    }
+
+    PrewarmBulletPools();
+    PrewarmHitEffectObjectPool();
+    InitializeRailScenery();
 
     LoadSceneObjects(kGameSceneFilePath);
-    InitializeEnvironmentBonusCoins();
+    InitializeRewardHearts();
 }
 
 void GameRuntime::Finalize()
 {
     sceneObjects_.clear();
-    environmentBonusCoins_.clear();
+    rewardHearts_.clear();
     playerBullets_.clear();
     enemyBullets_.clear();
+    playerBulletPool_.clear();
+    enemyBulletPool_.clear();
+    homingBulletTargets_.clear();
     enemies_.clear();
     hitEffects_.clear();
+    hitEffectObjectPool_.clear();
+    railSceneryObjects_.clear();
     player_.reset();
     camera_.reset();
     skybox_.reset();
     object3dCommon_.reset();
+
+    playerModel_ = nullptr;
+    bulletModel_ = nullptr;
+    enemyModel_ = nullptr;
+    effectGlowCoreModel_ = nullptr;
+    effectGlowRingModel_ = nullptr;
+    effectSparkStarModel_ = nullptr;
+    effectBulletGlowModel_ = nullptr;
+    effectBulletTrailModel_ = nullptr;
+    effectPlayerBulletCoreModel_ = nullptr;
+    effectPlayerBulletTrailModel_ = nullptr;
+    effectEnemyBulletCoreModel_ = nullptr;
+    effectEnemyBulletTailModel_ = nullptr;
+    effectImpactBurstModel_ = nullptr;
+    effectMagicShardModel_ = nullptr;
+
+    ModelManager::GetInstance()->Finalize();
 }
 
 void GameRuntime::Update()
@@ -344,6 +459,8 @@ void GameRuntime::Update()
         return;
     }
 
+    UpdateBulletPoolWarmup();
+    UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
     UpdatePlayerAndCamera();
 
@@ -357,16 +474,33 @@ void GameRuntime::Update()
     AdvanceEnemyWaveIfCleared();
     UpdateLockOnTarget();
     DrawHud();
+    DrawPerformanceOverlay();
     DrawResultOverlay();
+#ifdef ENABLE_DEBUG_GUI
     DrawEditorOverlayGuiRich();
+#endif
 
     UpdateResultAndSceneObjects();
 }
 
 bool GameRuntime::HandleRuntimeShortcuts()
 {
+#ifdef ENABLE_DEBUG_GUI
     if (input_ && input_->TriggerKey(DIK_F1)) {
         isEditorOverlayVisible_ = !isEditorOverlayVisible_;
+        return true;
+    }
+#endif
+    if (input_ && input_->TriggerKey(DIK_F3)) {
+        isPerformanceOverlayVisible_ = !isPerformanceOverlayVisible_;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F4)) {
+        isPostEffectBypassEnabled_ = !isPostEffectBypassEnabled_;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F5)) {
+        showSkybox_ = !showSkybox_;
         return true;
     }
     if (input_ && input_->TriggerKey(DIK_F2)) {
@@ -399,18 +533,28 @@ void GameRuntime::UpdatePlayerShooting()
     if (shootCooldown_ > 0) {
         --shootCooldown_;
     }
+    if (shootBufferTimer_ > 0) {
+        --shootBufferTimer_;
+    }
 
     const bool isShootPressed = input_ && input_->PushKey(DIK_SPACE);
-    if (isShootPressed && shootCooldown_ <= 0) {
+    const bool isShootTriggered = input_ && input_->TriggerKey(DIK_SPACE);
+    if (isShootTriggered && shootCooldown_ > 0) {
+        shootBufferTimer_ = 8;
+    }
+
+    const bool shouldShoot = isShootPressed || shootBufferTimer_ > 0;
+    if (shouldShoot && shootCooldown_ <= 0) {
         const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
-        const bool hasAssistShot = isCharged && hasLockTarget_;
+        const bool hasAssistShot = isCharged && isReticleOnTarget_ && lockedEnemy_;
         FirePlayerBullet();
+        shootBufferTimer_ = 0;
         AddCameraShake(
             isCharged ? (hasAssistShot ? 0.105f : 0.085f) : 0.026f,
             isCharged ? (hasAssistShot ? 16 : 14) : 5);
         shootCooldown_ =
             isCharged ? chargedShootCooldown_ : normalShootCooldown_;
-    } else if (!isShootPressed) {
+    } else if (!isShootPressed && shootBufferTimer_ <= 0) {
         chargeTimer_ = (std::min)(chargeTimer_ + 1, kChargeShotMax);
     }
 
@@ -427,7 +571,7 @@ void GameRuntime::UpdateEnemyActions()
     if (enemyShotTimer_ <= 0) {
         for (const auto& enemy : enemies_) {
             if (enemy->CanShoot()) {
-                FireEnemyBullet(enemy->GetTranslate());
+                FireEnemyBullet(enemy->GetAimPosition());
             }
         }
         enemyShotTimer_ = enemyShotInterval_;
@@ -440,13 +584,12 @@ void GameRuntime::UpdateWorldEntities()
     UpdateEnemyBullets();
     UpdateEnemies();
     UpdateHitEffects();
-    UpdateEnvironmentBonusCoins();
+    UpdateRewardHearts();
+    UpdateRailScenery();
 }
 
 void GameRuntime::UpdateGameplayCollisions()
 {
-    CheckBulletBonusCoinCollisions();
-    CheckPlayerBonusCoinCollisions();
     CheckBulletEnemyCollisions();
     CheckEnemyBulletPlayerCollisions();
 }
@@ -511,77 +654,182 @@ void GameRuntime::GetEffectiveHudViewportRect(
     }
 }
 
-void GameRuntime::InitializeEnvironmentBonusCoins()
+void GameRuntime::InitializeRewardHearts()
 {
-    environmentBonusCoins_.clear();
+    rewardHearts_.clear();
 
-    Model* coinModel =
+    Model* heartModel =
         ModelManager::GetInstance()->FindModel("reward_heart");
-    if (!coinModel) {
+    if (!heartModel || !object3dCommon_) {
         return;
     }
 
-    struct SpawnData {
-        Math::Vector3 position;
-        float phase;
-    };
-    constexpr SpawnData kSpawnData[] = {
-        { { -3.2f, 1.35f, 18.0f }, 0.0f },
-        { {  3.1f, 0.65f, 27.0f }, 1.4f },
-        { { -1.2f, 1.85f, 38.0f }, 2.2f },
-        { {  2.6f, 1.15f, 50.0f }, 3.1f },
-        { {  0.0f, 2.1f, 63.0f }, 4.0f },
-    };
-
-    environmentBonusCoins_.reserve(
-        sizeof(kSpawnData) / sizeof(kSpawnData[0]));
-
-    for (const SpawnData& spawn : kSpawnData) {
-        EnvironmentBonusCoin coin{};
-        coin.object = std::make_unique<Object3d>();
-        coin.object->Initialize(object3dCommon_.get());
-        coin.object->SetModel(coinModel);
-        coin.object->SetTranslate(spawn.position);
-        coin.object->SetScale({ 0.48f, 0.48f, 1.0f });
-        coin.object->SetRotate({ 0.0f, 0.0f, 0.0f });
-        coin.object->SetTextureFilePath("resources/human/white.png");
-        coin.object->SetColor({ 1.0f, 0.16f, 0.42f, 1.0f });
-        coin.object->SetLightingMode(0);
-        coin.object->SetEnvironmentCoefficient(0.0f);
-        coin.object->Update();
-        coin.basePosition = spawn.position;
-        coin.collisionRadius = 0.55f;
-        coin.rotationSpeed = 0.045f + spawn.phase * 0.003f;
-        coin.floatPhase = spawn.phase;
-        environmentBonusCoins_.push_back(std::move(coin));
+    rewardHearts_.reserve(kRewardHeartPoolCount);
+    for (int index = 0; index < kRewardHeartPoolCount; ++index) {
+        RewardHeart heart{};
+        heart.object = std::make_unique<Object3d>();
+        heart.object->Initialize(object3dCommon_.get());
+        heart.object->SetModel(heartModel);
+        heart.object->SetTranslate({ 0.0f, -1000.0f, 0.0f });
+        heart.object->SetScale({ 0.0f, 0.0f, 1.0f });
+        heart.object->SetTextureFilePath("resources/human/white.png");
+        heart.object->SetColor({ 1.0f, 0.18f, 0.44f, 0.0f });
+        heart.object->SetLightingMode(0);
+        heart.object->SetEnvironmentCoefficient(0.0f);
+        heart.object->SetAlphaReference(0.01f);
+        heart.object->Update();
+        rewardHearts_.push_back(std::move(heart));
     }
 }
 
-void GameRuntime::UpdateEnvironmentBonusCoins()
+void GameRuntime::SpawnRewardHearts(const Math::Vector3& worldPosition, int count)
 {
-    for (EnvironmentBonusCoin& coin : environmentBonusCoins_) {
-        if (!coin.isActive || !coin.object) {
+    if (count <= 0 || rewardHearts_.empty()) {
+        return;
+    }
+
+    int spawnedCount = 0;
+    const float seed =
+        static_cast<float>(defeatedEnemyCount_ * 17 + spawnedEnemyCountInWave_ * 5) * 0.137f;
+    for (RewardHeart& heart : rewardHearts_) {
+        if (spawnedCount >= count) {
+            break;
+        }
+        if (heart.isActive || !heart.object) {
             continue;
         }
 
-        coin.floatPhase += 0.035f;
-        Math::Vector3 position = coin.basePosition;
-        position.y += std::sin(coin.floatPhase) * 0.28f;
-
-        const float pulse = 0.44f + std::sin(coin.floatPhase * 1.8f) * 0.035f;
-        Math::Vector3 rotate{};
-        rotate.y = std::sin(coin.floatPhase * 0.75f) * 0.18f;
-        rotate.z = std::sin(coin.floatPhase * 0.55f) * 0.08f;
-
-        coin.object->SetTranslate(position);
-        coin.object->SetRotate(rotate);
-        coin.object->SetScale({ pulse, pulse, 1.0f });
-        coin.object->Update();
+        const float t =
+            static_cast<float>(spawnedCount) /
+            static_cast<float>((std::max)(count, 1));
+        const float angle = seed + kTwoPi * t;
+        const float ring = 0.06f + 0.025f * static_cast<float>(spawnedCount % 3);
+        heart.position = {
+            worldPosition.x + std::cos(angle) * 0.14f,
+            worldPosition.y + std::sin(angle * 1.7f) * 0.10f,
+            worldPosition.z + std::sin(angle) * 0.05f,
+        };
+        heart.velocity = {
+            std::cos(angle) * ring,
+            0.040f + std::sin(angle * 1.3f) * 0.026f,
+            -0.030f + std::sin(angle) * 0.015f,
+        };
+        heart.collisionRadius = 0.46f;
+        heart.age = 0.0f;
+        heart.collectDelay = 10.0f + static_cast<float>(spawnedCount % 3) * 2.0f;
+        heart.life = 170.0f;
+        heart.phase = angle;
+        heart.baseScale = 0.28f + static_cast<float>(spawnedCount % 2) * 0.04f;
+        heart.scoreValue = kRewardHeartScoreValue;
+        heart.isActive = true;
+        ++spawnedCount;
     }
+
+    if (spawnedCount < count) {
+        rewardHeartPoolMisses_ += static_cast<size_t>(count - spawnedCount);
+    }
+}
+
+void GameRuntime::UpdateRewardHearts()
+{
+    float frameStep = 1.0f;
+    if (dxCommon_) {
+        frameStep =
+            std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 3.0f);
+    }
+
+    const bool canCollect = player_ && !player_->IsDead();
+    Math::Vector3 targetPosition{};
+    if (canCollect) {
+        targetPosition = player_->GetTranslate();
+        targetPosition.y += 0.28f;
+        targetPosition.z += 0.15f;
+    }
+
+    for (RewardHeart& heart : rewardHearts_) {
+        if (!heart.isActive || !heart.object) {
+            continue;
+        }
+
+        heart.age += frameStep;
+        heart.phase += 0.12f * frameStep;
+
+        if (!canCollect) {
+            heart.position.x += heart.velocity.x * frameStep;
+            heart.position.y += heart.velocity.y * frameStep;
+            heart.position.z += heart.velocity.z * frameStep;
+            heart.velocity = heart.velocity * 0.94f;
+            if (heart.age >= heart.life) {
+                heart.isActive = false;
+            }
+            continue;
+        }
+
+        if (heart.age < heart.collectDelay) {
+            heart.position.x += heart.velocity.x * frameStep;
+            heart.position.y += heart.velocity.y * frameStep;
+            heart.position.z += heart.velocity.z * frameStep;
+            heart.velocity = heart.velocity * std::clamp(1.0f - 0.060f * frameStep, 0.78f, 0.96f);
+        } else {
+            const float dx = targetPosition.x - heart.position.x;
+            const float dy = targetPosition.y - heart.position.y;
+            const float dz = targetPosition.z - heart.position.z;
+            const float distanceSq = dx * dx + dy * dy + dz * dz;
+            if (distanceSq <= heart.collisionRadius * heart.collisionRadius ||
+                heart.age >= heart.life) {
+                heart.isActive = false;
+                score_ += heart.scoreValue;
+                AddRewardHeartCollectEffect(heart.position);
+                AddCameraShake(0.004f, 2);
+                continue;
+            }
+
+            const float pullRate =
+                std::clamp(0.055f + (heart.age - heart.collectDelay) * 0.0030f, 0.055f, 0.30f);
+            heart.position = Lerp(
+                heart.position,
+                targetPosition,
+                std::clamp(pullRate * frameStep, 0.0f, 0.46f));
+        }
+
+        const float popRate = std::clamp(heart.age / 8.0f, 0.0f, 1.0f);
+        const float pullRate =
+            heart.age >= heart.collectDelay ?
+            std::clamp((heart.age - heart.collectDelay) / 34.0f, 0.0f, 1.0f) :
+            0.0f;
+        const float pulse = 1.0f + std::sin(heart.phase * 2.6f) * 0.08f;
+        const float scale = heart.baseScale * (0.55f + popRate * 0.45f) * pulse *
+            (1.0f - pullRate * 0.18f);
+        Math::Vector3 rotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
+        rotate.z += heart.phase * 0.55f;
+
+        heart.object->SetTranslate(heart.position);
+        heart.object->SetRotate(rotate);
+        heart.object->SetScale({ scale, scale, 1.0f });
+        heart.object->SetColor({ 1.0f, 0.18f, 0.46f, 0.95f });
+        heart.object->Update();
+    }
+}
+
+void GameRuntime::InitializeRailScenery()
+{
+    railSceneryObjects_.clear();
+}
+
+void GameRuntime::UpdateRailScenery()
+{
+    railSceneryObjects_.clear();
+}
+
+void GameRuntime::DrawRailScenery()
+{
 }
 
 int GameRuntime::GetPostEffectMode() const
 {
+    if (isPostEffectBypassEnabled_) {
+        return 0;
+    }
     if (postEffectMode_ != 12) {
         return postEffectMode_;
     }
@@ -718,13 +966,15 @@ void GameRuntime::Draw()
         skybox_->Draw();
     }
 
+    DrawRailScenery();
+
     object3dCommon_->CommonDrawSetting();
     for (const auto& sceneObject : sceneObjects_) {
         sceneObject->Draw();
     }
-    for (const EnvironmentBonusCoin& coin : environmentBonusCoins_) {
-        if (coin.isActive && coin.object) {
-            coin.object->Draw();
+    for (const RewardHeart& heart : rewardHearts_) {
+        if (heart.isActive && heart.object) {
+            heart.object->Draw();
         }
     }
     if (player_) {
@@ -743,6 +993,204 @@ void GameRuntime::Draw()
     DrawHitEffectObjects();
 }
 
+void GameRuntime::PrewarmBulletPools()
+{
+    playerBulletPool_.clear();
+    enemyBulletPool_.clear();
+
+    if (!object3dCommon_ || !bulletModel_) {
+        return;
+    }
+
+    playerBulletPool_.reserve(kTargetPlayerBulletPoolCount);
+    enemyBulletPool_.reserve(kTargetEnemyBulletPoolCount);
+    for (int index = 0; index < kInitialPlayerBulletPoolCount; ++index) {
+        playerBulletPool_.push_back(CreatePooledPlayerBullet());
+    }
+    for (int index = 0; index < kInitialEnemyBulletPoolCount; ++index) {
+        enemyBulletPool_.push_back(CreatePooledEnemyBullet());
+    }
+}
+
+void GameRuntime::UpdateBulletPoolWarmup()
+{
+    if (!object3dCommon_ || !bulletModel_) {
+        return;
+    }
+    if (isGameOver_ || isGameClear_) {
+        return;
+    }
+
+    ++bulletPoolWarmupTimer_;
+    if (bulletPoolWarmupTimer_ < kBulletPoolWarmupStartDelayFrames) {
+        return;
+    }
+    if ((bulletPoolWarmupTimer_ - kBulletPoolWarmupStartDelayFrames) %
+        kBulletPoolWarmupIntervalFrames != 0) {
+        return;
+    }
+    if (input_ && input_->PushKey(DIK_SPACE)) {
+        return;
+    }
+
+    if (playerBulletPool_.size() < static_cast<size_t>(kTargetPlayerBulletPoolCount)) {
+        playerBulletPool_.push_back(CreatePooledPlayerBullet());
+        return;
+    }
+    if (enemyBulletPool_.size() < static_cast<size_t>(kTargetEnemyBulletPoolCount)) {
+        enemyBulletPool_.push_back(CreatePooledEnemyBullet());
+    }
+}
+
+std::unique_ptr<Bullet> GameRuntime::CreatePooledPlayerBullet()
+{
+    const Math::Vector3 offscreenPosition{ 0.0f, -1000.0f, -1000.0f };
+
+    auto bullet = std::make_unique<Bullet>();
+    bullet->Initialize(
+        object3dCommon_.get(),
+        bulletModel_,
+        offscreenPosition,
+        { 0.0f, 0.0f, playerBulletSpeed_ },
+        { 1.0f, 0.98f, 0.52f, 1.0f },
+        1,
+        { 0.30f, 0.30f, 0.82f },
+        0.36f,
+        1,
+        effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : effectBulletGlowModel_,
+        { 1.0f, 0.98f, 0.54f, 1.0f },
+        { 0.34f, 1.08f, 1.0f },
+        effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : effectBulletTrailModel_,
+        { 1.0f, 0.92f, 0.36f, 1.0f },
+        { 0.34f, 3.35f, 1.0f },
+        1.78f,
+        effectSparkStarModel_,
+        { 1.0f, 0.98f, 0.54f, 1.0f },
+        { 0.075f, 0.075f, 1.0f });
+    bullet->Kill();
+    return bullet;
+}
+
+std::unique_ptr<Bullet> GameRuntime::CreatePooledEnemyBullet()
+{
+    const Math::Vector3 offscreenPosition{ 0.0f, -1000.0f, -1000.0f };
+
+    auto bullet = std::make_unique<Bullet>();
+    bullet->Initialize(
+        object3dCommon_.get(),
+        bulletModel_,
+        offscreenPosition,
+        { 0.0f, 0.0f, -enemyBulletSpeed_ },
+        { 1.0f, 0.08f, 0.18f, 1.0f },
+        1,
+        { 0.42f, 0.42f, 0.62f },
+        0.58f,
+        1,
+        effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
+        { 1.0f, 0.08f, 0.30f, 1.0f },
+        { 0.82f, 0.82f, 1.0f },
+        effectEnemyBulletTailModel_ ? effectEnemyBulletTailModel_ : effectBulletTrailModel_,
+        { 1.0f, 0.08f, 0.36f, 1.0f },
+        { 0.46f, 3.10f, 1.0f },
+        1.85f,
+        effectSparkStarModel_,
+        { 1.0f, 0.28f, 0.58f, 1.0f },
+        { 0.11f, 0.11f, 1.0f });
+    bullet->Kill();
+    return bullet;
+}
+
+std::unique_ptr<Bullet> GameRuntime::AcquireBullet(std::vector<std::unique_ptr<Bullet>>& pool)
+{
+    if (pool.empty()) {
+        return nullptr;
+    }
+
+    auto bullet = std::move(pool.back());
+    pool.pop_back();
+    return bullet;
+}
+
+void GameRuntime::PrewarmHitEffectObjectPool()
+{
+    hitEffectObjectPool_.clear();
+
+    if (!object3dCommon_) {
+        return;
+    }
+
+    hitEffectObjectPool_.reserve(kTargetHitEffectObjectPoolCount);
+    for (int index = 0; index < kInitialHitEffectObjectPoolCount; ++index) {
+        hitEffectObjectPool_.push_back(CreatePooledHitEffectObject());
+    }
+}
+
+void GameRuntime::UpdateHitEffectObjectPoolWarmup()
+{
+    if (!object3dCommon_) {
+        return;
+    }
+    if (isGameOver_ || isGameClear_) {
+        return;
+    }
+    if (bulletPoolWarmupTimer_ < kHitEffectPoolWarmupStartDelayFrames) {
+        return;
+    }
+    if ((bulletPoolWarmupTimer_ - kHitEffectPoolWarmupStartDelayFrames) %
+        kHitEffectPoolWarmupIntervalFrames != 0) {
+        return;
+    }
+    if (input_ && input_->PushKey(DIK_SPACE)) {
+        return;
+    }
+    if (!hitEffects_.empty()) {
+        return;
+    }
+    if (hitEffectObjectPool_.size() < static_cast<size_t>(kTargetHitEffectObjectPoolCount)) {
+        hitEffectObjectPool_.push_back(CreatePooledHitEffectObject());
+    }
+}
+
+std::unique_ptr<Object3d> GameRuntime::CreatePooledHitEffectObject()
+{
+    auto object = std::make_unique<Object3d>();
+    object->Initialize(object3dCommon_.get());
+    object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+    object->SetScale({ 0.01f, 0.01f, 1.0f });
+    object->SetLightingMode(0);
+    object->SetEnvironmentCoefficient(0.0f);
+    object->Update();
+    return object;
+}
+
+std::unique_ptr<Object3d> GameRuntime::AcquireHitEffectObject()
+{
+    if (hitEffectObjectPool_.empty()) {
+        ++hitEffectObjectPoolMisses_;
+        return nullptr;
+    }
+
+    auto object = std::move(hitEffectObjectPool_.back());
+    hitEffectObjectPool_.pop_back();
+    return object;
+}
+
+void GameRuntime::RecycleHitEffectVisuals(HitEffect& effect)
+{
+    for (size_t index = 0; index < effect.visualCount; ++index) {
+        HitEffect::Visual& visual = effect.visuals[index];
+        if (!visual.object) {
+            continue;
+        }
+        visual.object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+        visual.object->SetScale({ 0.01f, 0.01f, 1.0f });
+        visual.object->SetColor({ 1.0f, 1.0f, 1.0f, 0.0f });
+        visual.object->Update();
+        hitEffectObjectPool_.push_back(std::move(visual.object));
+    }
+    effect.visualCount = 0;
+}
+
 void GameRuntime::FirePlayerBullet()
 {
     if (!player_ || !bulletModel_) {
@@ -751,25 +1199,41 @@ void GameRuntime::FirePlayerBullet()
 
     Math::Vector3 spawnPosition = player_->GetTranslate();
     spawnPosition.z += 1.2f;
-    const Math::Vector3 aimDirection = CalculateAimDirection(spawnPosition);
+    const Enemy* aimedTarget = (isReticleOnTarget_ && lockedEnemy_ && !lockedEnemy_->IsDead()) ? lockedEnemy_ : nullptr;
+    Math::Vector3 aimDirection = CalculateAimDirection(spawnPosition);
+    if (aimedTarget) {
+        const Math::Vector3 targetPosition = aimedTarget->GetAimPosition();
+        Math::Vector3 targetDirection = Math::Normalize({
+            targetPosition.x - spawnPosition.x,
+            targetPosition.y - spawnPosition.y,
+            targetPosition.z - spawnPosition.z
+        });
+        if (std::abs(targetDirection.x) + std::abs(targetDirection.y) + std::abs(targetDirection.z) > 0.001f) {
+            aimDirection = targetDirection;
+        }
+    }
     Math::Vector3 velocity = aimDirection * playerBulletSpeed_;
-    Math::Vector4 color{ 1.0f, 0.90f, 0.42f, 1.0f };
-    Math::Vector3 scale{ 0.24f, 0.24f, 0.92f };
-    float collisionRadius = 0.40f;
+    Math::Vector4 color{ 1.0f, 0.98f, 0.52f, 1.0f };
+    Math::Vector3 scale{ 0.30f, 0.30f, 0.82f };
+    float collisionRadius = 0.36f;
     int lifeTimer = 180;
     int hitLimit = 1;
     const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
 
     if (isCharged) {
         velocity = aimDirection * lockBulletSpeed_ * chargedBulletSpeedMultiplier_;
-        color = { 0.58f, 1.0f, 0.92f, 1.0f };
-        scale = { 0.44f, 0.44f, 1.48f };
-        collisionRadius = 0.82f;
+        color = { 0.72f, 1.0f, 0.96f, 1.0f };
+        scale = { 0.48f, 0.48f, 1.30f };
+        collisionRadius = 0.80f;
         lifeTimer = 260;
         hitLimit = 1;
     }
 
-    auto bullet = std::make_unique<Bullet>();
+    auto bullet = AcquireBullet(playerBulletPool_);
+    if (!bullet) {
+        ++playerBulletPoolMisses_;
+        return;
+    }
     bullet->Initialize(
         object3dCommon_.get(),
         bulletModel_,
@@ -780,40 +1244,40 @@ void GameRuntime::FirePlayerBullet()
         scale,
         collisionRadius,
         hitLimit,
-        effectBulletGlowModel_,
+        effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : effectBulletGlowModel_,
         isCharged ?
-            Math::Vector4{ 0.28f, 0.95f, 1.0f, 0.34f } :
-            Math::Vector4{ 1.0f, 0.84f, 0.34f, 0.26f },
+            Math::Vector4{ 0.78f, 1.0f, 0.98f, 1.0f } :
+            Math::Vector4{ 1.0f, 0.98f, 0.54f, 1.0f },
         isCharged ?
-            Math::Vector3{ 0.76f, 0.76f, 1.0f } :
-            Math::Vector3{ 0.42f, 0.42f, 1.0f },
-        effectBulletTrailModel_,
+            Math::Vector3{ 0.56f, 1.72f, 1.0f } :
+            Math::Vector3{ 0.34f, 1.08f, 1.0f },
+        effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : effectBulletTrailModel_,
         isCharged ?
-            Math::Vector4{ 0.50f, 1.0f, 0.94f, 0.72f } :
-            Math::Vector4{ 1.0f, 0.82f, 0.26f, 0.58f },
+            Math::Vector4{ 0.70f, 1.0f, 0.96f, 1.0f } :
+            Math::Vector4{ 1.0f, 0.92f, 0.36f, 1.0f },
         isCharged ?
-            Math::Vector3{ 0.22f, 2.95f, 1.0f } :
-            Math::Vector3{ 0.13f, 1.82f, 1.0f },
-        isCharged ? 2.10f : 1.18f,
+            Math::Vector3{ 0.42f, 5.10f, 1.0f } :
+            Math::Vector3{ 0.34f, 3.35f, 1.0f },
+        isCharged ? 3.25f : 1.78f,
         effectSparkStarModel_,
         isCharged ?
-            Math::Vector4{ 0.86f, 1.0f, 0.90f, 0.84f } :
-            Math::Vector4{ 1.0f, 0.95f, 0.56f, 0.68f },
+            Math::Vector4{ 1.0f, 1.0f, 0.84f, 1.0f } :
+            Math::Vector4{ 1.0f, 0.98f, 0.54f, 1.0f },
         isCharged ?
             Math::Vector3{ 0.13f, 0.13f, 1.0f } :
             Math::Vector3{ 0.075f, 0.075f, 1.0f });
-    if (isCharged) {
-        bullet->EnableHoming(0.075f);
-        if (lockedEnemy_) {
-            bullet->SetHomingTarget(lockedEnemy_->GetTranslate());
-        }
+    const Enemy* homingTarget = aimedTarget;
+    if (homingTarget) {
+        bullet->EnableHoming(isCharged ? 0.18f : 0.11f);
+        bullet->SetHomingTarget(homingTarget->GetAimPosition());
+        homingBulletTargets_[bullet.get()] = homingTarget;
     }
     playerBullets_.push_back(std::move(bullet));
-    if (isCharged) {
-        AddMuzzleFlashEffect(spawnPosition, true);
-    }
+    maxActivePlayerBullets_ =
+        (std::max)(maxActivePlayerBullets_, playerBullets_.size());
     chargeTimer_ = 0;
     if (isCharged) {
+        AddMuzzleFlashEffect(spawnPosition, true);
         chargeFlashTimer_ = 18;
     }
 }
@@ -827,28 +1291,34 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
     Math::Vector3 spawnPosition = position;
     spawnPosition.z -= 1.0f;
 
-    auto bullet = std::make_unique<Bullet>();
+    auto bullet = AcquireBullet(enemyBulletPool_);
+    if (!bullet) {
+        ++enemyBulletPoolMisses_;
+        return;
+    }
     bullet->Initialize(
         object3dCommon_.get(),
         bulletModel_,
         spawnPosition,
         { 0.0f, 0.0f, -enemyBulletSpeed_ },
-        { 1.0f, 0.12f, 0.20f, 1.0f },
+        { 1.0f, 0.08f, 0.18f, 1.0f },
         240,
-        { 0.42f, 0.42f, 0.60f },
-        0.55f,
+        { 0.42f, 0.42f, 0.62f },
+        0.58f,
         1,
-        effectBulletGlowModel_,
-        { 1.0f, 0.05f, 0.14f, 0.46f },
+        effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
+        { 1.0f, 0.08f, 0.30f, 1.0f },
         { 0.82f, 0.82f, 1.0f },
-        effectBulletTrailModel_,
-        { 1.0f, 0.08f, 0.22f, 0.62f },
-        { 0.30f, 1.42f, 1.0f },
-        0.74f,
+        effectEnemyBulletTailModel_ ? effectEnemyBulletTailModel_ : effectBulletTrailModel_,
+        { 1.0f, 0.08f, 0.36f, 1.0f },
+        { 0.46f, 3.10f, 1.0f },
+        1.85f,
         effectSparkStarModel_,
-        { 1.0f, 0.32f, 0.44f, 0.68f },
-        { 0.08f, 0.08f, 1.0f });
+        { 1.0f, 0.28f, 0.58f, 1.0f },
+        { 0.11f, 0.11f, 1.0f });
     enemyBullets_.push_back(std::move(bullet));
+    maxActiveEnemyBullets_ =
+        (std::max)(maxActiveEnemyBullets_, enemyBullets_.size());
 }
 
 void GameRuntime::SpawnEnemy()
@@ -959,7 +1429,6 @@ void GameRuntime::UpdateLockOnTarget()
     const float lockRadius = (std::max)(lockRadius_, 1.0f);
     const float kLockRadiusSq = lockRadius * lockRadius;
     constexpr float kReticleHitRadius = 24.0f;
-    constexpr float kReticleHitRadiusSq = kReticleHitRadius * kReticleHitRadius;
     float bestScore = kLockRadiusSq;
 
     for (const auto& enemy : enemies_) {
@@ -968,9 +1437,33 @@ void GameRuntime::UpdateLockOnTarget()
         }
 
         Math::Vector2 screenPosition{};
-        if (!TryProjectToScreen(enemy->GetTranslate(), screenPosition)) {
+        const Math::Vector3 enemyPosition = enemy->GetAimPosition();
+        if (!TryProjectToScreen(enemyPosition, screenPosition)) {
             continue;
         }
+
+        float projectedEnemyRadius = 0.0f;
+        const float enemyRadius = enemy->GetAimRadius();
+        Math::Vector2 edgeScreen{};
+        if (TryProjectToScreen(
+                { enemyPosition.x + enemyRadius, enemyPosition.y, enemyPosition.z },
+                edgeScreen)) {
+            const float dx = edgeScreen.x - screenPosition.x;
+            const float dy = edgeScreen.y - screenPosition.y;
+            projectedEnemyRadius =
+                (std::max)(projectedEnemyRadius, std::sqrt(dx * dx + dy * dy));
+        }
+        if (TryProjectToScreen(
+                { enemyPosition.x, enemyPosition.y + enemyRadius, enemyPosition.z },
+                edgeScreen)) {
+            const float dx = edgeScreen.x - screenPosition.x;
+            const float dy = edgeScreen.y - screenPosition.y;
+            projectedEnemyRadius =
+                (std::max)(projectedEnemyRadius, std::sqrt(dx * dx + dy * dy));
+        }
+        const float targetHitRadius =
+            std::clamp(projectedEnemyRadius * 0.82f + 10.0f, kReticleHitRadius, 72.0f);
+        const float targetHitRadiusSq = targetHitRadius * targetHitRadius;
 
         const float dx = screenPosition.x - reticleScreen_.x;
         const float dy = screenPosition.y - reticleScreen_.y;
@@ -980,7 +1473,7 @@ void GameRuntime::UpdateLockOnTarget()
             lockedEnemy_ = enemy.get();
             lockedEnemyScreen_ = screenPosition;
             hasLockTarget_ = true;
-            isReticleOnTarget_ = distanceSq <= kReticleHitRadiusSq;
+            isReticleOnTarget_ = distanceSq <= targetHitRadiusSq;
         }
     }
 }
@@ -1036,27 +1529,35 @@ void GameRuntime::AddEnemyHitEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 34;
-    effect.strength = strength;
+    effect.duration = 44;
+    effect.strength = strength * 1.08f;
     effect.scoreValue = 100;
     effect.type = HitEffectType::EnemyDestroy;
 
-    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 1.0f, 0.92f, 0.88f }, 0.48f, 0.78f, 0.0f, 0.0f, 1.0f, 1.0f, {});
-    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 0.42f, 0.88f, 1.0f, 0.34f }, 0.74f, 0.36f, 0.0f, 0.05f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
+        { 1.0f, 0.96f, 0.66f, 1.0f }, 1.16f, 0.88f, 0.38f, 0.0f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
+        { 0.52f, 0.94f, 1.0f, 0.78f }, 0.86f, 0.58f, -1.15f, 0.04f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
+        { 0.76f, 0.52f, 1.0f, 0.94f }, 0.54f, 0.34f, 2.45f, 0.03f, 0.62f, 1.18f, { -0.096f, 0.066f, 0.014f });
+    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
+        { 0.54f, 0.94f, 1.0f, 0.88f }, 0.48f, 0.32f, -2.15f, 0.04f, 0.58f, 1.05f, { 0.104f, 0.058f, 0.012f });
+    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
+        { 1.0f, 0.76f, 0.34f, 0.84f }, 0.46f, 0.30f, 1.70f, 0.07f, 0.54f, 0.96f, { -0.066f, -0.086f, 0.008f });
+    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
+        { 0.96f, 0.92f, 1.0f, 0.80f }, 0.42f, 0.30f, -1.85f, 0.09f, 0.50f, 0.92f, { 0.074f, -0.080f, 0.008f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.96f, 0.72f, 0.82f }, 0.22f, 0.46f, -1.40f, 0.00f, 1.00f, 0.74f, { -0.070f, 0.055f, 0.010f });
+        { 1.0f, 0.96f, 0.68f, 1.0f }, 0.24f, 0.48f, -1.40f, 0.00f, 1.00f, 0.74f, { -0.082f, 0.068f, 0.010f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.72f, 0.96f, 1.0f, 0.74f }, 0.20f, 0.42f, 1.65f, 0.02f, 0.92f, 0.70f, { 0.078f, 0.046f, 0.010f });
+        { 0.72f, 0.96f, 1.0f, 0.96f }, 0.22f, 0.46f, 1.65f, 0.02f, 0.92f, 0.70f, { 0.090f, 0.058f, 0.010f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.78f, 0.34f, 0.68f }, 0.18f, 0.38f, -2.10f, 0.03f, 0.88f, 0.66f, { -0.050f, -0.062f, 0.006f });
+        { 1.0f, 0.78f, 0.30f, 0.90f }, 0.20f, 0.42f, -2.10f, 0.03f, 0.88f, 0.66f, { -0.064f, -0.076f, 0.006f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.56f, 0.86f, 1.0f, 0.64f }, 0.17f, 0.36f, 2.25f, 0.05f, 0.84f, 0.64f, { 0.052f, -0.058f, 0.006f });
+        { 0.56f, 0.86f, 1.0f, 0.88f }, 0.18f, 0.38f, 2.25f, 0.05f, 0.84f, 0.64f, { 0.066f, -0.072f, 0.006f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 1.0f, 0.88f, 0.58f }, 0.16f, 0.34f, 0.95f, 0.08f, 0.78f, 0.60f, { 0.000f, 0.082f, 0.004f });
+        { 1.0f, 1.0f, 0.86f, 0.82f }, 0.17f, 0.36f, 0.95f, 0.08f, 0.78f, 0.60f, { 0.000f, 0.096f, 0.004f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.48f, 0.80f, 1.0f, 0.52f }, 0.15f, 0.30f, -0.80f, 0.10f, 0.76f, 0.58f, { 0.000f, -0.078f, 0.004f });
+        { 0.48f, 0.80f, 1.0f, 0.78f }, 0.16f, 0.34f, -0.80f, 0.10f, 0.76f, 0.58f, { 0.000f, -0.092f, 0.004f });
     hitEffects_.push_back(std::move(effect));
 }
 
@@ -1066,16 +1567,20 @@ void GameRuntime::AddEnemyImpactEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 20;
-    effect.strength = strength;
+    effect.duration = 24;
+    effect.strength = strength * 1.12f;
     effect.type = HitEffectType::EnemyImpact;
 
-    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.96f, 0.72f, 0.66f }, 0.34f, 0.30f, 0.0f, 0.0f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
+        { 1.0f, 0.94f, 0.56f, 1.0f }, 0.72f, 0.52f, 0.30f, 0.0f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
+        { 0.78f, 1.0f, 0.84f, 0.86f }, 0.24f, 0.46f, -1.55f, 0.03f, 0.76f, 1.06f, { -0.040f, 0.026f, 0.004f });
+    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
+        { 1.0f, 0.78f, 0.34f, 0.82f }, 0.22f, 0.42f, 1.70f, 0.05f, 0.72f, 0.96f, { 0.044f, -0.030f, 0.004f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.72f, 0.96f, 1.0f, 0.72f }, 0.28f, 0.56f, -1.05f, 0.0f, 1.18f, 0.62f, { -0.020f, 0.018f, 0.0f });
+        { 0.72f, 0.96f, 1.0f, 0.94f }, 0.22f, 0.48f, -1.05f, 0.0f, 1.18f, 0.62f, { -0.042f, 0.034f, 0.0f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.78f, 0.22f, 0.58f }, 0.22f, 0.48f, 1.20f, 0.04f, 0.94f, 0.58f, { 0.024f, -0.014f, 0.0f });
+        { 1.0f, 0.78f, 0.22f, 0.88f }, 0.19f, 0.44f, 1.20f, 0.04f, 0.94f, 0.58f, { 0.046f, -0.032f, 0.0f });
 
     hitEffects_.push_back(std::move(effect));
 }
@@ -1090,12 +1595,12 @@ void GameRuntime::AddMuzzleFlashEffect(
     effect.strength = isCharged ? 1.15f : 0.78f;
     effect.type = HitEffectType::EnemyImpact;
 
-    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
+    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
         isCharged ?
-            Math::Vector4{ 0.48f, 0.96f, 1.0f, 0.54f } :
-            Math::Vector4{ 1.0f, 0.82f, 0.30f, 0.42f },
-        isCharged ? 0.38f : 0.24f,
-        isCharged ? 0.28f : 0.18f,
+            Math::Vector4{ 0.58f, 1.0f, 0.96f, 0.72f } :
+            Math::Vector4{ 1.0f, 0.88f, 0.36f, 0.56f },
+        isCharged ? 0.46f : 0.28f,
+        isCharged ? 0.22f : 0.14f,
         0.0f,
         0.0f,
         1.25f,
@@ -1116,21 +1621,19 @@ void GameRuntime::AddMuzzleFlashEffect(
     hitEffects_.push_back(std::move(effect));
 }
 
-void GameRuntime::AddCoinCollectEffect(const Math::Vector3& worldPosition)
+void GameRuntime::AddRewardHeartCollectEffect(const Math::Vector3& worldPosition)
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 36;
-    effect.strength = 1.0f;
-    effect.scoreValue = 250;
-    effect.type = HitEffectType::CoinCollect;
+    effect.duration = 20;
+    effect.strength = 0.65f;
+    effect.scoreValue = kRewardHeartScoreValue;
+    effect.type = HitEffectType::RewardCollect;
 
     AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.74f, 0.18f, 1.0f }, 0.62f, 0.25f, 0.0f, 0.0f, 1.0f, 1.0f, { 0.0f, 0.035f, 0.0f });
+        { 1.0f, 0.62f, 0.28f, 0.58f }, 0.34f, 0.12f, 0.0f, 0.0f, 1.0f, 1.0f, {});
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.90f, 0.40f, 0.82f }, 0.72f, 0.92f, 2.35f, 0.05f, 1.35f, 0.78f, { 0.0f, 0.09f, 0.02f });
-    AddHitEffectVisual(effect, effectGlowRingModel_, worldPosition,
-        { 1.0f, 0.54f, 0.08f, 0.54f }, 0.52f, 1.85f, -1.55f, 0.16f, 1.0f, 1.0f, { 0.0f, 0.02f, 0.0f });
+        { 1.0f, 0.82f, 0.46f, 0.58f }, 0.38f, 0.34f, 1.35f, 0.03f, 1.18f, 0.72f, {});
     hitEffects_.push_back(std::move(effect));
 }
 
@@ -1165,10 +1668,16 @@ void GameRuntime::AddHitEffectVisual(
     if (!object3dCommon_ || !model) {
         return;
     }
+    if (effect.visualCount >= HitEffect::kMaxVisuals) {
+        return;
+    }
 
-    HitEffect::Visual visual{};
-    visual.object = std::make_unique<Object3d>();
-    visual.object->Initialize(object3dCommon_.get());
+    HitEffect::Visual& visual = effect.visuals[effect.visualCount];
+    visual = HitEffect::Visual{};
+    visual.object = AcquireHitEffectObject();
+    if (!visual.object) {
+        return;
+    }
     visual.object->SetModel(model);
     visual.object->SetTranslate(worldPosition);
     visual.object->SetScale({
@@ -1189,23 +1698,26 @@ void GameRuntime::AddHitEffectVisual(
     visual.aspectX = aspectX;
     visual.aspectY = aspectY;
     visual.velocity = velocity;
-    effect.visuals.push_back(std::move(visual));
+    ++effect.visualCount;
 }
 
 void GameRuntime::UpdateHitEffects()
 {
-    for (HitEffect& effect : hitEffects_) {
-        ++effect.age;
+    float effectFrameStep = 1.0f;
+    if (dxCommon_) {
+        effectFrameStep =
+            std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 4.0f);
     }
 
-    hitEffects_.erase(
-        std::remove_if(
-            hitEffects_.begin(),
-            hitEffects_.end(),
-            [](const HitEffect& effect) {
-                return effect.age >= effect.duration;
-            }),
-        hitEffects_.end());
+    for (auto iterator = hitEffects_.begin(); iterator != hitEffects_.end();) {
+        iterator->age += effectFrameStep;
+        if (iterator->age >= static_cast<float>(iterator->duration)) {
+            RecycleHitEffectVisuals(*iterator);
+            iterator = hitEffects_.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
 }
 
 void GameRuntime::DrawHitEffects()
@@ -1257,14 +1769,15 @@ void GameRuntime::DrawHitEffectObjects()
     object3dCommon_->CommonDrawSetting();
 
     for (const HitEffect& effect : hitEffects_) {
-        if (effect.visuals.empty()) {
+        if (effect.visualCount == 0) {
             continue;
         }
 
         const float rate =
-            static_cast<float>(effect.age) /
+            effect.age /
             static_cast<float>((std::max)(effect.duration, 1));
-        for (const HitEffect::Visual& visual : effect.visuals) {
+        for (size_t index = 0; index < effect.visualCount; ++index) {
+            const HitEffect::Visual& visual = effect.visuals[index];
             if (!visual.object) {
                 continue;
             }
@@ -1282,17 +1795,18 @@ void GameRuntime::DrawHitEffectObjects()
                 effect.strength;
             Math::Vector4 color = visual.color;
             const float alphaCurve =
-                effect.type == HitEffectType::CoinCollect ? fade :
+                effect.type == HitEffectType::RewardCollect ? fade :
                 effect.type == HitEffectType::PlayerDamage ? fade * fade * fade :
-                fade * fade;
+                effect.type == HitEffectType::EnemyImpact ? fade :
+                fade * (0.78f + 0.22f * fade);
             color.w *= alphaCurve;
 
             Math::Vector3 rotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
             rotate.z += localRate * visual.spin;
             Math::Vector3 translate = effect.worldPosition;
-            translate.x += visual.velocity.x * static_cast<float>(effect.age);
-            translate.y += visual.velocity.y * static_cast<float>(effect.age);
-            translate.z += visual.velocity.z * static_cast<float>(effect.age);
+            translate.x += visual.velocity.x * effect.age;
+            translate.y += visual.velocity.y * effect.age;
+            translate.z += visual.velocity.z * effect.age;
 
             visual.object->SetTranslate(translate);
             visual.object->SetScale({
@@ -1443,7 +1957,13 @@ void GameRuntime::DrawEditorOverlayGuiRich()
         ImGui::Selectable((std::string(ICON_FA_BULLSEYE " 敵 x ") + std::to_string(enemies_.size())).c_str(), false);
         ImGui::Selectable((std::string(ICON_FA_CIRCLE " 自弾 x ") + std::to_string(playerBullets_.size())).c_str(), false);
         ImGui::Selectable((std::string(ICON_FA_CIRCLE_DOT " 敵弾 x ") + std::to_string(enemyBullets_.size())).c_str(), false);
-        ImGui::Selectable((std::string(ICON_FA_HEART " 報酬ハート x ") + std::to_string(environmentBonusCoins_.size())).c_str(), false);
+        size_t activeRewardHeartCount = 0;
+        for (const RewardHeart& heart : rewardHearts_) {
+            if (heart.isActive && heart.object) {
+                ++activeRewardHeartCount;
+            }
+        }
+        ImGui::Selectable((std::string(ICON_FA_HEART " reward hearts x ") + std::to_string(activeRewardHeartCount)).c_str(), false);
         ImGui::Selectable((std::string(ICON_FA_CUBE " シーンオブジェクト x ") + std::to_string(sceneObjects_.size())).c_str(), false);
         ImGui::Separator();
         ImGui::Text("ウェーブ: %d / %d", (std::min)(currentWaveIndex_ + 1, kWaveCount), kWaveCount);
@@ -1579,12 +2099,67 @@ void GameRuntime::DrawEditorOverlayGuiRich()
         static float historyTime[120]{};
         static float enemyHistory[120]{};
         static float bulletHistory[120]{};
+        static float frameMsHistory[120]{};
         static int historyOffset = 0;
+        const ImGuiIO& io = ImGui::GetIO();
+        const float frameMs = io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f;
+        size_t activeRewardHeartCount = 0;
+        for (const RewardHeart& heart : rewardHearts_) {
+            if (heart.isActive && heart.object) {
+                ++activeRewardHeartCount;
+            }
+        }
+        size_t hitVisualCount = 0;
+        for (const HitEffect& effect : hitEffects_) {
+            hitVisualCount += effect.visualCount;
+        }
+        const size_t activeBulletCount = playerBullets_.size() + enemyBullets_.size();
+        const size_t pooledBulletCount = playerBulletPool_.size() + enemyBulletPool_.size();
+        const size_t activeSceneryCount = railSceneryObjects_.size();
+        const size_t estimatedActiveDrawObjects =
+            sceneObjects_.size() +
+            activeRewardHeartCount +
+            activeSceneryCount +
+            (player_ ? 1u : 0u) +
+            enemies_.size() +
+            activeBulletCount * 6u +
+            hitVisualCount;
+        const size_t estimatedPooledBulletObjects = pooledBulletCount * 5u;
         historyTime[historyOffset] = static_cast<float>(historyOffset);
         enemyHistory[historyOffset] = static_cast<float>(enemies_.size());
         bulletHistory[historyOffset] =
             static_cast<float>(playerBullets_.size() + enemyBullets_.size());
+        frameMsHistory[historyOffset] = frameMs;
         historyOffset = (historyOffset + 1) % 120;
+
+        ImGui::Text("Perf: %.1f FPS / %.2f ms", io.Framerate, frameMs);
+        ImGui::Text(
+            "Objects: draw est %zu / pooled bullet objects %zu",
+            estimatedActiveDrawObjects,
+            estimatedPooledBulletObjects);
+        ImGui::Text(
+            "Active: scenery %zu, enemies %zu, bullets %zu, hit effects %zu, hit visuals %zu",
+            activeSceneryCount,
+            enemies_.size(),
+            activeBulletCount,
+            hitEffects_.size(),
+            hitVisualCount);
+        ImGui::Text(
+            "Pools: player %zu, enemy %zu",
+            playerBulletPool_.size(),
+            enemyBulletPool_.size());
+        ImGui::Text(
+            "Scene: objects %zu, hearts %zu/%zu miss %zu",
+            sceneObjects_.size(),
+            activeRewardHeartCount,
+            rewardHearts_.size(),
+            rewardHeartPoolMisses_);
+        ImGui::Separator();
+        if (ImPlot::BeginPlot("Frame time", ImVec2(-1.0f, 130.0f))) {
+            ImPlot::SetupAxes("frame", "ms", ImPlotAxisFlags_NoTickLabels, 0);
+            ImPlot::PlotLine("ms", historyTime, frameMsHistory, 120);
+            ImPlot::EndPlot();
+        }
 
         ImGui::Text("スコア: %d", score_);
         ImGui::Text("敵数: %zu", enemies_.size());
@@ -2039,19 +2614,184 @@ void GameRuntime::DrawResultOverlay()
         guide);
 }
 
+void GameRuntime::DrawPerformanceOverlay()
+{
+    if (!isPerformanceOverlayVisible_) {
+        return;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+
+    size_t activeRewardHeartCount = 0;
+    for (const RewardHeart& heart : rewardHearts_) {
+        if (heart.isActive && heart.object) {
+            ++activeRewardHeartCount;
+        }
+    }
+
+    size_t hitVisualCount = 0;
+    for (const HitEffect& effect : hitEffects_) {
+        hitVisualCount += effect.visualCount;
+    }
+
+    const size_t activeBulletCount = playerBullets_.size() + enemyBullets_.size();
+    const size_t pooledBulletCount = playerBulletPool_.size() + enemyBulletPool_.size();
+    const size_t pooledHitEffectObjects = hitEffectObjectPool_.size();
+    const size_t activeSceneryCount = railSceneryObjects_.size();
+    const size_t estimatedActiveDrawObjects =
+        sceneObjects_.size() +
+        activeRewardHeartCount +
+        activeSceneryCount +
+        (showSkybox_ && skybox_ ? 1u : 0u) +
+        (player_ ? 1u : 0u) +
+        enemies_.size() +
+        activeBulletCount * 6u +
+        hitVisualCount;
+    const size_t estimatedPooledBulletObjects = pooledBulletCount * 5u;
+    DirectXCommon::FrameTiming timing{};
+    if (dxCommon_) {
+        timing = dxCommon_->GetFrameTiming();
+    }
+    const float measuredFrameMs =
+        timing.frameCpuMs > 0.0f ?
+        timing.frameCpuMs :
+        (io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+    const float measuredFps =
+        measuredFrameMs > 0.0f ? 1000.0f / measuredFrameMs : 0.0f;
+
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    const ImVec2 panelMin(hudMin.x + 18.0f, hudMin.y + hudSize.y - 182.0f);
+    const ImVec2 panelMax(panelMin.x + 540.0f, panelMin.y + 162.0f);
+    const ImU32 accentColor =
+        measuredFrameMs > 28.0f ? IM_COL32(255, 90, 90, 235) :
+        measuredFrameMs > 18.0f ? IM_COL32(255, 205, 92, 235) :
+                                  IM_COL32(116, 242, 190, 235);
+
+    drawList->AddRectFilled(
+        ImVec2(panelMin.x + 3.0f, panelMin.y + 4.0f),
+        ImVec2(panelMax.x + 3.0f, panelMax.y + 4.0f),
+        IM_COL32(0, 0, 0, 82),
+        6.0f);
+    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(6, 10, 18, 180), 6.0f);
+    drawList->AddRect(panelMin, panelMax, accentColor, 6.0f, 0, 2.0f);
+
+    char line[256]{};
+    std::snprintf(
+        line,
+        sizeof(line),
+        "F3 PERF inst %.1f FPS / %.2f ms  avg %.1f FPS",
+        measuredFps,
+        measuredFrameMs,
+        io.Framerate);
+    drawList->AddText(ImVec2(panelMin.x + 12.0f, panelMin.y + 10.0f), accentColor, line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "draw est %zu  scenery %zu  hearts %zu/%zu  bullets %zu  enemies %zu",
+        estimatedActiveDrawObjects,
+        activeSceneryCount,
+        activeRewardHeartCount,
+        rewardHearts_.size(),
+        activeBulletCount,
+        enemies_.size());
+    drawList->AddText(
+        ImVec2(panelMin.x + 12.0f, panelMin.y + 35.0f),
+        IM_COL32(224, 238, 248, 230),
+        line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "pool P %zu/%d E %zu/%d  miss P/E %zu/%zu  warm %d/%d",
+        playerBulletPool_.size(),
+        kTargetPlayerBulletPoolCount,
+        enemyBulletPool_.size(),
+        kTargetEnemyBulletPoolCount,
+        playerBulletPoolMisses_,
+        enemyBulletPoolMisses_,
+        (std::min)(bulletPoolWarmupTimer_, kBulletPoolWarmupStartDelayFrames),
+        kBulletPoolWarmupStartDelayFrames);
+    drawList->AddText(
+        ImVec2(panelMin.x + 12.0f, panelMin.y + 58.0f),
+        IM_COL32(188, 210, 228, 220),
+        line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "pool objs bullet %zu  hitFx %zu/%d miss %zu  heart miss %zu  post %d%s sky %s",
+        estimatedPooledBulletObjects,
+        pooledHitEffectObjects,
+        kTargetHitEffectObjectPoolCount,
+        hitEffectObjectPoolMisses_,
+        rewardHeartPoolMisses_,
+        GetPostEffectMode(),
+        isPostEffectBypassEnabled_ ? " BYPASS" : "",
+        showSkybox_ ? "ON" : "OFF");
+    drawList->AddText(
+        ImVec2(panelMin.x + 12.0f, panelMin.y + 82.0f),
+        IM_COL32(188, 210, 228, 220),
+        line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "cpu upd %.1f pre %.1f scene %.1f post %.1f total %.1f",
+        timing.updateMs,
+        timing.preDrawMs,
+        timing.sceneDrawMs,
+        timing.postEffectMs,
+        timing.frameCpuMs);
+    drawList->AddText(
+        ImVec2(panelMin.x + 12.0f, panelMin.y + 106.0f),
+        IM_COL32(206, 224, 238, 224),
+        line);
+
+    std::snprintf(
+        line,
+        sizeof(line),
+        "wait present %.1f fence %.1f fps %.1f  F4 post/F5 sky",
+        timing.presentMs,
+        timing.fenceWaitMs,
+        timing.fpsWaitMs);
+    drawList->AddText(
+        ImVec2(panelMin.x + 12.0f, panelMin.y + 130.0f),
+        IM_COL32(206, 224, 238, 224),
+        line);
+}
+
 void GameRuntime::UpdatePlayerBullets()
 {
     for (auto iterator = playerBullets_.begin();
         iterator != playerBullets_.end();) {
         if ((*iterator)->CanHome()) {
-            if (const Enemy* target = FindHomingTargetForBullet(*(*iterator))) {
-                (*iterator)->SetHomingTarget(target->GetTranslate());
+            Bullet* bullet = iterator->get();
+            auto targetIterator = homingBulletTargets_.find(bullet);
+            const Enemy* target =
+                targetIterator != homingBulletTargets_.end() ?
+                targetIterator->second :
+                nullptr;
+            const Math::Vector3 targetPosition =
+                target ? target->GetAimPosition() : Math::Vector3{};
+            const bool hasPassedHomingTarget =
+                target &&
+                targetPosition.z + 1.25f < bullet->GetTranslate().z;
+            if (target && !target->IsDead() && !hasPassedHomingTarget) {
+                (*iterator)->SetHomingTarget(targetPosition);
             } else {
                 (*iterator)->ClearHomingTarget();
+                homingBulletTargets_.erase(bullet);
             }
         }
         (*iterator)->Update();
         if ((*iterator)->IsDead()) {
+            homingBulletTargets_.erase(iterator->get());
+            playerBulletPool_.push_back(std::move(*iterator));
             iterator = playerBullets_.erase(iterator);
         } else {
             ++iterator;
@@ -2065,6 +2805,7 @@ void GameRuntime::UpdateEnemyBullets()
         iterator != enemyBullets_.end();) {
         (*iterator)->Update();
         if ((*iterator)->IsDead()) {
+            enemyBulletPool_.push_back(std::move(*iterator));
             iterator = enemyBullets_.erase(iterator);
         } else {
             ++iterator;
@@ -2077,6 +2818,15 @@ void GameRuntime::UpdateEnemies()
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
         (*iterator)->Update(railDistance_);
         if ((*iterator)->IsDead()) {
+            const Enemy* removedEnemy = iterator->get();
+            for (auto targetIterator = homingBulletTargets_.begin();
+                targetIterator != homingBulletTargets_.end();) {
+                if (targetIterator->second == removedEnemy) {
+                    targetIterator = homingBulletTargets_.erase(targetIterator);
+                } else {
+                    ++targetIterator;
+                }
+            }
             if ((*iterator)->HasEscaped() && spawnedEnemyCountInWave_ > defeatedEnemyCountInWave_) {
                 --spawnedEnemyCountInWave_;
             }
@@ -2138,7 +2888,7 @@ const Enemy* GameRuntime::FindHomingTargetForBullet(const Bullet& bullet) const
         if (!enemy || enemy->IsDead()) {
             continue;
         }
-        const Math::Vector3 enemyPosition = enemy->GetTranslate();
+        const Math::Vector3 enemyPosition = enemy->GetAimPosition();
         if (enemyPosition.z + 2.0f < bulletPosition.z) {
             continue;
         }
@@ -2161,54 +2911,6 @@ int GameRuntime::GetTotalEnemyTargetCount() const
     return total;
 }
 
-void GameRuntime::CheckBulletBonusCoinCollisions()
-{
-    for (auto& bullet : playerBullets_) {
-        if (bullet->IsDead()) {
-            continue;
-        }
-
-        for (EnvironmentBonusCoin& coin : environmentBonusCoins_) {
-            if (!coin.isActive || !coin.object) {
-                continue;
-            }
-
-            const float radius = bullet->GetRadius() + coin.collisionRadius;
-            if (DistanceSquared(
-                bullet->GetTranslate(),
-                coin.object->GetTranslate()) <= radius * radius) {
-                coin.isActive = false;
-                bullet->RegisterHit();
-                score_ += 250;
-                AddCameraShake(0.018f, 5);
-                break;
-            }
-        }
-    }
-}
-
-void GameRuntime::CheckPlayerBonusCoinCollisions()
-{
-    if (!player_ || player_->IsDead()) {
-        return;
-    }
-
-    for (EnvironmentBonusCoin& coin : environmentBonusCoins_) {
-        if (!coin.isActive || !coin.object) {
-            continue;
-        }
-
-        const float radius = player_->GetRadius() + coin.collisionRadius;
-        if (DistanceSquared(
-            player_->GetTranslate(),
-            coin.object->GetTranslate()) <= radius * radius) {
-            coin.isActive = false;
-            score_ += 250;
-            AddCameraShake(0.018f, 5);
-        }
-    }
-}
-
 void GameRuntime::CheckBulletEnemyCollisions()
 {
     for (auto& bullet : playerBullets_) {
@@ -2221,10 +2923,11 @@ void GameRuntime::CheckBulletEnemyCollisions()
                 continue;
             }
 
-            const float radius = bullet->GetRadius() + enemy->GetRadius();
+            const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
+            const float radius = bullet->GetRadius() + enemy->GetAimRadius();
             if (DistanceSquared(
                 bullet->GetTranslate(),
-                enemy->GetTranslate()) <= radius * radius) {
+                enemyAimPosition) <= radius * radius) {
                 const bool isChargedHit = bullet->GetRadius() >= 0.8f;
                 const int damage = isChargedHit ? 3 : 1;
                 AddEnemyImpactEffect(
@@ -2237,8 +2940,9 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     isDestroyed ? (isChargedHit ? 11 : 8) : 4);
                 if (isDestroyed) {
                     AddEnemyHitEffect(
-                        enemy->GetTranslate(),
+                        enemyAimPosition,
                         isChargedHit ? 1.32f : 1.0f);
+                    SpawnRewardHearts(enemyAimPosition, isChargedHit ? 6 : 4);
                     score_ += 100;
                     ++defeatedEnemyCount_;
                     ++defeatedEnemyCountInWave_;
@@ -2309,6 +3013,12 @@ void GameRuntime::UpdateGameCamera()
     }
 
     const float bob = std::sin(cameraTimer_ * 0.045f) * 0.08f;
+    const float railCurve =
+        std::sin(railDistance_ * kRailCameraCurveFrequency);
+    const float railDrift =
+        std::sin(railDistance_ * kRailCameraDriftFrequency + 1.35f);
+    const float railLift =
+        std::sin(railDistance_ * 0.034f + 0.45f) * 0.18f;
     const float shakeX = std::sin(cameraTimer_ * 1.9f) * cameraShakePower_ * shakeRate;
     const float shakeY = std::cos(cameraTimer_ * 2.3f) * cameraShakePower_ * shakeRate;
     const float resultZoom =
@@ -2317,21 +3027,39 @@ void GameRuntime::UpdateGameCamera()
         0.0f;
 
     const Math::Vector3 targetTranslate = {
-        playerTranslate.x * 0.22f + playerVelocity.x * 1.1f + shakeX,
-        2.55f + playerTranslate.y * 0.15f + playerVelocity.y * 0.8f + bob + shakeY,
+        playerTranslate.x * 0.22f +
+            playerVelocity.x * 1.1f +
+            railCurve * 0.82f +
+            railDrift * 0.26f +
+            shakeX,
+        2.55f +
+            playerTranslate.y * 0.15f +
+            playerVelocity.y * 0.8f +
+            railLift +
+            bob +
+            shakeY,
         railDistance_ - 13.8f + resultZoom,
     };
 
     cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, 0.06f);
 
     const Math::Vector3 targetRotate = {
-        0.18f + playerTranslate.y * 0.006f + bob * 0.01f + shakeY * 0.01f,
-        -playerTranslate.x * 0.004f,
-        shakeX * 0.006f,
+        0.18f +
+            playerTranslate.y * 0.006f +
+            railLift * 0.010f +
+            bob * 0.01f +
+            shakeY * 0.01f,
+        -playerTranslate.x * 0.004f +
+            railCurve * 0.034f +
+            railDrift * 0.010f,
+        -railCurve * 0.026f +
+            playerVelocity.x * 0.010f +
+            shakeX * 0.006f,
     };
 
     const float targetFov =
         0.5f +
+        (0.5f + 0.5f * std::sin(railDistance_ * 0.036f)) * 0.010f +
         (isGameClear_ ? -0.035f : 0.0f) +
         (isGameOver_ ? 0.025f : 0.0f) +
         cameraShakePower_ * shakeRate * 0.04f;

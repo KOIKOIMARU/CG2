@@ -9,10 +9,7 @@ SceneManager* SceneManager::GetInstance() {
 }
 
 SceneManager::~SceneManager() {
-    if (scene_) {
-        scene_->Finalize();
-        scene_.reset();
-    }
+    FinalizeCurrentScene();
 }
 
 void SceneManager::SetSceneFactory(AbstractSceneFactory* sceneFactory) {
@@ -38,12 +35,18 @@ void SceneManager::SetNextScene(SceneType sceneType) {
     hasNextScene_ = true;
 }
 
+void SceneManager::FinalizeCurrentScene()
+{
+    if (scene_) {
+        scene_->Finalize();
+        scene_.reset();
+    }
+    hasNextScene_ = false;
+}
+
 void SceneManager::Update() {
     if (hasNextScene_) {
-        if (scene_) {
-            scene_->Finalize();
-            scene_.reset();
-        }
+        FinalizeCurrentScene();
 
         assert(sceneFactory_ != nullptr);
 

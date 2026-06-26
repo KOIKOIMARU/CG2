@@ -1,9 +1,11 @@
 #include "app/Player.h"
 
+#include "engine/3d/Model.h"
 #include "engine/io/Input.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace {
@@ -12,6 +14,56 @@ constexpr int kDodgeCooldown = 42;
 constexpr int kDodgeInvincibleDuration = 16;
 constexpr float kDodgeBaseSpeed = 0.14f;
 constexpr float kDodgePeakSpeed = 0.08f;
+
+Math::Vector3 CalculateModelLocalCenterOffset(const Model* model)
+{
+    if (!model || model->GetVertices().empty()) {
+        return { 0.0f, 0.0f, 0.0f };
+    }
+
+    Math::Vector3 minPosition{
+        (std::numeric_limits<float>::max)(),
+        (std::numeric_limits<float>::max)(),
+        (std::numeric_limits<float>::max)(),
+    };
+    Math::Vector3 maxPosition{
+        -(std::numeric_limits<float>::max)(),
+        -(std::numeric_limits<float>::max)(),
+        -(std::numeric_limits<float>::max)(),
+    };
+
+    for (const VertexData& vertex : model->GetVertices()) {
+        minPosition.x = (std::min)(minPosition.x, vertex.position.x);
+        minPosition.y = (std::min)(minPosition.y, vertex.position.y);
+        minPosition.z = (std::min)(minPosition.z, vertex.position.z);
+        maxPosition.x = (std::max)(maxPosition.x, vertex.position.x);
+        maxPosition.y = (std::max)(maxPosition.y, vertex.position.y);
+        maxPosition.z = (std::max)(maxPosition.z, vertex.position.z);
+    }
+
+    return {
+        (minPosition.x + maxPosition.x) * 0.5f,
+        (minPosition.y + maxPosition.y) * 0.5f,
+        (minPosition.z + maxPosition.z) * 0.5f,
+    };
+}
+
+Math::Vector3 TransformDirection(
+    const Math::Vector3& direction,
+    const Math::Matrix4x4& matrix)
+{
+    return {
+        direction.x * matrix.m[0][0] +
+            direction.y * matrix.m[1][0] +
+            direction.z * matrix.m[2][0],
+        direction.x * matrix.m[0][1] +
+            direction.y * matrix.m[1][1] +
+            direction.z * matrix.m[2][1],
+        direction.x * matrix.m[0][2] +
+            direction.y * matrix.m[1][2] +
+            direction.z * matrix.m[2][2],
+    };
+}
 } // namespace
 
 void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
@@ -19,10 +71,11 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     object_ = std::make_unique<Object3d>();
     object_->Initialize(object3dCommon);
     object_->SetModel(model);
-    object_->SetScale({ 0.8f, 0.35f, 1.0f });
-    object_->SetColor({ 0.25f, 0.65f, 1.0f, 1.0f });
-    object_->SetTranslate(translate_);
-    object_->Update();
+    object_->SetScale(objectScale_);
+    object_->SetColor({ 0.75f, 0.95f, 1.0f, 1.0f });
+    object_->SetEnvironmentCoefficient(0.18f);
+    modelLocalCenterOffset_ = CalculateModelLocalCenterOffset(model);
+    UpdateObjectTransform();
 }
 
 void Player::Update(Input* input)
@@ -91,13 +144,12 @@ void Player::Update(Input* input)
     translate_.x = std::clamp(translate_.x + move.x, -5.5f, 5.5f);
     translate_.y = std::clamp(translate_.y + move.y, -3.0f, 3.0f);
 
-    object_->SetTranslate(translate_);
-    object_->SetRotate(rotate);
+    objectRotate_ = rotate;
     object_->SetColor(
         invincibleTimer_ > 0 ?
         Math::Vector4{ 0.55f, 0.95f, 1.0f, 1.0f } :
-        Math::Vector4{ 0.25f, 0.65f, 1.0f, 1.0f });
-    object_->Update();
+        Math::Vector4{ 0.75f, 0.95f, 1.0f, 1.0f });
+    UpdateObjectTransform();
 }
 
 void Player::Draw()
@@ -111,9 +163,36 @@ void Player::SetRailZ(float z)
 {
     translate_.z = z;
     if (object_) {
-        object_->SetTranslate(translate_);
-        object_->Update();
+        UpdateObjectTransform();
     }
+}
+
+void Player::UpdateObjectTransform()
+{
+    if (!object_) {
+        return;
+    }
+
+    const Math::Vector3 scaledCenterOffset{
+        modelLocalCenterOffset_.x * objectScale_.x,
+        modelLocalCenterOffset_.y * objectScale_.y,
+        modelLocalCenterOffset_.z * objectScale_.z,
+    };
+    const Math::Matrix4x4 rotateMatrix =
+        Math::Multiply(
+            Math::MakeRotateXMatrix(objectRotate_.x),
+            Math::Multiply(
+                Math::MakeRotateYMatrix(objectRotate_.y),
+                Math::MakeRotateZMatrix(objectRotate_.z)));
+    const Math::Vector3 rotatedCenterOffset =
+        TransformDirection(scaledCenterOffset, rotateMatrix);
+    object_->SetTranslate({
+        translate_.x - rotatedCenterOffset.x,
+        translate_.y - rotatedCenterOffset.y,
+        translate_.z - rotatedCenterOffset.z,
+    });
+    object_->SetRotate(objectRotate_);
+    object_->Update();
 }
 
 void Player::Damage(int amount)

@@ -12,6 +12,7 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class DirectXCommon;
@@ -49,13 +50,13 @@ private:
     enum class HitEffectType {
         EnemyImpact,
         EnemyDestroy,
-        CoinCollect,
+        RewardCollect,
         PlayerDamage
     };
 
     struct HitEffect {
         Math::Vector3 worldPosition{};
-        int age = 0;
+        float age = 0.0f;
         int duration = 24;
         float strength = 1.0f;
         int scoreValue = 0;
@@ -71,16 +72,39 @@ private:
             float aspectY = 1.0f;
             Math::Vector3 velocity{};
         };
-        std::vector<Visual> visuals;
+        static constexpr size_t kMaxVisuals = 12;
+        std::array<Visual, kMaxVisuals> visuals{};
+        size_t visualCount = 0;
     };
 
-    struct EnvironmentBonusCoin {
+    struct RewardHeart {
         std::unique_ptr<Object3d> object;
-        Math::Vector3 basePosition{};
-        float collisionRadius = 0.95f;
-        float rotationSpeed = 0.035f;
-        float floatPhase = 0.0f;
-        bool isActive = true;
+        Math::Vector3 position{};
+        Math::Vector3 velocity{};
+        float collisionRadius = 0.42f;
+        float age = 0.0f;
+        float collectDelay = 12.0f;
+        float life = 180.0f;
+        float phase = 0.0f;
+        float baseScale = 0.34f;
+        int scoreValue = 25;
+        bool isActive = false;
+    };
+
+    struct RailSceneryObject {
+        std::unique_ptr<Object3d> object;
+        Math::Vector3 anchor{};
+        Math::Vector3 scale{ 1.0f, 1.0f, 1.0f };
+        Math::Vector3 rotate{};
+        Math::Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
+        float loopLength = 120.0f;
+        float speedMultiplier = 1.0f;
+        float lateralDrift = 0.0f;
+        float verticalDrift = 0.0f;
+        float driftSpeed = 0.02f;
+        float rollSpeed = 0.0f;
+        float phase = 0.0f;
+        bool billboard = false;
     };
 
     struct WaveTuning {
@@ -92,8 +116,12 @@ private:
     void FirePlayerBullet();
     void FireEnemyBullet(const Math::Vector3& position);
     void SpawnEnemy();
-    void InitializeEnvironmentBonusCoins();
-    void UpdateEnvironmentBonusCoins();
+    void InitializeRewardHearts();
+    void SpawnRewardHearts(const Math::Vector3& worldPosition, int count);
+    void UpdateRewardHearts();
+    void InitializeRailScenery();
+    void UpdateRailScenery();
+    void DrawRailScenery();
     void UpdateEnemyWave();
     void AdvanceEnemyWaveIfCleared();
     void UpdateLockOnTarget();
@@ -109,7 +137,7 @@ private:
     void AddMuzzleFlashEffect(
         const Math::Vector3& worldPosition,
         bool isCharged);
-    void AddCoinCollectEffect(const Math::Vector3& worldPosition);
+    void AddRewardHeartCollectEffect(const Math::Vector3& worldPosition);
     void AddPlayerDamageEffect(const Math::Vector3& worldPosition);
     void AddHitEffectVisual(
         HitEffect& effect,
@@ -123,6 +151,11 @@ private:
         float aspectX,
         float aspectY,
         const Math::Vector3& velocity);
+    void PrewarmHitEffectObjectPool();
+    void UpdateHitEffectObjectPoolWarmup();
+    std::unique_ptr<Object3d> CreatePooledHitEffectObject();
+    std::unique_ptr<Object3d> AcquireHitEffectObject();
+    void RecycleHitEffectVisuals(HitEffect& effect);
     bool HandleRuntimeShortcuts();
     void UpdateRailProgress();
     void UpdatePlayerAndCamera();
@@ -137,6 +170,7 @@ private:
     void DrawHud();
     void DrawLockOnHud();
     void DrawResultOverlay();
+    void DrawPerformanceOverlay();
     void DrawBulletEffectObjects();
     void DrawHitEffectObjects();
     void GetEffectiveHudViewportRect(Math::Vector2& min, Math::Vector2& size) const;
@@ -146,12 +180,15 @@ private:
     Math::Vector3 CalculateAimDirection(const Math::Vector3& origin) const;
     const Enemy* FindHomingTargetForBullet(const Bullet& bullet) const;
     int GetTotalEnemyTargetCount() const;
-    void CheckBulletBonusCoinCollisions();
-    void CheckPlayerBonusCoinCollisions();
     void CheckBulletEnemyCollisions();
     void CheckEnemyBulletPlayerCollisions();
     void UpdateGameCamera();
     void AddCameraShake(float power, int duration);
+    void PrewarmBulletPools();
+    void UpdateBulletPoolWarmup();
+    std::unique_ptr<Bullet> CreatePooledPlayerBullet();
+    std::unique_ptr<Bullet> CreatePooledEnemyBullet();
+    std::unique_ptr<Bullet> AcquireBullet(std::vector<std::unique_ptr<Bullet>>& pool);
     std::vector<SceneSerializer::ObjectRecord> BuildRuntimeSceneRecords() const;
     SceneSerializer::SceneSettings BuildRuntimeSceneSettings() const;
     bool LoadSceneObjects(const char* path);
@@ -171,9 +208,14 @@ private:
     std::vector<SceneSerializer::ObjectRecord> sceneObjectRecords_;
     std::list<std::unique_ptr<Bullet>> playerBullets_;
     std::list<std::unique_ptr<Bullet>> enemyBullets_;
+    std::vector<std::unique_ptr<Bullet>> playerBulletPool_;
+    std::vector<std::unique_ptr<Bullet>> enemyBulletPool_;
     std::list<std::unique_ptr<Enemy>> enemies_;
+    std::unordered_map<Bullet*, const Enemy*> homingBulletTargets_;
     std::vector<HitEffect> hitEffects_;
-    std::vector<EnvironmentBonusCoin> environmentBonusCoins_;
+    std::vector<std::unique_ptr<Object3d>> hitEffectObjectPool_;
+    std::vector<RailSceneryObject> railSceneryObjects_;
+    std::vector<RewardHeart> rewardHearts_;
     std::array<WaveTuning, 3> waveTuning_{ {
         { 6, 80, 26.0f },
         { 8, 60, 30.0f },
@@ -188,8 +230,15 @@ private:
     Model* effectSparkStarModel_ = nullptr;
     Model* effectBulletGlowModel_ = nullptr;
     Model* effectBulletTrailModel_ = nullptr;
+    Model* effectPlayerBulletCoreModel_ = nullptr;
+    Model* effectPlayerBulletTrailModel_ = nullptr;
+    Model* effectEnemyBulletCoreModel_ = nullptr;
+    Model* effectEnemyBulletTailModel_ = nullptr;
+    Model* effectImpactBurstModel_ = nullptr;
+    Model* effectMagicShardModel_ = nullptr;
 
     int shootCooldown_ = 0;
+    int shootBufferTimer_ = 0;
     int enemySpawnTimer_ = 0;
     int enemyShotTimer_ = 60;
     int currentWaveIndex_ = 0;
@@ -203,6 +252,13 @@ private:
     int chargeFlashTimer_ = 0;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
+    int bulletPoolWarmupTimer_ = 0;
+    size_t playerBulletPoolMisses_ = 0;
+    size_t enemyBulletPoolMisses_ = 0;
+    size_t hitEffectObjectPoolMisses_ = 0;
+    size_t rewardHeartPoolMisses_ = 0;
+    size_t maxActivePlayerBullets_ = 0;
+    size_t maxActiveEnemyBullets_ = 0;
     int chargeShotThreshold_ = 70;
     int normalShootCooldown_ = 4;
     int chargedShootCooldown_ = 14;
@@ -234,6 +290,8 @@ private:
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isEditorOverlayVisible_ = false;
+    bool isPerformanceOverlayVisible_ = true;
+    bool isPostEffectBypassEnabled_ = false;
     bool isExitRequested_ = false;
     bool showSkybox_ = true;
     bool isHudViewportRectEnabled_ = false;

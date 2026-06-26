@@ -18,6 +18,8 @@
 
 namespace {
 
+constexpr const char* kDefaultTextureFilePath = "resources/uvChecker.png";
+
 Matrix4x4 ConvertAiMatrixToMatrix4x4(aiMatrix4x4 matrix)
 {
     matrix.Transpose();
@@ -602,6 +604,7 @@ const std::string& Model::GetTextureFilePath() const
 MaterialData Model::LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename)
 {
     MaterialData materialData;
+    materialData.textureFilePath = kDefaultTextureFilePath;
 
     std::ifstream file(directoryPath + "/" + filename);
     assert(file.is_open());
@@ -697,6 +700,10 @@ ModelData Model::LoadObjFile(const std::string& directoryPath, const std::string
             s >> mtl;
             modelData.material = LoadMaterialTemplate(directoryPath, mtl);
         }
+    }
+
+    if (modelData.material.textureFilePath.empty()) {
+        modelData.material.textureFilePath = kDefaultTextureFilePath;
     }
 
     return modelData;

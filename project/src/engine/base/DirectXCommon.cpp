@@ -27,6 +27,13 @@ namespace {
 
 constexpr Math::Vector4 kRenderTextureClearColor{ 0.04f, 0.06f, 0.09f, 1.0f };
 
+float ToMilliseconds(
+    const std::chrono::steady_clock::time_point& begin,
+    const std::chrono::steady_clock::time_point& end)
+{
+    return std::chrono::duration<float, std::milli>(end - begin).count();
+}
+
 }
 
 void DirectXCommon::Initialize(WinApp* winApp)
@@ -424,6 +431,7 @@ void DirectXCommon::SetPostEffectProjectionMatrix(
 
 void DirectXCommon::PostDraw()
 {
+    const auto postDrawBegin = std::chrono::steady_clock::now();
     HRESULT hr = S_OK;
 
     // バックバッファの番号取得
@@ -449,8 +457,11 @@ void DirectXCommon::PostDraw()
     commandQueue_->ExecuteCommandLists(_countof(cmdLists), cmdLists);
 
     // 画面のフリップ（Present）
+    const auto presentBegin = std::chrono::steady_clock::now();
     hr = swapChain_->Present(1, 0);
     assert(SUCCEEDED(hr));
+    const auto presentEnd = std::chrono::steady_clock::now();
+    frameTiming_.presentMs = ToMilliseconds(presentBegin, presentEnd);
 
     // Fence の値更新 & Signal
     fenceValue_++;
@@ -458,14 +469,19 @@ void DirectXCommon::PostDraw()
     assert(SUCCEEDED(hr));
 
     // コマンド完了待ち
+    const auto fenceBegin = std::chrono::steady_clock::now();
     if (fence_->GetCompletedValue() < fenceValue_) {
         hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
         assert(SUCCEEDED(hr));
         WaitForSingleObject(fenceEvent_, INFINITE);
     }
+    const auto fenceEnd = std::chrono::steady_clock::now();
+    frameTiming_.fenceWaitMs = ToMilliseconds(fenceBegin, fenceEnd);
 
     // ★ ここで FPS 固定
     UpdateFixFPS();
+    const auto postDrawEnd = std::chrono::steady_clock::now();
+    frameTiming_.postDrawMs = ToMilliseconds(postDrawBegin, postDrawEnd);
 
 
 }
@@ -476,7 +492,9 @@ void DirectXCommon::InitializeDevice() {
     ComPtr<ID3D12Debug1> debugController = nullptr;
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
         debugController->EnableDebugLayer();
+#ifdef ENABLE_D3D12_GPU_VALIDATION
         debugController->SetEnableGPUBasedValidation(true);
+#endif
     }
 #endif
 
@@ -1787,9 +1805,10 @@ void DirectXCommon::InitializeFixFPS() {
 }
 
 void DirectXCommon::UpdateFixFPS() {
+    frameTiming_.fpsWaitMs = 0.0f;
 
     const std::chrono::microseconds kMinTime(uint64_t(1000000.0f / 60.0f));
-    const std::chrono::microseconds kMinCheckTime(uint64_t(1000000.0f / 65.0f));
+    constexpr bool kUseSoftwareFrameLimiter = false;
 
     auto now = std::chrono::steady_clock::now();
     auto elapsed =
@@ -1798,10 +1817,13 @@ void DirectXCommon::UpdateFixFPS() {
     // ★ ここが追加（秒に変換）
     deltaTime_ = elapsed.count() / 1000000.0f;
 
-    if (elapsed < kMinTime) {
+    if (kUseSoftwareFrameLimiter && elapsed < kMinTime) {
+        const auto waitBegin = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - reference_ < kMinTime) {
             std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
+        const auto waitEnd = std::chrono::steady_clock::now();
+        frameTiming_.fpsWaitMs = ToMilliseconds(waitBegin, waitEnd);
 
         // ★ FPS固定時は deltaTime を 1/60 に揃える
         deltaTime_ = 1.0f / 60.0f;
