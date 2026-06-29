@@ -45,10 +45,11 @@ public:
     bool IsDead() const { return lifeState_ == LifeState::Destroyed || lifeState_ == LifeState::Escaped; }
     bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
     bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
+    bool IsTargetable() const;
     const Math::Vector3& GetTranslate() const { return translate_; }
     Math::Vector3 GetAimPosition() const;
     float GetRadius() const { return collisionRadius_; }
-    float GetAimRadius() const { return aimRadius_; }
+    float GetAimRadius() const;
 
 private:
     void Escape() { lifeState_ = LifeState::Escaped; }
@@ -69,6 +70,7 @@ private:
     float verticalAmplitude_ = 0.55f;
     float collisionRadius_ = 0.8f;
     float aimRadius_ = 0.8f;
+    float visualScaleRate_ = 1.0f;
     Behavior behavior_ = Behavior::Formation;
     EntryStyle entryStyle_ = EntryStyle::Direct;
     LifeState lifeState_ = LifeState::Alive;

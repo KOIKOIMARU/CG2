@@ -37,6 +37,10 @@ constexpr int kHitEffectPoolWarmupStartDelayFrames = 45;
 constexpr int kHitEffectPoolWarmupIntervalFrames = 4;
 constexpr int kRewardHeartPoolCount = 96;
 constexpr int kRewardHeartScoreValue = 25;
+constexpr int kDepthCueEffectCount = 48;
+constexpr float kDepthCueNearLocalZ = -8.0f;
+constexpr float kDepthCueFarLocalZ = 112.0f;
+constexpr float kDepthCueLoopLength = 132.0f;
 constexpr float kTwoPi = 6.28318530718f;
 constexpr float kRailCameraCurveFrequency = 0.050f;
 constexpr float kRailCameraDriftFrequency = 0.027f;
@@ -129,6 +133,14 @@ float DistanceSquared(const Math::Vector3& a, const Math::Vector3& b)
 float Lerp(float start, float end, float rate)
 {
     return start + (end - start) * rate;
+}
+
+float PseudoRandom01(int index, float salt)
+{
+    const float value =
+        std::sin((static_cast<float>(index) + 1.0f) * 12.9898f + salt * 78.233f) *
+        43758.5453f;
+    return value - std::floor(value);
 }
 
 Math::Vector3 Lerp(const Math::Vector3& start, const Math::Vector3& end, float rate)
@@ -397,13 +409,15 @@ void GameRuntime::Initialize()
         2.55f + initialPlayerTranslate.y * 0.15f,
         railDistance_ - 13.8f,
     };
-    camera_->SetTranslate(cameraTranslate_);
-    camera_->SetRotate({
+    cameraRotate_ = {
         0.18f + initialPlayerTranslate.y * 0.006f,
         -initialPlayerTranslate.x * 0.004f,
         0.0f,
-    });
-    camera_->SetFovY(0.5f);
+    };
+    cameraFovY_ = 0.5f;
+    camera_->SetTranslate(cameraTranslate_);
+    camera_->SetRotate(cameraRotate_);
+    camera_->SetFovY(cameraFovY_);
     camera_->Update();
     if (skybox_) {
         skybox_->Update(camera_.get());
@@ -411,6 +425,7 @@ void GameRuntime::Initialize()
 
     PrewarmBulletPools();
     PrewarmHitEffectObjectPool();
+    InitializeDepthCueEffects();
     InitializeRailScenery();
 
     LoadSceneObjects(kGameSceneFilePath);
@@ -430,6 +445,7 @@ void GameRuntime::Finalize()
     hitEffects_.clear();
     hitEffectObjectPool_.clear();
     railSceneryObjects_.clear();
+    depthCueEffects_.clear();
     player_.reset();
     camera_.reset();
     skybox_.reset();
@@ -462,6 +478,7 @@ void GameRuntime::Update()
     UpdateBulletPoolWarmup();
     UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
+    UpdateDepthCueEffects();
     UpdatePlayerAndCamera();
 
     if (!isGameOver_ && !isGameClear_) {
@@ -811,6 +828,157 @@ void GameRuntime::UpdateRewardHearts()
     }
 }
 
+void GameRuntime::InitializeDepthCueEffects()
+{
+    depthCueEffects_.clear();
+    if (!object3dCommon_) {
+        return;
+    }
+
+    Model* sparkleModel = effectSparkStarModel_ ? effectSparkStarModel_ : effectGlowCoreModel_;
+    Model* glowModel = effectGlowCoreModel_ ? effectGlowCoreModel_ : sparkleModel;
+    Model* streakModel = effectPlayerBulletTrailModel_ ?
+        effectPlayerBulletTrailModel_ :
+        effectBulletTrailModel_;
+    if (!sparkleModel && !glowModel && !streakModel) {
+        return;
+    }
+
+    depthCueEffects_.reserve(kDepthCueEffectCount);
+    for (int index = 0; index < kDepthCueEffectCount; ++index) {
+        const bool isStreak = (index % 5) == 0 && streakModel;
+        const bool isGold = (index % 7) == 0;
+        const float side = PseudoRandom01(index, 0.12f) < 0.5f ? -1.0f : 1.0f;
+        const float outerBias = std::pow(PseudoRandom01(index, 0.35f), 0.52f);
+        const float x = side * Lerp(2.4f, 15.5f, outerBias);
+        const float y = Lerp(-4.5f, 5.8f, PseudoRandom01(index, 0.61f));
+        const float z = Lerp(14.0f, kDepthCueFarLocalZ, PseudoRandom01(index, 0.88f));
+
+        DepthCueEffect cue{};
+        cue.object = std::make_unique<Object3d>();
+        cue.object->Initialize(object3dCommon_.get());
+        cue.model = isStreak ? streakModel : ((index % 3) == 0 ? glowModel : sparkleModel);
+        cue.object->SetModel(cue.model);
+        cue.object->SetLightingMode(0);
+        cue.object->SetEnvironmentCoefficient(0.0f);
+        cue.object->SetAlphaReference(0.01f);
+        cue.anchor = { x, y, z };
+        cue.color = isStreak ?
+            Math::Vector4{ 0.74f, 0.94f, 1.0f, 0.18f } :
+            isGold ?
+                Math::Vector4{ 1.0f, 0.86f, 0.42f, 0.34f } :
+                Math::Vector4{ 0.78f, 0.96f, 1.0f, 0.30f };
+        cue.loopLength = kDepthCueLoopLength;
+        cue.speedMultiplier = Lerp(0.72f, 1.36f, PseudoRandom01(index, 1.12f));
+        cue.lateralDrift = Lerp(0.12f, 0.82f, PseudoRandom01(index, 1.46f));
+        cue.verticalDrift = Lerp(0.08f, 0.46f, PseudoRandom01(index, 1.78f));
+        cue.driftSpeed = Lerp(0.010f, 0.033f, PseudoRandom01(index, 2.03f));
+        cue.phase = PseudoRandom01(index, 2.41f) * kTwoPi;
+        cue.baseScale = isStreak ?
+            Lerp(0.30f, 0.55f, PseudoRandom01(index, 2.82f)) :
+            Lerp(0.08f, 0.24f, PseudoRandom01(index, 2.82f));
+        cue.aspectX = isStreak ? 0.20f : 1.0f;
+        cue.aspectY = isStreak ? Lerp(1.8f, 3.4f, PseudoRandom01(index, 3.17f)) : 1.0f;
+        cue.spinSpeed = isStreak ?
+            Lerp(-0.006f, 0.006f, PseudoRandom01(index, 3.59f)) :
+            Lerp(-0.018f, 0.018f, PseudoRandom01(index, 3.59f));
+
+        cue.object->SetColor(cue.color);
+        cue.object->SetScale({
+            cue.baseScale * cue.aspectX,
+            cue.baseScale * cue.aspectY,
+            1.0f,
+        });
+        cue.object->SetTranslate({
+            cue.anchor.x,
+            cue.anchor.y,
+            railDistance_ + cue.anchor.z,
+        });
+        cue.object->Update();
+        depthCueEffects_.push_back(std::move(cue));
+    }
+}
+
+void GameRuntime::UpdateDepthCueEffects()
+{
+    if (depthCueEffects_.empty()) {
+        return;
+    }
+
+    const Math::Vector3 cameraRotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
+    const float frameStep =
+        dxCommon_ ? std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 4.0f) : 1.0f;
+    for (DepthCueEffect& cue : depthCueEffects_) {
+        if (!cue.object) {
+            continue;
+        }
+
+        float localZ = std::fmod(
+            cue.anchor.z - railDistance_ * cue.speedMultiplier,
+            cue.loopLength);
+        while (localZ < kDepthCueNearLocalZ) {
+            localZ += cue.loopLength;
+        }
+
+        const float depthRate = std::clamp(
+            (localZ - kDepthCueNearLocalZ) /
+                (kDepthCueFarLocalZ - kDepthCueNearLocalZ),
+            0.0f,
+            1.0f);
+        const float motion = railDistance_ * cue.driftSpeed + cue.phase;
+        const float sidePull = 1.0f + (1.0f - depthRate) * 0.22f;
+        Math::Vector3 position{};
+        position.x = cue.anchor.x * sidePull + std::sin(motion) * cue.lateralDrift;
+        position.y = cue.anchor.y + std::cos(motion * 0.77f) * cue.verticalDrift;
+        position.z = railDistance_ + localZ;
+
+        const float nearRate = 1.0f - depthRate;
+        const float twinkle =
+            0.78f +
+            0.22f * std::sin(cue.phase + railDistance_ * (0.16f + cue.driftSpeed));
+        const float scale = cue.baseScale * Lerp(0.66f, 1.42f, nearRate) * twinkle;
+        Math::Vector4 color = cue.color;
+        color.w *= Lerp(0.42f, 1.05f, nearRate) * twinkle;
+
+        Math::Vector3 rotate = cameraRotate;
+        rotate.z += cue.phase * 0.34f + railDistance_ * cue.spinSpeed * frameStep;
+
+        cue.object->SetTranslate(position);
+        cue.object->SetRotate(rotate);
+        cue.object->SetScale({
+            scale * cue.aspectX,
+            scale * cue.aspectY,
+            1.0f,
+        });
+        cue.object->SetColor(color);
+        cue.object->Update();
+    }
+}
+
+void GameRuntime::DrawDepthCueEffects()
+{
+    if (depthCueEffects_.empty() || !object3dCommon_) {
+        return;
+    }
+
+    const BlendMode previousBlendMode = object3dCommon_->GetBlendMode();
+    const DepthDrawMode previousDepthMode = object3dCommon_->GetDepthDrawMode();
+
+    object3dCommon_->SetDepthDrawMode(DepthDrawMode::Overlay);
+    object3dCommon_->SetBlendMode(BlendMode::Add);
+    object3dCommon_->CommonDrawSetting();
+
+    for (const DepthCueEffect& cue : depthCueEffects_) {
+        if (cue.object) {
+            cue.object->Draw();
+        }
+    }
+
+    object3dCommon_->SetBlendMode(previousBlendMode);
+    object3dCommon_->SetDepthDrawMode(previousDepthMode);
+    object3dCommon_->CommonDrawSetting();
+}
+
 void GameRuntime::InitializeRailScenery()
 {
     railSceneryObjects_.clear();
@@ -925,8 +1093,12 @@ bool GameRuntime::LoadSceneObjects(const char* path)
     sceneObjectRecords_.clear();
 
     if (settings.hasCamera && camera_) {
+        cameraTranslate_ = settings.cameraTranslate;
+        cameraRotate_ = settings.cameraRotate;
+        cameraFovY_ = 0.5f;
         camera_->SetTranslate(settings.cameraTranslate);
         camera_->SetRotate(settings.cameraRotate);
+        camera_->SetFovY(cameraFovY_);
     }
 
     const int modelItemCount =
@@ -966,6 +1138,7 @@ void GameRuntime::Draw()
         skybox_->Draw();
     }
 
+    DrawDepthCueEffects();
     DrawRailScenery();
 
     object3dCommon_->CommonDrawSetting();
@@ -1059,7 +1232,7 @@ std::unique_ptr<Bullet> GameRuntime::CreatePooledPlayerBullet()
         1,
         effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : effectBulletGlowModel_,
         { 1.0f, 0.98f, 0.54f, 1.0f },
-        { 0.34f, 1.08f, 1.0f },
+        { 0.38f, 1.24f, 1.0f },
         effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : effectBulletTrailModel_,
         { 1.0f, 0.92f, 0.36f, 1.0f },
         { 0.34f, 3.35f, 1.0f },
@@ -1254,18 +1427,18 @@ void GameRuntime::FirePlayerBullet()
         effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : effectBulletTrailModel_,
         isCharged ?
             Math::Vector4{ 0.70f, 1.0f, 0.96f, 1.0f } :
-            Math::Vector4{ 1.0f, 0.92f, 0.36f, 1.0f },
+            Math::Vector4{ 1.0f, 0.96f, 0.44f, 1.0f },
         isCharged ?
             Math::Vector3{ 0.42f, 5.10f, 1.0f } :
-            Math::Vector3{ 0.34f, 3.35f, 1.0f },
-        isCharged ? 3.25f : 1.78f,
+            Math::Vector3{ 0.38f, 4.10f, 1.0f },
+        isCharged ? 3.45f : 2.18f,
         effectSparkStarModel_,
         isCharged ?
             Math::Vector4{ 1.0f, 1.0f, 0.84f, 1.0f } :
-            Math::Vector4{ 1.0f, 0.98f, 0.54f, 1.0f },
+            Math::Vector4{ 1.0f, 1.0f, 0.62f, 1.0f },
         isCharged ?
             Math::Vector3{ 0.13f, 0.13f, 1.0f } :
-            Math::Vector3{ 0.075f, 0.075f, 1.0f });
+            Math::Vector3{ 0.092f, 0.092f, 1.0f });
     const Enemy* homingTarget = aimedTarget;
     if (homingTarget) {
         bullet->EnableHoming(isCharged ? 0.18f : 0.11f);
@@ -1432,7 +1605,7 @@ void GameRuntime::UpdateLockOnTarget()
     float bestScore = kLockRadiusSq;
 
     for (const auto& enemy : enemies_) {
-        if (!enemy || enemy->IsDead()) {
+        if (!enemy || enemy->IsDead() || !enemy->IsTargetable()) {
             continue;
         }
 
@@ -1567,20 +1740,20 @@ void GameRuntime::AddEnemyImpactEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 24;
-    effect.strength = strength * 1.12f;
+    effect.duration = 18;
+    effect.strength = strength * 1.08f;
     effect.type = HitEffectType::EnemyImpact;
 
     AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.94f, 0.56f, 1.0f }, 0.72f, 0.52f, 0.30f, 0.0f, 1.0f, 1.0f, {});
+        { 1.0f, 0.98f, 0.70f, 1.0f }, 0.52f, 0.80f, 0.35f, 0.0f, 1.12f, 0.72f, {});
     AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.78f, 1.0f, 0.84f, 0.86f }, 0.24f, 0.46f, -1.55f, 0.03f, 0.76f, 1.06f, { -0.040f, 0.026f, 0.004f });
+        { 0.82f, 1.0f, 0.92f, 0.94f }, 0.22f, 0.62f, -1.85f, 0.02f, 0.52f, 1.32f, { -0.052f, 0.034f, 0.006f });
     AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.78f, 0.34f, 0.82f }, 0.22f, 0.42f, 1.70f, 0.05f, 0.72f, 0.96f, { 0.044f, -0.030f, 0.004f });
+        { 1.0f, 0.82f, 0.34f, 0.90f }, 0.20f, 0.58f, 1.95f, 0.04f, 0.50f, 1.18f, { 0.056f, -0.038f, 0.006f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.72f, 0.96f, 1.0f, 0.94f }, 0.22f, 0.48f, -1.05f, 0.0f, 1.18f, 0.62f, { -0.042f, 0.034f, 0.0f });
+        { 0.72f, 0.96f, 1.0f, 1.0f }, 0.20f, 0.66f, -1.30f, 0.0f, 1.42f, 0.48f, { -0.052f, 0.040f, 0.0f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.78f, 0.22f, 0.88f }, 0.19f, 0.44f, 1.20f, 0.04f, 0.94f, 0.58f, { 0.046f, -0.032f, 0.0f });
+        { 1.0f, 0.82f, 0.28f, 0.94f }, 0.18f, 0.60f, 1.42f, 0.03f, 1.18f, 0.44f, { 0.058f, -0.040f, 0.0f });
 
     hitEffects_.push_back(std::move(effect));
 }
@@ -2116,10 +2289,12 @@ void GameRuntime::DrawEditorOverlayGuiRich()
         const size_t activeBulletCount = playerBullets_.size() + enemyBullets_.size();
         const size_t pooledBulletCount = playerBulletPool_.size() + enemyBulletPool_.size();
         const size_t activeSceneryCount = railSceneryObjects_.size();
+        const size_t activeDepthCueCount = depthCueEffects_.size();
         const size_t estimatedActiveDrawObjects =
             sceneObjects_.size() +
             activeRewardHeartCount +
             activeSceneryCount +
+            activeDepthCueCount +
             (player_ ? 1u : 0u) +
             enemies_.size() +
             activeBulletCount * 6u +
@@ -2138,7 +2313,8 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             estimatedActiveDrawObjects,
             estimatedPooledBulletObjects);
         ImGui::Text(
-            "Active: scenery %zu, enemies %zu, bullets %zu, hit effects %zu, hit visuals %zu",
+            "Active: depth %zu, scenery %zu, enemies %zu, bullets %zu, hit effects %zu, hit visuals %zu",
+            activeDepthCueCount,
             activeSceneryCount,
             enemies_.size(),
             activeBulletCount,
@@ -2638,10 +2814,12 @@ void GameRuntime::DrawPerformanceOverlay()
     const size_t pooledBulletCount = playerBulletPool_.size() + enemyBulletPool_.size();
     const size_t pooledHitEffectObjects = hitEffectObjectPool_.size();
     const size_t activeSceneryCount = railSceneryObjects_.size();
+    const size_t activeDepthCueCount = depthCueEffects_.size();
     const size_t estimatedActiveDrawObjects =
         sceneObjects_.size() +
         activeRewardHeartCount +
         activeSceneryCount +
+        activeDepthCueCount +
         (showSkybox_ && skybox_ ? 1u : 0u) +
         (player_ ? 1u : 0u) +
         enemies_.size() +
@@ -2692,8 +2870,9 @@ void GameRuntime::DrawPerformanceOverlay()
     std::snprintf(
         line,
         sizeof(line),
-        "draw est %zu  scenery %zu  hearts %zu/%zu  bullets %zu  enemies %zu",
+        "draw est %zu  depth %zu  scenery %zu  hearts %zu/%zu  bullets %zu  enemies %zu",
         estimatedActiveDrawObjects,
+        activeDepthCueCount,
         activeSceneryCount,
         activeRewardHeartCount,
         rewardHearts_.size(),
@@ -2885,7 +3064,7 @@ const Enemy* GameRuntime::FindHomingTargetForBullet(const Bullet& bullet) const
     const Math::Vector3 bulletPosition = bullet.GetTranslate();
 
     for (const auto& enemy : enemies_) {
-        if (!enemy || enemy->IsDead()) {
+        if (!enemy || enemy->IsDead() || !enemy->IsTargetable()) {
             continue;
         }
         const Math::Vector3 enemyPosition = enemy->GetAimPosition();
@@ -2919,7 +3098,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
         }
 
         for (auto& enemy : enemies_) {
-            if (enemy->IsDead()) {
+            if (enemy->IsDead() || !enemy->IsTargetable()) {
                 continue;
             }
 
@@ -2992,7 +3171,9 @@ void GameRuntime::UpdateGameCamera()
         return;
     }
 
-    cameraTimer_ += 1.0f;
+    const float frameStep =
+        dxCommon_ ? std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 2.0f) : 1.0f;
+    cameraTimer_ += frameStep;
 
     const Math::Vector3 playerTranslate = player_->GetTranslate();
     const Math::Vector3 playerVelocity = {
@@ -3019,6 +3200,18 @@ void GameRuntime::UpdateGameCamera()
         std::sin(railDistance_ * kRailCameraDriftFrequency + 1.35f);
     const float railLift =
         std::sin(railDistance_ * 0.034f + 0.45f) * 0.18f;
+    const float railWideCurve =
+        railCurve * 0.90f +
+        railDrift * 0.32f +
+        std::sin(railDistance_ * 0.014f + 2.20f) * 0.38f;
+    const float turnRate = std::clamp(railWideCurve, -1.35f, 1.35f);
+    const float speedPulse =
+        0.5f + 0.5f * std::sin(railDistance_ * 0.021f + 0.80f);
+    const float inputSpeed = std::clamp(
+        std::abs(playerVelocity.x) * 4.2f +
+            std::abs(playerVelocity.y) * 2.8f,
+        0.0f,
+        1.0f);
     const float shakeX = std::sin(cameraTimer_ * 1.9f) * cameraShakePower_ * shakeRate;
     const float shakeY = std::cos(cameraTimer_ * 2.3f) * cameraShakePower_ * shakeRate;
     const float resultZoom =
@@ -3027,46 +3220,56 @@ void GameRuntime::UpdateGameCamera()
         0.0f;
 
     const Math::Vector3 targetTranslate = {
-        playerTranslate.x * 0.22f +
-            playerVelocity.x * 1.1f +
-            railCurve * 0.82f +
-            railDrift * 0.26f +
+        playerTranslate.x * 0.20f +
+            playerVelocity.x * 1.35f +
+            railWideCurve * 1.05f +
+            railDrift * 0.28f +
             shakeX,
-        2.55f +
-            playerTranslate.y * 0.15f +
-            playerVelocity.y * 0.8f +
+        2.58f +
+            playerTranslate.y * 0.14f +
+            playerVelocity.y * 0.90f +
             railLift +
+            std::sin(railDistance_ * 0.017f + 0.35f) * 0.16f +
             bob +
             shakeY,
-        railDistance_ - 13.8f + resultZoom,
+        railDistance_ -
+            (14.05f + speedPulse * 0.20f + std::abs(turnRate) * 0.12f) +
+            resultZoom,
     };
 
-    cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, 0.06f);
+    cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, 0.065f);
 
     const Math::Vector3 targetRotate = {
         0.18f +
             playerTranslate.y * 0.006f +
             railLift * 0.010f +
+            speedPulse * 0.006f +
             bob * 0.01f +
             shakeY * 0.01f,
-        -playerTranslate.x * 0.004f +
-            railCurve * 0.034f +
-            railDrift * 0.010f,
-        -railCurve * 0.026f +
-            playerVelocity.x * 0.010f +
+        -playerTranslate.x * 0.0045f +
+            railWideCurve * 0.052f +
+            railDrift * 0.014f +
+            playerVelocity.x * 0.006f,
+        -turnRate * 0.065f +
+            playerVelocity.x * 0.040f +
             shakeX * 0.006f,
     };
 
     const float targetFov =
         0.5f +
-        (0.5f + 0.5f * std::sin(railDistance_ * 0.036f)) * 0.010f +
+        speedPulse * 0.014f +
+        std::abs(turnRate) * 0.010f +
+        inputSpeed * 0.012f +
         (isGameClear_ ? -0.035f : 0.0f) +
         (isGameOver_ ? 0.025f : 0.0f) +
         cameraShakePower_ * shakeRate * 0.04f;
 
+    cameraRotate_ = Lerp(cameraRotate_, targetRotate, 0.075f);
+    cameraFovY_ = Lerp(cameraFovY_, targetFov, 0.060f);
+
     camera_->SetTranslate(cameraTranslate_);
-    camera_->SetRotate(targetRotate);
-    camera_->SetFovY(targetFov);
+    camera_->SetRotate(cameraRotate_);
+    camera_->SetFovY(cameraFovY_);
     camera_->Update();
 }
 

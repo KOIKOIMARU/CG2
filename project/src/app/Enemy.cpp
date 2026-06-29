@@ -19,6 +19,19 @@ float Lerp(float start, float end, float rate)
     return start + (end - start) * rate;
 }
 
+float EaseOutCubic(float value)
+{
+    const float t = Clamp01(value);
+    const float inv = 1.0f - t;
+    return 1.0f - inv * inv * inv;
+}
+
+float SmoothStep(float value)
+{
+    const float t = Clamp01(value);
+    return t * t * (3.0f - 2.0f * t);
+}
+
 float SignNonZero(float value)
 {
     return value < 0.0f ? -1.0f : 1.0f;
@@ -91,6 +104,7 @@ void Enemy::Initialize(
     age_ = 0;
     hitFlashTimer_ = 0;
     moveTimer_ = 0.0f;
+    visualScaleRate_ = 0.28f;
 
     switch (behavior_) {
     case Behavior::Swoop:
@@ -137,6 +151,7 @@ void Enemy::Initialize(
     object_->SetColor(baseColor_);
     object_->SetEnvironmentCoefficient(0.10f);
     object_->SetTranslate(translate_);
+    object_->SetRotate({ 0.0f, 0.0f, 0.0f });
     object_->Update();
 }
 
@@ -152,25 +167,43 @@ void Enemy::Update(float railDistance)
         --hitFlashTimer_;
     }
 
+    Math::Vector3 objectRotate{};
+    float visualScaleTarget = 1.0f;
+    float colorAlphaRate = 1.0f;
+
     switch (behavior_) {
     case Behavior::Swoop: {
-        const float passRate = Clamp01(static_cast<float>(age_) / 210.0f);
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 48.0f);
+        const float passRate = SmoothStep(static_cast<float>(age_ - 18) / 205.0f);
         const float side =
             entryStyle_ == EntryStyle::RightSweep ? -1.0f :
             entryStyle_ == EntryStyle::LeftSweep ? 1.0f :
             SignNonZero(baseTranslate_.x);
         const float curve = std::sin(passRate * kPi);
-        translate_.x =
-            side * Lerp(8.8f, -10.2f, passRate) -
-            side * curve * 1.8f;
-        translate_.y =
+        const float laneX =
+            side * Lerp(9.6f, -10.8f, passRate) -
+            side * curve * 2.1f;
+        const float laneY =
             baseTranslate_.y +
-            curve * 2.5f -
-            passRate * 1.2f;
+            curve * 2.7f -
+            passRate * 1.35f;
+        const float laneZ =
+            Lerp(34.0f, 20.5f, curve) +
+            passRate * 8.0f;
+        translate_.x =
+            Lerp(side * 3.8f, laneX, entryRate);
+        translate_.y =
+            Lerp(baseTranslate_.y + 2.2f, laneY, entryRate) +
+            std::sin(moveTimer_ * 0.06f + phase_) * 0.18f;
         translate_.z =
             railDistance +
-            Lerp(32.0f, 21.0f, curve) +
-            passRate * 7.0f;
+            Lerp(58.0f, laneZ, entryRate);
+        visualScaleTarget =
+            Lerp(0.22f, 1.0f, entryRate) +
+            std::sin(entryRate * kPi) * 0.05f;
+        colorAlphaRate = Lerp(0.28f, 1.0f, entryRate);
+        objectRotate.y = side * Lerp(0.35f, -0.25f, passRate);
+        objectRotate.z = -side * (0.18f + curve * 0.40f);
         if (passRate >= 1.0f) {
             Escape();
             return;
@@ -178,28 +211,39 @@ void Enemy::Update(float railDistance)
         break;
     }
     case Behavior::StrafeShooter: {
-        const float attackRate = Clamp01(static_cast<float>(age_) / 90.0f);
-        const float holdRate = Clamp01(static_cast<float>(age_ - 90) / 150.0f);
-        const float exitRate = Clamp01(static_cast<float>(age_ - 240) / 110.0f);
+        const float attackRate = EaseOutCubic(static_cast<float>(age_) / 84.0f);
+        const float holdRate = Clamp01(static_cast<float>(age_ - 84) / 156.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 240) / 110.0f);
         const float exitSide = SignNonZero(std::sin(phase_));
         const float entryArc =
             entryStyle_ == EntryStyle::PopShooter ?
             std::sin(attackRate * kPi) :
             0.0f;
         translate_.x =
-            Lerp(baseTranslate_.x * 1.45f, baseTranslate_.x, attackRate) +
+            Lerp(
+                baseTranslate_.x * 2.0f + SignNonZero(baseTranslate_.x) * 1.7f,
+                baseTranslate_.x,
+                attackRate) +
             std::sin(moveTimer_ * 0.045f + phase_) * Lerp(1.5f, 4.0f, holdRate) +
             exitSide * exitRate * 10.0f;
         translate_.y =
-            Lerp(baseTranslate_.y + 2.4f, baseTranslate_.y * 0.35f, attackRate) +
+            Lerp(baseTranslate_.y + 3.0f, baseTranslate_.y * 0.35f, attackRate) +
             std::cos(moveTimer_ * 0.038f + phase_) * 0.35f +
-            entryArc * 0.7f +
+            entryArc * 0.85f +
             exitRate * 4.2f;
         translate_.z =
             railDistance +
-            Lerp(34.0f, 21.0f, attackRate) +
+            Lerp(56.0f, 21.0f, attackRate) +
             std::cos(moveTimer_ * 0.028f + phase_) * 1.0f +
             exitRate * 10.0f;
+        visualScaleTarget =
+            Lerp(0.25f, 1.0f, attackRate) +
+            std::sin(attackRate * kPi) * 0.06f;
+        colorAlphaRate = Lerp(0.24f, 1.0f, attackRate);
+        objectRotate.y = -translate_.x * 0.030f;
+        objectRotate.z =
+            std::sin(moveTimer_ * 0.032f + phase_) * 0.18f -
+            exitSide * exitRate * 0.35f;
         if (exitRate >= 1.0f) {
             Escape();
             return;
@@ -209,29 +253,37 @@ void Enemy::Update(float railDistance)
     case Behavior::Formation:
     default:
     {
-        const float entryRate = Clamp01(static_cast<float>(age_) / 90.0f);
-        const float holdRate = Clamp01(static_cast<float>(age_ - 90) / 130.0f);
-        const float exitRate = Clamp01(static_cast<float>(age_ - 220) / 120.0f);
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 74.0f);
+        const float holdRate = Clamp01(static_cast<float>(age_ - 74) / 146.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 228) / 120.0f);
         const float exitSide = SignNonZero(baseTranslate_.x);
         const float formationSpread =
             entryStyle_ == EntryStyle::VFormation ?
-            std::sin(entryRate * kPi) * std::abs(baseTranslate_.x) * 0.35f :
+            std::sin(entryRate * kPi) * std::abs(baseTranslate_.x) * 0.42f :
             0.0f;
         translate_.x =
-            Lerp(baseTranslate_.x * 0.55f, baseTranslate_.x, entryRate) +
+            Lerp(baseTranslate_.x * 0.14f, baseTranslate_.x, entryRate) +
             SignNonZero(baseTranslate_.x) * formationSpread +
-            std::sin(moveTimer_ * 0.035f + phase_) * 0.75f +
+            std::sin(moveTimer_ * 0.035f + phase_) * Lerp(0.22f, 0.75f, entryRate) +
             std::sin(moveTimer_ * 0.013f + phase_) * 0.35f +
             exitSide * exitRate * 10.5f;
         translate_.y =
-            baseTranslate_.y +
+            Lerp(baseTranslate_.y + 1.75f, baseTranslate_.y, entryRate) +
             std::cos(moveTimer_ * 0.03f + phase_) * 0.45f +
             exitRate * 3.4f;
         translate_.z =
             railDistance +
-            Lerp(38.0f, 24.0f, entryRate) -
+            Lerp(60.0f, 23.5f, entryRate) -
             holdRate * 0.8f +
             std::sin(moveTimer_ * 0.02f + phase_) * 1.2f;
+        visualScaleTarget =
+            Lerp(0.24f, 1.0f, entryRate) +
+            std::sin(entryRate * kPi) * 0.055f;
+        colorAlphaRate = Lerp(0.26f, 1.0f, entryRate);
+        objectRotate.y = -translate_.x * 0.018f;
+        objectRotate.z =
+            -exitSide * std::sin(entryRate * kPi) * 0.22f +
+            std::sin(moveTimer_ * 0.025f + phase_) * 0.10f;
         if (exitRate >= 1.0f) {
             Escape();
             return;
@@ -241,26 +293,31 @@ void Enemy::Update(float railDistance)
     }
 
     const bool hitReacting = hitFlashTimer_ > 0;
-    const float hitRate = hitReacting ? static_cast<float>(hitFlashTimer_) / 32.0f : 0.0f;
-    const float hitPunch = hitReacting ? std::sin(hitRate * kPi) * 0.14f : 0.0f;
+    const float hitRate = hitReacting ? static_cast<float>(hitFlashTimer_) / 18.0f : 0.0f;
+    const float hitPunch = hitReacting ? std::sin(Clamp01(hitRate) * kPi) * 0.16f : 0.0f;
     const float flashScale = 1.0f + hitPunch;
+    visualScaleRate_ = std::clamp(visualScaleTarget, 0.18f, 1.10f);
+    Math::Vector4 color = baseColor_;
+    color.w *= std::clamp(colorAlphaRate, 0.18f, 1.0f);
+    if (hitReacting) {
+        const float flash = std::clamp(hitRate * hitRate, 0.0f, 1.0f);
+        color.x = Lerp(color.x, 1.0f, flash);
+        color.y = Lerp(color.y, 1.0f, flash * 0.92f);
+        color.z = Lerp(color.z, 0.92f, flash * 0.86f);
+    }
     object_->SetScale({
-        baseScale_.x * flashScale,
-        baseScale_.y * flashScale,
-        baseScale_.z * flashScale
+        baseScale_.x * visualScaleRate_ * flashScale,
+        baseScale_.y * visualScaleRate_ * flashScale,
+        baseScale_.z * visualScaleRate_ * flashScale
     });
-    object_->SetColor(baseColor_);
+    object_->SetColor(color);
     object_->SetTranslate(translate_);
+    object_->SetRotate(objectRotate);
     object_->Update();
 }
 
 void Enemy::Draw()
 {
-    const bool blinkOff = hitFlashTimer_ > 0 && hitFlashTimer_ % 8 < 2;
-    if (blinkOff) {
-        return;
-    }
-
     if (lifeState_ != LifeState::Destroyed &&
         lifeState_ != LifeState::Escaped &&
         object_) {
@@ -284,7 +341,7 @@ bool Enemy::Damage(int damage)
     }
 
     hp_ = (std::max)(0, hp_ - (std::max)(damage, 0));
-    hitFlashTimer_ = 32;
+    hitFlashTimer_ = 18;
     if (hp_ <= 0) {
         Kill();
         return true;
@@ -292,19 +349,30 @@ bool Enemy::Damage(int damage)
     return false;
 }
 
+bool Enemy::IsTargetable() const
+{
+    return lifeState_ == LifeState::Alive && visualScaleRate_ >= 0.52f;
+}
+
 Math::Vector3 Enemy::GetAimPosition() const
 {
+    const float scaleRate = (std::max)(visualScaleRate_, 0.30f);
     return {
-        translate_.x + aimLocalCenter_.x * baseScale_.x,
-        translate_.y + aimLocalCenter_.y * baseScale_.y,
-        translate_.z + aimLocalCenter_.z * baseScale_.z
+        translate_.x + aimLocalCenter_.x * baseScale_.x * scaleRate,
+        translate_.y + aimLocalCenter_.y * baseScale_.y * scaleRate,
+        translate_.z + aimLocalCenter_.z * baseScale_.z * scaleRate
     };
+}
+
+float Enemy::GetAimRadius() const
+{
+    return aimRadius_ * (std::max)(visualScaleRate_, 0.42f);
 }
 
 bool Enemy::CanShoot() const
 {
-    return lifeState_ == LifeState::Alive &&
+    return IsTargetable() &&
         behavior_ == Behavior::StrafeShooter &&
-        45 <= age_ &&
-        age_ <= 220;
+        78 <= age_ &&
+        age_ <= 228;
 }

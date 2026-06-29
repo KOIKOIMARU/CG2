@@ -107,6 +107,23 @@ private:
         bool billboard = false;
     };
 
+    struct DepthCueEffect {
+        std::unique_ptr<Object3d> object;
+        Model* model = nullptr;
+        Math::Vector3 anchor{};
+        Math::Vector4 color{ 1.0f, 1.0f, 1.0f, 0.35f };
+        float loopLength = 120.0f;
+        float speedMultiplier = 1.0f;
+        float lateralDrift = 0.0f;
+        float verticalDrift = 0.0f;
+        float driftSpeed = 0.02f;
+        float phase = 0.0f;
+        float baseScale = 0.18f;
+        float aspectX = 1.0f;
+        float aspectY = 1.0f;
+        float spinSpeed = 0.0f;
+    };
+
     struct WaveTuning {
         int enemyCount = 6;
         int spawnInterval = 80;
@@ -119,6 +136,9 @@ private:
     void InitializeRewardHearts();
     void SpawnRewardHearts(const Math::Vector3& worldPosition, int count);
     void UpdateRewardHearts();
+    void InitializeDepthCueEffects();
+    void UpdateDepthCueEffects();
+    void DrawDepthCueEffects();
     void InitializeRailScenery();
     void UpdateRailScenery();
     void DrawRailScenery();
@@ -215,6 +235,7 @@ private:
     std::vector<HitEffect> hitEffects_;
     std::vector<std::unique_ptr<Object3d>> hitEffectObjectPool_;
     std::vector<RailSceneryObject> railSceneryObjects_;
+    std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
     std::array<WaveTuning, 3> waveTuning_{ {
         { 6, 80, 26.0f },
@@ -273,11 +294,13 @@ private:
     float chargedBulletSpeedMultiplier_ = 1.10f;
     float enemyBulletSpeed_ = 0.28f;
     float lockRadius_ = 118.0f;
+    float cameraFovY_ = 0.5f;
     Math::Vector2 hudViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 hudViewportSize_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportSize_{ 0.0f, 0.0f };
     Math::Vector3 cameraTranslate_{ 0.0f, 2.5f, -13.0f };
+    Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
     const Enemy* lockedEnemy_ = nullptr;
     Math::Vector2 lockedEnemyScreen_{ 0.0f, 0.0f };
