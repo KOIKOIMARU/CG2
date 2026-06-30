@@ -173,31 +173,31 @@ void Enemy::Update(float railDistance)
 
     switch (behavior_) {
     case Behavior::Swoop: {
-        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 48.0f);
-        const float passRate = SmoothStep(static_cast<float>(age_ - 18) / 205.0f);
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 40.0f);
+        const float passRate = SmoothStep(static_cast<float>(age_ - 14) / 182.0f);
         const float side =
             entryStyle_ == EntryStyle::RightSweep ? -1.0f :
             entryStyle_ == EntryStyle::LeftSweep ? 1.0f :
             SignNonZero(baseTranslate_.x);
         const float curve = std::sin(passRate * kPi);
         const float laneX =
-            side * Lerp(9.6f, -10.8f, passRate) -
-            side * curve * 2.1f;
+            side * Lerp(10.8f, -11.6f, passRate) -
+            side * curve * 2.8f;
         const float laneY =
             baseTranslate_.y +
-            curve * 2.7f -
-            passRate * 1.35f;
+            curve * 3.2f -
+            passRate * 1.55f;
         const float laneZ =
-            Lerp(34.0f, 20.5f, curve) +
-            passRate * 8.0f;
+            Lerp(36.0f, 17.5f, curve) +
+            passRate * 9.0f;
         translate_.x =
-            Lerp(side * 3.8f, laneX, entryRate);
+            Lerp(side * 4.4f, laneX, entryRate);
         translate_.y =
-            Lerp(baseTranslate_.y + 2.2f, laneY, entryRate) +
-            std::sin(moveTimer_ * 0.06f + phase_) * 0.18f;
+            Lerp(baseTranslate_.y + 2.5f, laneY, entryRate) +
+            std::sin(moveTimer_ * 0.064f + phase_) * 0.20f;
         translate_.z =
             railDistance +
-            Lerp(58.0f, laneZ, entryRate);
+            Lerp(66.0f, laneZ, entryRate);
         visualScaleTarget =
             Lerp(0.22f, 1.0f, entryRate) +
             std::sin(entryRate * kPi) * 0.05f;
@@ -211,9 +211,9 @@ void Enemy::Update(float railDistance)
         break;
     }
     case Behavior::StrafeShooter: {
-        const float attackRate = EaseOutCubic(static_cast<float>(age_) / 84.0f);
-        const float holdRate = Clamp01(static_cast<float>(age_ - 84) / 156.0f);
-        const float exitRate = SmoothStep(static_cast<float>(age_ - 240) / 110.0f);
+        const float attackRate = EaseOutCubic(static_cast<float>(age_) / 72.0f);
+        const float holdRate = Clamp01(static_cast<float>(age_ - 72) / 148.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 220) / 96.0f);
         const float exitSide = SignNonZero(std::sin(phase_));
         const float entryArc =
             entryStyle_ == EntryStyle::PopShooter ?
@@ -221,21 +221,21 @@ void Enemy::Update(float railDistance)
             0.0f;
         translate_.x =
             Lerp(
-                baseTranslate_.x * 2.0f + SignNonZero(baseTranslate_.x) * 1.7f,
+                baseTranslate_.x * 2.2f + SignNonZero(baseTranslate_.x) * 2.2f,
                 baseTranslate_.x,
                 attackRate) +
-            std::sin(moveTimer_ * 0.045f + phase_) * Lerp(1.5f, 4.0f, holdRate) +
-            exitSide * exitRate * 10.0f;
+            std::sin(moveTimer_ * 0.050f + phase_) * Lerp(1.7f, 4.4f, holdRate) +
+            exitSide * exitRate * 11.0f;
         translate_.y =
-            Lerp(baseTranslate_.y + 3.0f, baseTranslate_.y * 0.35f, attackRate) +
-            std::cos(moveTimer_ * 0.038f + phase_) * 0.35f +
-            entryArc * 0.85f +
-            exitRate * 4.2f;
+            Lerp(baseTranslate_.y + 3.3f, baseTranslate_.y * 0.30f, attackRate) +
+            std::cos(moveTimer_ * 0.042f + phase_) * 0.42f +
+            entryArc * 1.05f +
+            exitRate * 4.8f;
         translate_.z =
             railDistance +
-            Lerp(56.0f, 21.0f, attackRate) +
-            std::cos(moveTimer_ * 0.028f + phase_) * 1.0f +
-            exitRate * 10.0f;
+            Lerp(64.0f, 19.0f, attackRate) +
+            std::cos(moveTimer_ * 0.030f + phase_) * 1.3f +
+            exitRate * 11.0f;
         visualScaleTarget =
             Lerp(0.25f, 1.0f, attackRate) +
             std::sin(attackRate * kPi) * 0.06f;
@@ -253,29 +253,29 @@ void Enemy::Update(float railDistance)
     case Behavior::Formation:
     default:
     {
-        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 74.0f);
-        const float holdRate = Clamp01(static_cast<float>(age_ - 74) / 146.0f);
-        const float exitRate = SmoothStep(static_cast<float>(age_ - 228) / 120.0f);
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 58.0f);
+        const float holdRate = Clamp01(static_cast<float>(age_ - 58) / 132.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 206) / 96.0f);
         const float exitSide = SignNonZero(baseTranslate_.x);
         const float formationSpread =
             entryStyle_ == EntryStyle::VFormation ?
-            std::sin(entryRate * kPi) * std::abs(baseTranslate_.x) * 0.42f :
+            std::sin(entryRate * kPi) * std::abs(baseTranslate_.x) * 0.56f :
             0.0f;
         translate_.x =
-            Lerp(baseTranslate_.x * 0.14f, baseTranslate_.x, entryRate) +
+            Lerp(baseTranslate_.x * 0.08f, baseTranslate_.x, entryRate) +
             SignNonZero(baseTranslate_.x) * formationSpread +
-            std::sin(moveTimer_ * 0.035f + phase_) * Lerp(0.22f, 0.75f, entryRate) +
-            std::sin(moveTimer_ * 0.013f + phase_) * 0.35f +
-            exitSide * exitRate * 10.5f;
+            std::sin(moveTimer_ * 0.040f + phase_) * Lerp(0.20f, 0.95f, entryRate) +
+            std::sin(moveTimer_ * 0.014f + phase_) * 0.42f +
+            exitSide * exitRate * 11.5f;
         translate_.y =
-            Lerp(baseTranslate_.y + 1.75f, baseTranslate_.y, entryRate) +
-            std::cos(moveTimer_ * 0.03f + phase_) * 0.45f +
-            exitRate * 3.4f;
+            Lerp(baseTranslate_.y + 2.1f, baseTranslate_.y, entryRate) +
+            std::cos(moveTimer_ * 0.034f + phase_) * 0.52f +
+            exitRate * 4.1f;
         translate_.z =
             railDistance +
-            Lerp(60.0f, 23.5f, entryRate) -
-            holdRate * 0.8f +
-            std::sin(moveTimer_ * 0.02f + phase_) * 1.2f;
+            Lerp(68.0f, 19.5f, entryRate) -
+            holdRate * 1.6f +
+            std::sin(moveTimer_ * 0.022f + phase_) * 1.5f;
         visualScaleTarget =
             Lerp(0.24f, 1.0f, entryRate) +
             std::sin(entryRate * kPi) * 0.055f;
@@ -373,6 +373,6 @@ bool Enemy::CanShoot() const
 {
     return IsTargetable() &&
         behavior_ == Behavior::StrafeShooter &&
-        78 <= age_ &&
-        age_ <= 228;
+        68 <= age_ &&
+        age_ <= 210;
 }

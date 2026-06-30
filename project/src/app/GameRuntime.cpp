@@ -720,23 +720,23 @@ void GameRuntime::SpawnRewardHearts(const Math::Vector3& worldPosition, int coun
             static_cast<float>(spawnedCount) /
             static_cast<float>((std::max)(count, 1));
         const float angle = seed + kTwoPi * t;
-        const float ring = 0.06f + 0.025f * static_cast<float>(spawnedCount % 3);
+        const float ring = 0.085f + 0.032f * static_cast<float>(spawnedCount % 3);
         heart.position = {
-            worldPosition.x + std::cos(angle) * 0.14f,
-            worldPosition.y + std::sin(angle * 1.7f) * 0.10f,
-            worldPosition.z + std::sin(angle) * 0.05f,
+            worldPosition.x + std::cos(angle) * 0.20f,
+            worldPosition.y + std::sin(angle * 1.7f) * 0.14f,
+            worldPosition.z + std::sin(angle) * 0.07f,
         };
         heart.velocity = {
             std::cos(angle) * ring,
-            0.040f + std::sin(angle * 1.3f) * 0.026f,
-            -0.030f + std::sin(angle) * 0.015f,
+            0.054f + std::sin(angle * 1.3f) * 0.030f,
+            -0.052f + std::sin(angle) * 0.018f,
         };
         heart.collisionRadius = 0.46f;
         heart.age = 0.0f;
-        heart.collectDelay = 10.0f + static_cast<float>(spawnedCount % 3) * 2.0f;
-        heart.life = 170.0f;
+        heart.collectDelay = 8.0f + static_cast<float>(spawnedCount % 3) * 1.5f;
+        heart.life = 150.0f;
         heart.phase = angle;
-        heart.baseScale = 0.28f + static_cast<float>(spawnedCount % 2) * 0.04f;
+        heart.baseScale = 0.27f + static_cast<float>(spawnedCount % 2) * 0.035f;
         heart.scoreValue = kRewardHeartScoreValue;
         heart.isActive = true;
         ++spawnedCount;
@@ -759,8 +759,8 @@ void GameRuntime::UpdateRewardHearts()
     Math::Vector3 targetPosition{};
     if (canCollect) {
         targetPosition = player_->GetTranslate();
-        targetPosition.y += 0.28f;
-        targetPosition.z += 0.15f;
+        targetPosition.y += 0.12f;
+        targetPosition.z += 0.42f;
     }
 
     for (RewardHeart& heart : rewardHearts_) {
@@ -796,27 +796,27 @@ void GameRuntime::UpdateRewardHearts()
                 heart.age >= heart.life) {
                 heart.isActive = false;
                 score_ += heart.scoreValue;
-                AddRewardHeartCollectEffect(heart.position);
+                AddRewardHeartCollectEffect(targetPosition);
                 AddCameraShake(0.004f, 2);
                 continue;
             }
 
             const float pullRate =
-                std::clamp(0.055f + (heart.age - heart.collectDelay) * 0.0030f, 0.055f, 0.30f);
+                std::clamp(0.070f + (heart.age - heart.collectDelay) * 0.0038f, 0.070f, 0.36f);
             heart.position = Lerp(
                 heart.position,
                 targetPosition,
-                std::clamp(pullRate * frameStep, 0.0f, 0.46f));
+                std::clamp(pullRate * frameStep, 0.0f, 0.54f));
         }
 
-        const float popRate = std::clamp(heart.age / 8.0f, 0.0f, 1.0f);
+        const float popRate = std::clamp(heart.age / 7.0f, 0.0f, 1.0f);
         const float pullRate =
             heart.age >= heart.collectDelay ?
-            std::clamp((heart.age - heart.collectDelay) / 34.0f, 0.0f, 1.0f) :
+            std::clamp((heart.age - heart.collectDelay) / 28.0f, 0.0f, 1.0f) :
             0.0f;
-        const float pulse = 1.0f + std::sin(heart.phase * 2.6f) * 0.08f;
+        const float pulse = 1.0f + std::sin(heart.phase * 2.6f) * 0.075f;
         const float scale = heart.baseScale * (0.55f + popRate * 0.45f) * pulse *
-            (1.0f - pullRate * 0.18f);
+            (1.0f - pullRate * 0.24f);
         Math::Vector3 rotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
         rotate.z += heart.phase * 0.55f;
 
@@ -1254,21 +1254,21 @@ std::unique_ptr<Bullet> GameRuntime::CreatePooledEnemyBullet()
         bulletModel_,
         offscreenPosition,
         { 0.0f, 0.0f, -enemyBulletSpeed_ },
-        { 1.0f, 0.08f, 0.18f, 1.0f },
+        { 1.0f, 0.08f, 0.42f, 1.0f },
         1,
-        { 0.42f, 0.42f, 0.62f },
-        0.58f,
+        { 0.54f, 0.54f, 0.76f },
+        0.62f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.08f, 0.30f, 1.0f },
-        { 0.82f, 0.82f, 1.0f },
+        { 1.0f, 0.08f, 0.48f, 1.0f },
+        { 1.12f, 1.12f, 1.0f },
         effectEnemyBulletTailModel_ ? effectEnemyBulletTailModel_ : effectBulletTrailModel_,
-        { 1.0f, 0.08f, 0.36f, 1.0f },
-        { 0.46f, 3.10f, 1.0f },
-        1.85f,
+        { 1.0f, 0.06f, 0.46f, 1.0f },
+        { 0.58f, 4.40f, 1.0f },
+        2.55f,
         effectSparkStarModel_,
-        { 1.0f, 0.28f, 0.58f, 1.0f },
-        { 0.11f, 0.11f, 1.0f });
+        { 1.0f, 0.30f, 0.70f, 1.0f },
+        { 0.14f, 0.14f, 1.0f });
     bullet->Kill();
     return bullet;
 }
@@ -1463,6 +1463,29 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
 
     Math::Vector3 spawnPosition = position;
     spawnPosition.z -= 1.0f;
+    Math::Vector3 bulletDirection{ 0.0f, 0.0f, -1.0f };
+    if (player_) {
+        Math::Vector3 targetPosition = player_->GetTranslate();
+        targetPosition.y += 0.08f;
+        targetPosition.z += 0.18f;
+
+        const Math::Vector3 toPlayer{
+            targetPosition.x - spawnPosition.x,
+            targetPosition.y - spawnPosition.y,
+            targetPosition.z - spawnPosition.z
+        };
+        const float toPlayerLengthSq =
+            toPlayer.x * toPlayer.x +
+            toPlayer.y * toPlayer.y +
+            toPlayer.z * toPlayer.z;
+        if (toPlayerLengthSq > 0.0001f) {
+            bulletDirection = Math::Normalize(toPlayer);
+            if (bulletDirection.z > -0.10f) {
+                bulletDirection.z = -0.10f;
+                bulletDirection = Math::Normalize(bulletDirection);
+            }
+        }
+    }
 
     auto bullet = AcquireBullet(enemyBulletPool_);
     if (!bullet) {
@@ -1473,22 +1496,23 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         object3dCommon_.get(),
         bulletModel_,
         spawnPosition,
-        { 0.0f, 0.0f, -enemyBulletSpeed_ },
-        { 1.0f, 0.08f, 0.18f, 1.0f },
+        bulletDirection * enemyBulletSpeed_,
+        { 1.0f, 0.08f, 0.42f, 1.0f },
         240,
-        { 0.42f, 0.42f, 0.62f },
-        0.58f,
+        { 0.54f, 0.54f, 0.76f },
+        0.62f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.08f, 0.30f, 1.0f },
-        { 0.82f, 0.82f, 1.0f },
+        { 1.0f, 0.08f, 0.48f, 1.0f },
+        { 1.12f, 1.12f, 1.0f },
         effectEnemyBulletTailModel_ ? effectEnemyBulletTailModel_ : effectBulletTrailModel_,
-        { 1.0f, 0.08f, 0.36f, 1.0f },
-        { 0.46f, 3.10f, 1.0f },
-        1.85f,
+        { 1.0f, 0.06f, 0.46f, 1.0f },
+        { 0.58f, 4.40f, 1.0f },
+        2.55f,
         effectSparkStarModel_,
-        { 1.0f, 0.28f, 0.58f, 1.0f },
-        { 0.11f, 0.11f, 1.0f });
+        { 1.0f, 0.30f, 0.70f, 1.0f },
+        { 0.14f, 0.14f, 1.0f });
+    AddEnemyMuzzleFlashEffect(spawnPosition);
     enemyBullets_.push_back(std::move(bullet));
     maxActiveEnemyBullets_ =
         (std::max)(maxActiveEnemyBullets_, enemyBullets_.size());
@@ -1501,19 +1525,45 @@ void GameRuntime::SpawnEnemy()
     }
 
     const WaveTuning& wave = waveTuning_[currentWaveIndex_];
-    const EnemySpawnPattern pattern =
-        GetEnemySpawnPattern(currentWaveIndex_, spawnSequenceIndex_);
-    ++spawnSequenceIndex_;
-    ++spawnedEnemyCountInWave_;
+    const int remainingEnemyCount =
+        wave.enemyCount - spawnedEnemyCountInWave_;
+    if (remainingEnemyCount <= 0) {
+        return;
+    }
 
-    auto enemy = std::make_unique<Enemy>();
-    enemy->Initialize(
-        object3dCommon_.get(),
-        enemyModel_,
-        { pattern.x, pattern.y, railDistance_ + wave.spawnLeadDistance },
-        pattern.behavior,
-        pattern.entryStyle);
-    enemies_.push_back(std::move(enemy));
+    const EnemySpawnPattern firstPattern =
+        GetEnemySpawnPattern(currentWaveIndex_, spawnSequenceIndex_);
+    int spawnBatchCount = 1;
+    if (firstPattern.behavior == Enemy::Behavior::Formation &&
+        firstPattern.entryStyle == Enemy::EntryStyle::VFormation) {
+        while (spawnBatchCount < 3 && spawnBatchCount < remainingEnemyCount) {
+            const EnemySpawnPattern nextPattern =
+                GetEnemySpawnPattern(
+                    currentWaveIndex_,
+                    spawnSequenceIndex_ + spawnBatchCount);
+            if (nextPattern.behavior != firstPattern.behavior ||
+                nextPattern.entryStyle != firstPattern.entryStyle) {
+                break;
+            }
+            ++spawnBatchCount;
+        }
+    }
+
+    for (int index = 0; index < spawnBatchCount; ++index) {
+        const EnemySpawnPattern pattern =
+            GetEnemySpawnPattern(currentWaveIndex_, spawnSequenceIndex_);
+        ++spawnSequenceIndex_;
+        ++spawnedEnemyCountInWave_;
+
+        auto enemy = std::make_unique<Enemy>();
+        enemy->Initialize(
+            object3dCommon_.get(),
+            enemyModel_,
+            { pattern.x, pattern.y, railDistance_ + wave.spawnLeadDistance },
+            pattern.behavior,
+            pattern.entryStyle);
+        enemies_.push_back(std::move(enemy));
+    }
 }
 
 void GameRuntime::UpdateEnemyWave()
@@ -1702,35 +1752,35 @@ void GameRuntime::AddEnemyHitEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 44;
-    effect.strength = strength * 1.08f;
+    effect.duration = 34;
+    effect.strength = strength * 1.02f;
     effect.scoreValue = 100;
     effect.type = HitEffectType::EnemyDestroy;
 
     AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.96f, 0.66f, 1.0f }, 1.16f, 0.88f, 0.38f, 0.0f, 1.0f, 1.0f, {});
+        { 1.0f, 0.98f, 0.70f, 1.0f }, 0.92f, 0.72f, 0.46f, 0.0f, 1.0f, 1.0f, {});
     AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
-        { 0.52f, 0.94f, 1.0f, 0.78f }, 0.86f, 0.58f, -1.15f, 0.04f, 1.0f, 1.0f, {});
+        { 0.62f, 0.96f, 1.0f, 0.72f }, 0.62f, 0.46f, -1.25f, 0.04f, 1.0f, 1.0f, {});
     AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.76f, 0.52f, 1.0f, 0.94f }, 0.54f, 0.34f, 2.45f, 0.03f, 0.62f, 1.18f, { -0.096f, 0.066f, 0.014f });
+        { 0.78f, 0.58f, 1.0f, 0.96f }, 0.46f, 0.42f, 2.70f, 0.02f, 0.54f, 1.28f, { -0.118f, 0.080f, 0.016f });
     AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.54f, 0.94f, 1.0f, 0.88f }, 0.48f, 0.32f, -2.15f, 0.04f, 0.58f, 1.05f, { 0.104f, 0.058f, 0.012f });
+        { 0.58f, 0.96f, 1.0f, 0.92f }, 0.42f, 0.40f, -2.40f, 0.03f, 0.52f, 1.16f, { 0.124f, 0.070f, 0.014f });
     AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.76f, 0.34f, 0.84f }, 0.46f, 0.30f, 1.70f, 0.07f, 0.54f, 0.96f, { -0.066f, -0.086f, 0.008f });
+        { 1.0f, 0.82f, 0.34f, 0.88f }, 0.38f, 0.38f, 1.90f, 0.06f, 0.50f, 1.02f, { -0.082f, -0.104f, 0.010f });
     AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.96f, 0.92f, 1.0f, 0.80f }, 0.42f, 0.30f, -1.85f, 0.09f, 0.50f, 0.92f, { 0.074f, -0.080f, 0.008f });
+        { 0.98f, 0.94f, 1.0f, 0.84f }, 0.36f, 0.36f, -2.05f, 0.08f, 0.48f, 0.96f, { 0.090f, -0.098f, 0.010f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.96f, 0.68f, 1.0f }, 0.24f, 0.48f, -1.40f, 0.00f, 1.00f, 0.74f, { -0.082f, 0.068f, 0.010f });
+        { 1.0f, 0.98f, 0.72f, 1.0f }, 0.20f, 0.58f, -1.60f, 0.00f, 1.10f, 0.64f, { -0.104f, 0.084f, 0.010f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.72f, 0.96f, 1.0f, 0.96f }, 0.22f, 0.46f, 1.65f, 0.02f, 0.92f, 0.70f, { 0.090f, 0.058f, 0.010f });
+        { 0.76f, 0.98f, 1.0f, 0.98f }, 0.19f, 0.54f, 1.85f, 0.02f, 1.00f, 0.60f, { 0.112f, 0.074f, 0.010f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.78f, 0.30f, 0.90f }, 0.20f, 0.42f, -2.10f, 0.03f, 0.88f, 0.66f, { -0.064f, -0.076f, 0.006f });
+        { 1.0f, 0.82f, 0.32f, 0.92f }, 0.17f, 0.50f, -2.35f, 0.03f, 0.92f, 0.58f, { -0.084f, -0.096f, 0.006f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.56f, 0.86f, 1.0f, 0.88f }, 0.18f, 0.38f, 2.25f, 0.05f, 0.84f, 0.64f, { 0.066f, -0.072f, 0.006f });
+        { 0.62f, 0.88f, 1.0f, 0.90f }, 0.16f, 0.46f, 2.50f, 0.05f, 0.88f, 0.56f, { 0.086f, -0.090f, 0.006f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 1.0f, 0.86f, 0.82f }, 0.17f, 0.36f, 0.95f, 0.08f, 0.78f, 0.60f, { 0.000f, 0.096f, 0.004f });
+        { 1.0f, 1.0f, 0.88f, 0.84f }, 0.15f, 0.42f, 1.10f, 0.07f, 0.82f, 0.52f, { 0.000f, 0.112f, 0.004f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.48f, 0.80f, 1.0f, 0.78f }, 0.16f, 0.34f, -0.80f, 0.10f, 0.76f, 0.58f, { 0.000f, -0.092f, 0.004f });
+        { 0.54f, 0.82f, 1.0f, 0.80f }, 0.14f, 0.40f, -0.95f, 0.09f, 0.80f, 0.50f, { 0.000f, -0.108f, 0.004f });
     hitEffects_.push_back(std::move(effect));
 }
 
@@ -1755,6 +1805,21 @@ void GameRuntime::AddEnemyImpactEffect(
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
         { 1.0f, 0.82f, 0.28f, 0.94f }, 0.18f, 0.60f, 1.42f, 0.03f, 1.18f, 0.44f, { 0.058f, -0.040f, 0.0f });
 
+    hitEffects_.push_back(std::move(effect));
+}
+
+void GameRuntime::AddEnemyMuzzleFlashEffect(const Math::Vector3& worldPosition)
+{
+    HitEffect effect{};
+    effect.worldPosition = worldPosition;
+    effect.duration = 14;
+    effect.strength = 0.76f;
+    effect.type = HitEffectType::EnemyImpact;
+
+    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
+        { 1.0f, 0.06f, 0.40f, 0.62f }, 0.42f, 0.18f, 0.0f, 0.0f, 1.20f, 0.86f, {});
+    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
+        { 1.0f, 0.22f, 0.68f, 0.54f }, 0.24f, 0.42f, 1.35f, 0.02f, 0.76f, 1.24f, { 0.0f, 0.0f, -0.018f });
     hitEffects_.push_back(std::move(effect));
 }
 
@@ -1798,15 +1863,15 @@ void GameRuntime::AddRewardHeartCollectEffect(const Math::Vector3& worldPosition
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 20;
-    effect.strength = 0.65f;
+    effect.duration = 16;
+    effect.strength = 0.48f;
     effect.scoreValue = kRewardHeartScoreValue;
     effect.type = HitEffectType::RewardCollect;
 
     AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.62f, 0.28f, 0.58f }, 0.34f, 0.12f, 0.0f, 0.0f, 1.0f, 1.0f, {});
+        { 1.0f, 0.66f, 0.30f, 0.44f }, 0.24f, 0.08f, 0.0f, 0.0f, 1.0f, 0.82f, {});
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.82f, 0.46f, 0.58f }, 0.38f, 0.34f, 1.35f, 0.03f, 1.18f, 0.72f, {});
+        { 1.0f, 0.84f, 0.46f, 0.50f }, 0.23f, 0.24f, 1.10f, 0.02f, 1.08f, 0.62f, {});
     hitEffects_.push_back(std::move(effect));
 }
 
@@ -2352,15 +2417,15 @@ void GameRuntime::DrawEditorOverlayGuiRich()
     if (ImGui::Begin(kWindowTuning, nullptr, panelFlags)) {
         if (ImGui::Button(ICON_FA_ROTATE_LEFT " 調整をリセット")) {
             waveTuning_ = { {
-                { 6, 80, 26.0f },
-                { 8, 60, 30.0f },
-                { 10, 45, 34.0f }
+                { 6, 42, 30.0f },
+                { 8, 38, 34.0f },
+                { 10, 34, 38.0f }
             } };
             railSpeed_ = 0.045f;
             playerBulletSpeed_ = 0.65f;
             lockBulletSpeed_ = 0.82f;
             chargedBulletSpeedMultiplier_ = 1.18f;
-            enemyBulletSpeed_ = 0.28f;
+            enemyBulletSpeed_ = 0.36f;
             lockRadius_ = 118.0f;
             chargeShotThreshold_ = 70;
             normalShootCooldown_ = 8;

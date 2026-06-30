@@ -154,6 +154,7 @@ private:
     void AddEnemyImpactEffect(
         const Math::Vector3& worldPosition,
         float strength = 1.0f);
+    void AddEnemyMuzzleFlashEffect(const Math::Vector3& worldPosition);
     void AddMuzzleFlashEffect(
         const Math::Vector3& worldPosition,
         bool isCharged);
@@ -238,9 +239,9 @@ private:
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
     std::array<WaveTuning, 3> waveTuning_{ {
-        { 6, 80, 26.0f },
-        { 8, 60, 30.0f },
-        { 10, 45, 34.0f }
+        { 6, 42, 30.0f },
+        { 8, 38, 34.0f },
+        { 10, 34, 38.0f }
     } };
 
     Model* playerModel_ = nullptr;
@@ -292,7 +293,7 @@ private:
     float playerBulletSpeed_ = 1.28f;
     float lockBulletSpeed_ = 1.48f;
     float chargedBulletSpeedMultiplier_ = 1.10f;
-    float enemyBulletSpeed_ = 0.28f;
+    float enemyBulletSpeed_ = 0.36f;
     float lockRadius_ = 118.0f;
     float cameraFovY_ = 0.5f;
     Math::Vector2 hudViewportMin_{ 0.0f, 0.0f };
