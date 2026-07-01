@@ -6,6 +6,41 @@
 GameScene::GameScene() = default;
 GameScene::~GameScene() = default;
 
+bool GameScene::PreloadResourcesStep(DirectXCommon* dxCommon, SrvManager* srvManager)
+{
+    return GameRuntime::PreloadSharedResourceStep(dxCommon, srvManager);
+}
+
+bool GameScene::AreResourcesPreloaded()
+{
+    return GameRuntime::AreSharedResourcesPreloaded();
+}
+
+int GameScene::GetResourcePreloadStep()
+{
+    return GameRuntime::GetSharedResourcePreloadStep();
+}
+
+int GameScene::GetResourcePreloadStepCount()
+{
+    return GameRuntime::GetSharedResourcePreloadStepCount();
+}
+
+const char* GameScene::GetResourcePreloadLabel()
+{
+    return GameRuntime::GetSharedResourcePreloadLabel();
+}
+
+float GameScene::GetResourcePreloadLastStepMs()
+{
+    return GameRuntime::GetSharedResourceLastStepMs();
+}
+
+float GameScene::GetResourcePreloadTotalMs()
+{
+    return GameRuntime::GetSharedResourceTotalMs();
+}
+
 void GameScene::Initialize()
 {
     runtime_.SetSystems(

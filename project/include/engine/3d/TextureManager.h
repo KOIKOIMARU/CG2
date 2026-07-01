@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <wrl.h>
@@ -16,6 +17,12 @@ public:
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
 
     void LoadTexture(const std::string& filePath);
+    void CreateSolidCubeTexture(
+        const std::string& name,
+        uint8_t red,
+        uint8_t green,
+        uint8_t blue,
+        uint8_t alpha = 255);
 
     // ===== getter =====
     const DirectX::TexMetadata& GetMetaData(const std::string& filePath);

@@ -1,6 +1,7 @@
 #include "engine/scene/TitleScene.h"
 
 #include "engine/io/Input.h"
+#include "engine/scene/GameScene.h"
 #include "engine/scene/SceneManager.h"
 #include "engine/scene/SceneType.h"
 
@@ -12,11 +13,18 @@ TitleScene::~TitleScene() = default;
 
 void TitleScene::Initialize()
 {
+    startRequested_ = false;
 }
 
 void TitleScene::Update()
 {
+    const bool resourcesReady =
+        GameScene::PreloadResourcesStep(dxCommon_, srvManager_);
+
     if (input_ && input_->TriggerKey(DIK_RETURN)) {
+        startRequested_ = true;
+    }
+    if (startRequested_ && resourcesReady && sceneManager_) {
         sceneManager_->SetNextScene(SceneType::Game);
     }
 
@@ -29,6 +37,21 @@ void TitleScene::Update()
     ImGui::TextUnformatted("移動: WASD / 方向キー");
     ImGui::TextUnformatted("ショット: Space");
     ImGui::TextUnformatted("F2: タイトルへ戻る");
+    if (!resourcesReady) {
+        ImGui::Separator();
+        ImGui::Text(
+            "Loading game assets: %d / %d",
+            GameScene::GetResourcePreloadStep(),
+            GameScene::GetResourcePreloadStepCount());
+        ImGui::TextUnformatted(GameScene::GetResourcePreloadLabel());
+        ImGui::Text(
+            "last %.1f ms / total %.1f ms",
+            GameScene::GetResourcePreloadLastStepMs(),
+            GameScene::GetResourcePreloadTotalMs());
+    } else if (startRequested_) {
+        ImGui::Separator();
+        ImGui::TextUnformatted("Starting...");
+    }
     ImGui::End();
 
     for (auto& s : sprites_) {

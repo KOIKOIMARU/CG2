@@ -1288,7 +1288,6 @@ void EditorScene::Finalize() {
     camera_.reset();
     object3dCommon_.reset();
 
-    ModelManager::GetInstance()->Finalize();
 }
 
 void EditorScene::InitializeSkeletonDebugSet(

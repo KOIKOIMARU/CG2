@@ -28,6 +28,14 @@ public:
     GameRuntime();
     ~GameRuntime();
 
+    static bool PreloadSharedResourceStep(DirectXCommon* dxCommon, SrvManager* srvManager);
+    static bool AreSharedResourcesPreloaded();
+    static int GetSharedResourcePreloadStep();
+    static int GetSharedResourcePreloadStepCount();
+    static const char* GetSharedResourcePreloadLabel();
+    static float GetSharedResourceLastStepMs();
+    static float GetSharedResourceTotalMs();
+
     void SetSystems(
         DirectXCommon* dxCommon,
         SrvManager* srvManager,
@@ -75,6 +83,15 @@ private:
         static constexpr size_t kMaxVisuals = 12;
         std::array<Visual, kMaxVisuals> visuals{};
         size_t visualCount = 0;
+    };
+
+    struct PlayerDodgeAfterimage {
+        std::unique_ptr<Object3d> object;
+        Math::Vector3 position{};
+        int direction = 1;
+        float age = 0.0f;
+        float duration = 16.0f;
+        bool isActive = false;
     };
 
     struct RewardHeart {
@@ -160,6 +177,7 @@ private:
         bool isCharged);
     void AddRewardHeartCollectEffect(const Math::Vector3& worldPosition);
     void AddPlayerDamageEffect(const Math::Vector3& worldPosition);
+    void AddPlayerDodgeGrazeEffect(const Math::Vector3& worldPosition);
     void AddHitEffectVisual(
         HitEffect& effect,
         Model* model,
@@ -187,6 +205,10 @@ private:
     void UpdateResultAndSceneObjects();
     void UpdateHitEffects();
     void DrawHitEffects();
+    void InitializePlayerDodgeAfterimages();
+    void SpawnPlayerDodgeAfterimage();
+    void UpdatePlayerDodgeAfterimages();
+    void DrawPlayerDodgeAfterimages();
     void DrawEditorOverlayGuiRich();
     void DrawHud();
     void DrawLockOnHud();
@@ -238,6 +260,7 @@ private:
     std::vector<RailSceneryObject> railSceneryObjects_;
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
+    std::array<PlayerDodgeAfterimage, 5> playerDodgeAfterimages_;
     std::array<WaveTuning, 3> waveTuning_{ {
         { 6, 42, 30.0f },
         { 8, 38, 34.0f },
@@ -272,6 +295,7 @@ private:
     int resultTransitionTimer_ = -1;
     int chargeTimer_ = 0;
     int chargeFlashTimer_ = 0;
+    int playerDodgeAfterimageTimer_ = 0;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
     int bulletPoolWarmupTimer_ = 0;
@@ -300,6 +324,7 @@ private:
     Math::Vector2 hudViewportSize_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportSize_{ 0.0f, 0.0f };
+    size_t nextPlayerDodgeAfterimageIndex_ = 0;
     Math::Vector3 cameraTranslate_{ 0.0f, 2.5f, -13.0f };
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
@@ -318,6 +343,7 @@ private:
     bool isPostEffectBypassEnabled_ = false;
     bool isExitRequested_ = false;
     bool showSkybox_ = true;
+    bool wasPlayerDodging_ = false;
     bool isHudViewportRectEnabled_ = false;
     bool hasEditorOverlayViewportRect_ = false;
 };

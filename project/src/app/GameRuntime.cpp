@@ -16,6 +16,7 @@
 #include <TextEditor.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -23,6 +24,8 @@
 namespace {
 
 constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
+constexpr const char* kGameEnvironmentTexturePath =
+    "__generated/game_fast_sky_cube";
 constexpr const char* kFreePlayerModelPath = "free_models/kenney_space_kit/craft_speederA.glb";
 constexpr const char* kFreeEnemyModelPath = "free_models/kenney_space_kit/meteor_detailed.glb";
 constexpr int kInitialPlayerBulletPoolCount = 22;
@@ -44,6 +47,14 @@ constexpr float kDepthCueLoopLength = 132.0f;
 constexpr float kTwoPi = 6.28318530718f;
 constexpr float kRailCameraCurveFrequency = 0.050f;
 constexpr float kRailCameraDriftFrequency = 0.027f;
+constexpr int kPlayerDodgeAfterimageIntervalFrames = 3;
+constexpr float kPlayerDodgeAfterimageDuration = 16.0f;
+constexpr int kSharedResourcePreloadStepCount = 7;
+int gSharedResourcePreloadStep = 0;
+bool gSharedResourcesPreloaded = false;
+const char* gSharedResourcePreloadLabel = "Waiting";
+float gSharedResourceLastStepMs = 0.0f;
+float gSharedResourceTotalMs = 0.0f;
 
 struct EnemySpawnPattern {
     float x;
@@ -187,6 +198,128 @@ void GameRuntime::SetSystems(
     input_ = input;
 }
 
+bool GameRuntime::PreloadSharedResourceStep(
+    DirectXCommon* dxCommon,
+    SrvManager* srvManager)
+{
+    if (gSharedResourcesPreloaded) {
+        gSharedResourcePreloadLabel = "Ready";
+        return true;
+    }
+    if (!dxCommon || !srvManager) {
+        gSharedResourcePreloadLabel = "Waiting for renderer";
+        return false;
+    }
+
+    ModelManager* modelManager = ModelManager::GetInstance();
+    const auto stepBegin = std::chrono::steady_clock::now();
+    switch (gSharedResourcePreloadStep) {
+    case 0:
+        gSharedResourcePreloadLabel = "Renderer resources";
+        modelManager->Initialize(dxCommon, srvManager);
+        modelManager->SetEnvironmentTexturePath(kGameEnvironmentTexturePath);
+        TextureManager::GetInstance()->CreateSolidCubeTexture(
+            kGameEnvironmentTexturePath,
+            132,
+            166,
+            220);
+        break;
+    case 1:
+        gSharedResourcePreloadLabel = "Core game meshes";
+        modelManager->CreateBox("game_player", 1.0f, 0.45f, 1.3f, "resources/uvChecker.png");
+        modelManager->CreateSphere("game_bullet", 12, 24, 0.35f, "resources/gradationLine.png");
+        modelManager->CreateSphere("game_enemy", 16, 32, 0.9f, "resources/uvChecker.png");
+        modelManager->CreatePlane("primitive_plane", 8.0f, 8.0f, "resources/checkerBoard.png");
+        modelManager->CreateTriangle("primitive_triangle", 1.6f, 1.6f, "resources/uvChecker.png");
+        modelManager->CreateCircle("primitive_circle", 32, 0.9f, "resources/uvChecker.png");
+        break;
+    case 2:
+        gSharedResourcePreloadLabel = "Reward and glow meshes";
+        modelManager->CreateHeart("reward_heart", 48, 1.0f, "resources/human/white.png");
+        modelManager->CreateCircle("effect_glow_core", 48, 1.0f, "resources/effects/glow_core.png");
+        modelManager->CreateCircle("effect_glow_ring", 64, 1.0f, "resources/effects/glow_ring.png");
+        modelManager->CreateCircle("effect_spark_star", 48, 1.0f, "resources/effects/pal_star_spark.png");
+        modelManager->CreateCircle("effect_bullet_glow", 48, 1.0f, "resources/effects/glow_core.png");
+        break;
+    case 3:
+        gSharedResourcePreloadLabel = "Projectile effect meshes";
+        modelManager->CreatePlane("effect_bullet_trail", 1.0f, 1.0f, "resources/effects/bullet_trail.png");
+        modelManager->CreatePlane("effect_player_bullet_core", 1.0f, 1.0f, "resources/effects/pal_arrow_core.png");
+        modelManager->CreatePlane("effect_player_bullet_trail", 1.0f, 1.0f, "resources/effects/pal_arrow_trail.png");
+        modelManager->CreatePlane("effect_enemy_bullet_core", 1.0f, 1.0f, "resources/effects/pal_enemy_bullet_core.png");
+        modelManager->CreatePlane("effect_enemy_bullet_tail", 1.0f, 1.0f, "resources/effects/pal_enemy_bullet_tail.png");
+        modelManager->CreatePlane("effect_impact_burst", 1.0f, 1.0f, "resources/effects/pal_impact_burst.png");
+        modelManager->CreatePlane("effect_magic_shard", 1.0f, 1.0f, "resources/effects/pal_magic_shard.png");
+        break;
+    case 4:
+        gSharedResourcePreloadLabel = "Primitive scene meshes";
+        modelManager->CreateRing("primitive_ring", 32, 2.0f, 1.0f, "resources/gradationLine.png");
+        modelManager->CreateSphere("primitive_sphere", 16, 32, 1.0f, "resources/uvChecker.png");
+        modelManager->CreateTorus("primitive_torus", 32, 16, 0.8f, 0.3f, "resources/uvChecker.png");
+        modelManager->CreateCylinder("primitive_cylinder", 32, 1.2f, 1.2f, 2.5f, "resources/gradationLine.png");
+        modelManager->CreateCone("primitive_cone", 32, 0.8f, 1.6f, "resources/uvChecker.png");
+        modelManager->CreateBox("primitive_box", 1.5f, 1.5f, 1.5f, "resources/uvChecker.png");
+        break;
+    case 5:
+        gSharedResourcePreloadLabel = "Player ship model";
+        modelManager->LoadModel(kFreePlayerModelPath);
+        break;
+    case 6:
+        gSharedResourcePreloadLabel = "Enemy model";
+        modelManager->LoadModel(kFreeEnemyModelPath);
+        break;
+    default:
+        gSharedResourcesPreloaded = true;
+        gSharedResourcePreloadLabel = "Ready";
+        return true;
+    }
+
+    const auto stepEnd = std::chrono::steady_clock::now();
+    gSharedResourceLastStepMs =
+        std::chrono::duration<float, std::milli>(stepEnd - stepBegin).count();
+    gSharedResourceTotalMs += gSharedResourceLastStepMs;
+
+    ++gSharedResourcePreloadStep;
+    if (gSharedResourcePreloadStep >= kSharedResourcePreloadStepCount) {
+        gSharedResourcesPreloaded = true;
+        gSharedResourcePreloadLabel = "Ready";
+    }
+    return gSharedResourcesPreloaded;
+}
+
+bool GameRuntime::AreSharedResourcesPreloaded()
+{
+    return gSharedResourcesPreloaded;
+}
+
+int GameRuntime::GetSharedResourcePreloadStep()
+{
+    return std::clamp(
+        gSharedResourcePreloadStep,
+        0,
+        kSharedResourcePreloadStepCount);
+}
+
+int GameRuntime::GetSharedResourcePreloadStepCount()
+{
+    return kSharedResourcePreloadStepCount;
+}
+
+const char* GameRuntime::GetSharedResourcePreloadLabel()
+{
+    return gSharedResourcePreloadLabel;
+}
+
+float GameRuntime::GetSharedResourceLastStepMs()
+{
+    return gSharedResourceLastStepMs;
+}
+
+float GameRuntime::GetSharedResourceTotalMs()
+{
+    return gSharedResourceTotalMs;
+}
+
 void GameRuntime::Initialize()
 {
     isExitRequested_ = false;
@@ -207,6 +340,9 @@ void GameRuntime::Initialize()
     shootBufferTimer_ = 0;
     chargeTimer_ = 0;
     chargeFlashTimer_ = 0;
+    playerDodgeAfterimageTimer_ = 0;
+    nextPlayerDodgeAfterimageIndex_ = 0;
+    wasPlayerDodging_ = false;
     cameraShakeTimer_ = 0;
     bulletPoolWarmupTimer_ = 0;
     playerBulletPoolMisses_ = 0;
@@ -219,153 +355,12 @@ void GameRuntime::Initialize()
     hitEffects_.reserve(32);
     hitEffectObjectPool_.clear();
 
-    const std::string environmentTexturePath =
-        "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
-
     object3dCommon_ = std::make_unique<Object3dCommon>();
     object3dCommon_->Initialize(dxCommon_, srvManager_);
-    object3dCommon_->SetEnvironmentTexturePath(environmentTexturePath);
+    object3dCommon_->SetEnvironmentTexturePath(kGameEnvironmentTexturePath);
 
-    ModelManager::GetInstance()->Initialize(dxCommon_, srvManager_);
-    ModelManager::GetInstance()->SetEnvironmentTexturePath(environmentTexturePath);
-    TextureManager::GetInstance()->LoadTexture(environmentTexturePath);
-    ModelManager::GetInstance()->CreateBox(
-        "game_player",
-        1.0f,
-        0.45f,
-        1.3f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreateSphere(
-        "game_bullet",
-        12,
-        24,
-        0.35f,
-        "resources/gradationLine.png");
-    ModelManager::GetInstance()->CreateSphere(
-        "game_enemy",
-        16,
-        32,
-        0.9f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "primitive_plane",
-        8.0f,
-        8.0f,
-        "resources/checkerBoard.png");
-    ModelManager::GetInstance()->CreateTriangle(
-        "primitive_triangle",
-        1.6f,
-        1.6f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreateCircle(
-        "primitive_circle",
-        32,
-        0.9f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreateHeart(
-        "reward_heart",
-        48,
-        1.0f,
-        "resources/human/white.png");
-    ModelManager::GetInstance()->CreateCircle(
-        "effect_glow_core",
-        48,
-        1.0f,
-        "resources/effects/glow_core.png");
-    ModelManager::GetInstance()->CreateCircle(
-        "effect_glow_ring",
-        64,
-        1.0f,
-        "resources/effects/glow_ring.png");
-    ModelManager::GetInstance()->CreateCircle(
-        "effect_spark_star",
-        48,
-        1.0f,
-        "resources/effects/pal_star_spark.png");
-    ModelManager::GetInstance()->CreateCircle(
-        "effect_bullet_glow",
-        48,
-        1.0f,
-        "resources/effects/glow_core.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_bullet_trail",
-        1.0f,
-        1.0f,
-        "resources/effects/bullet_trail.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_player_bullet_core",
-        1.0f,
-        1.0f,
-        "resources/effects/pal_arrow_core.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_player_bullet_trail",
-        1.0f,
-        1.0f,
-        "resources/effects/pal_arrow_trail.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_enemy_bullet_core",
-        1.0f,
-        1.0f,
-        "resources/effects/pal_enemy_bullet_core.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_enemy_bullet_tail",
-        1.0f,
-        1.0f,
-        "resources/effects/pal_enemy_bullet_tail.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_impact_burst",
-        1.0f,
-        1.0f,
-        "resources/effects/pal_impact_burst.png");
-    ModelManager::GetInstance()->CreatePlane(
-        "effect_magic_shard",
-        1.0f,
-        1.0f,
-        "resources/effects/pal_magic_shard.png");
-    ModelManager::GetInstance()->CreateRing(
-        "primitive_ring",
-        32,
-        2.0f,
-        1.0f,
-        "resources/gradationLine.png");
-    ModelManager::GetInstance()->CreateSphere(
-        "primitive_sphere",
-        16,
-        32,
-        1.0f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreateTorus(
-        "primitive_torus",
-        32,
-        16,
-        0.8f,
-        0.3f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreateCylinder(
-        "primitive_cylinder",
-        32,
-        1.2f,
-        1.2f,
-        2.5f,
-        "resources/gradationLine.png");
-    ModelManager::GetInstance()->CreateCone(
-        "primitive_cone",
-        32,
-        0.8f,
-        1.6f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->CreateBox(
-        "primitive_box",
-        1.5f,
-        1.5f,
-        1.5f,
-        "resources/uvChecker.png");
-    ModelManager::GetInstance()->LoadModel("AnimatedCube/AnimatedCube.gltf");
-    ModelManager::GetInstance()->LoadModel("simpleSkin/simpleSkin.gltf");
-    ModelManager::GetInstance()->LoadModel("human/sneakWalk.gltf");
-    ModelManager::GetInstance()->LoadModel("human/walk.gltf");
-    ModelManager::GetInstance()->LoadModel(kFreePlayerModelPath);
-    ModelManager::GetInstance()->LoadModel(kFreeEnemyModelPath);
+    while (!PreloadSharedResourceStep(dxCommon_, srvManager_)) {
+    }
 
     playerModel_ = ModelManager::GetInstance()->FindModel(kFreePlayerModelPath);
     if (!playerModel_) {
@@ -396,7 +391,7 @@ void GameRuntime::Initialize()
     object3dCommon_->SetDefaultCamera(camera_.get());
 
     skybox_ = std::make_unique<Skybox>();
-    skybox_->Initialize(dxCommon_, srvManager_, environmentTexturePath);
+    skybox_->Initialize(dxCommon_, srvManager_, kGameEnvironmentTexturePath);
     skybox_->Update(camera_.get());
 
     player_ = std::make_unique<Player>();
@@ -430,12 +425,17 @@ void GameRuntime::Initialize()
 
     LoadSceneObjects(kGameSceneFilePath);
     InitializeRewardHearts();
+    InitializePlayerDodgeAfterimages();
 }
 
 void GameRuntime::Finalize()
 {
     sceneObjects_.clear();
     rewardHearts_.clear();
+    for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
+        afterimage.object.reset();
+        afterimage.isActive = false;
+    }
     playerBullets_.clear();
     enemyBullets_.clear();
     playerBulletPool_.clear();
@@ -466,7 +466,6 @@ void GameRuntime::Finalize()
     effectImpactBurstModel_ = nullptr;
     effectMagicShardModel_ = nullptr;
 
-    ModelManager::GetInstance()->Finalize();
 }
 
 void GameRuntime::Update()
@@ -601,6 +600,7 @@ void GameRuntime::UpdateWorldEntities()
     UpdateEnemyBullets();
     UpdateEnemies();
     UpdateHitEffects();
+    UpdatePlayerDodgeAfterimages();
     UpdateRewardHearts();
     UpdateRailScenery();
 }
@@ -1153,6 +1153,7 @@ void GameRuntime::Draw()
     if (player_) {
         player_->Draw();
     }
+    DrawPlayerDodgeAfterimages();
     for (const auto& bullet : playerBullets_) {
         bullet->Draw();
     }
@@ -1890,6 +1891,24 @@ void GameRuntime::AddPlayerDamageEffect(const Math::Vector3& worldPosition)
     hitEffects_.push_back(std::move(effect));
 }
 
+void GameRuntime::AddPlayerDodgeGrazeEffect(const Math::Vector3& worldPosition)
+{
+    HitEffect effect{};
+    effect.worldPosition = worldPosition;
+    effect.duration = 12;
+    effect.strength = 0.58f;
+    effect.type = HitEffectType::EnemyImpact;
+
+    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
+        { 0.38f, 1.0f, 0.92f, 0.48f }, 0.38f, 0.12f, 0.0f, 0.0f, 1.34f, 0.42f, {});
+    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
+        { 0.84f, 1.0f, 0.96f, 0.62f }, 0.17f, 0.36f, 1.25f, 0.02f, 0.72f, 1.08f, { 0.018f, 0.012f, 0.0f });
+
+    if (effect.visualCount > 0) {
+        hitEffects_.push_back(std::move(effect));
+    }
+}
+
 void GameRuntime::AddHitEffectVisual(
     HitEffect& effect,
     Model* model,
@@ -1961,6 +1980,161 @@ void GameRuntime::UpdateHitEffects()
 void GameRuntime::DrawHitEffects()
 {
     return;
+}
+
+void GameRuntime::InitializePlayerDodgeAfterimages()
+{
+    playerDodgeAfterimageTimer_ = 0;
+    nextPlayerDodgeAfterimageIndex_ = 0;
+    wasPlayerDodging_ = false;
+
+    for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
+        afterimage = PlayerDodgeAfterimage{};
+        afterimage.object = std::make_unique<Object3d>();
+        afterimage.object->Initialize(object3dCommon_.get());
+        if (effectGlowCoreModel_) {
+            afterimage.object->SetModel(effectGlowCoreModel_);
+        }
+        afterimage.object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+        afterimage.object->SetScale({ 0.01f, 0.01f, 1.0f });
+        afterimage.object->SetColor({ 0.45f, 1.0f, 0.92f, 0.0f });
+        afterimage.object->SetLightingMode(0);
+        afterimage.object->SetEnvironmentCoefficient(0.0f);
+        afterimage.object->Update();
+    }
+}
+
+void GameRuntime::SpawnPlayerDodgeAfterimage()
+{
+    if (!player_ || player_->IsDead() || !effectGlowCoreModel_) {
+        return;
+    }
+
+    PlayerDodgeAfterimage& afterimage =
+        playerDodgeAfterimages_[nextPlayerDodgeAfterimageIndex_];
+    if (!afterimage.object) {
+        if (!object3dCommon_) {
+            return;
+        }
+        afterimage.object = std::make_unique<Object3d>();
+        afterimage.object->Initialize(object3dCommon_.get());
+    }
+
+    afterimage.object->SetModel(effectGlowCoreModel_);
+    afterimage.position = player_->GetTranslate();
+    afterimage.position.y += 0.04f;
+    afterimage.position.z += 0.18f;
+    afterimage.direction = player_->GetDodgeDirection() >= 0 ? 1 : -1;
+    afterimage.age = 0.0f;
+    afterimage.duration = kPlayerDodgeAfterimageDuration;
+    afterimage.isActive = true;
+
+    nextPlayerDodgeAfterimageIndex_ =
+        (nextPlayerDodgeAfterimageIndex_ + 1) % playerDodgeAfterimages_.size();
+}
+
+void GameRuntime::UpdatePlayerDodgeAfterimages()
+{
+    float effectFrameStep = 1.0f;
+    if (dxCommon_) {
+        effectFrameStep =
+            std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 4.0f);
+    }
+
+    const bool isDodging =
+        player_ && !player_->IsDead() && player_->IsDodging();
+    if (playerDodgeAfterimageTimer_ > 0) {
+        --playerDodgeAfterimageTimer_;
+    }
+    if (isDodging &&
+        (!wasPlayerDodging_ || playerDodgeAfterimageTimer_ <= 0)) {
+        SpawnPlayerDodgeAfterimage();
+        playerDodgeAfterimageTimer_ = kPlayerDodgeAfterimageIntervalFrames;
+    }
+    wasPlayerDodging_ = isDodging;
+
+    for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
+        if (!afterimage.isActive) {
+            continue;
+        }
+
+        afterimage.age += effectFrameStep;
+        if (afterimage.age >= afterimage.duration) {
+            afterimage.isActive = false;
+            if (afterimage.object) {
+                afterimage.object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+                afterimage.object->SetScale({ 0.01f, 0.01f, 1.0f });
+                afterimage.object->SetColor({ 0.45f, 1.0f, 0.92f, 0.0f });
+                afterimage.object->Update();
+            }
+        }
+    }
+}
+
+void GameRuntime::DrawPlayerDodgeAfterimages()
+{
+    if (!object3dCommon_ || !camera_ || !effectGlowCoreModel_) {
+        return;
+    }
+
+    bool hasActiveAfterimage = false;
+    for (const PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
+        if (afterimage.isActive && afterimage.object) {
+            hasActiveAfterimage = true;
+            break;
+        }
+    }
+    if (!hasActiveAfterimage) {
+        return;
+    }
+
+    const BlendMode previousBlendMode = object3dCommon_->GetBlendMode();
+    const DepthDrawMode previousDepthMode = object3dCommon_->GetDepthDrawMode();
+
+    object3dCommon_->SetDepthDrawMode(DepthDrawMode::Overlay);
+    object3dCommon_->SetBlendMode(BlendMode::Add);
+    object3dCommon_->CommonDrawSetting();
+
+    for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
+        if (!afterimage.isActive || !afterimage.object) {
+            continue;
+        }
+
+        const float rate = std::clamp(
+            afterimage.age / (std::max)(afterimage.duration, 1.0f),
+            0.0f,
+            1.0f);
+        const float fade = 1.0f - rate;
+        const float direction = static_cast<float>(afterimage.direction);
+        Math::Vector3 translate = afterimage.position;
+        translate.x -= direction * (0.12f + 0.48f * rate);
+        translate.y += std::sin(rate * kTwoPi) * 0.025f;
+        translate.z -= 0.02f * rate;
+
+        Math::Vector3 rotate = camera_->GetRotate();
+        rotate.z += direction * (0.10f + 0.08f * rate);
+
+        const float length = 0.80f + 0.42f * rate;
+        const float thickness = 0.18f + 0.04f * rate;
+        Math::Vector4 color{
+            0.42f,
+            1.0f,
+            0.92f,
+            0.30f * fade * fade
+        };
+
+        afterimage.object->SetModel(effectGlowCoreModel_);
+        afterimage.object->SetTranslate(translate);
+        afterimage.object->SetScale({ length, thickness, 1.0f });
+        afterimage.object->SetRotate(rotate);
+        afterimage.object->SetColor(color);
+        afterimage.object->Update();
+        afterimage.object->Draw();
+    }
+
+    object3dCommon_->SetBlendMode(previousBlendMode);
+    object3dCommon_->SetDepthDrawMode(previousDepthMode);
+    object3dCommon_->CommonDrawSetting();
 }
 
 void GameRuntime::DrawBulletEffectObjects()
@@ -3211,10 +3385,14 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
         }
 
         const float radius = bullet->GetRadius() + player_->GetRadius();
+        const Math::Vector3 bulletPosition = bullet->GetTranslate();
         if (DistanceSquared(
-            bullet->GetTranslate(),
+            bulletPosition,
             player_->GetTranslate()) <= radius * radius) {
-            if (player_->IsInvincible()) {
+            if (player_->IsDodging()) {
+                bullet->Kill();
+                AddPlayerDodgeGrazeEffect(bulletPosition);
+                AddCameraShake(0.018f, 4);
                 continue;
             }
             bullet->Kill();

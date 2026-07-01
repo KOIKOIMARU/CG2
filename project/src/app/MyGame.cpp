@@ -5,6 +5,7 @@
 #include "engine/base/SrvManager.h"
 #include "engine/2d/SpriteCommon.h"
 #include "engine/base/ImGuiManager.h"
+#include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
 #include "engine/scene/EditorScene.h"
 #include "engine/scene/GameScene.h"
@@ -108,6 +109,7 @@ void MyGame::Draw() {
 
 void MyGame::Finalize() {
     SceneManager::GetInstance()->FinalizeCurrentScene();
+    ModelManager::GetInstance()->Finalize();
     sceneFactory_.reset();
     Framework::Finalize();
 }

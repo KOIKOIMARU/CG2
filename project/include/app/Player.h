@@ -21,6 +21,8 @@ public:
     float GetRadius() const { return collisionRadius_; }
     bool IsDead() const { return hp_ <= 0; }
     bool IsInvincible() const { return invincibleTimer_ > 0; }
+    bool IsDodging() const { return dodgeTimer_ > 0; }
+    int GetDodgeDirection() const { return dodgeDirection_; }
     void Damage(int amount);
 
 private:

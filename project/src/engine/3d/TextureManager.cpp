@@ -2,6 +2,7 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include <cassert>
+#include <cstdint>
 
 TextureManager* TextureManager::instance_ = nullptr;
 
@@ -69,6 +70,49 @@ void TextureManager::LoadTexture(const std::string& filePath) {
         );
     }
 
+}
+
+void TextureManager::CreateSolidCubeTexture(
+    const std::string& name,
+    uint8_t red,
+    uint8_t green,
+    uint8_t blue,
+    uint8_t alpha)
+{
+    if (textureDatas_.contains(name)) {
+        return;
+    }
+
+    DirectX::ScratchImage image;
+    HRESULT hr = image.InitializeCube(
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        1,
+        1,
+        1,
+        1);
+    assert(SUCCEEDED(hr));
+
+    const DirectX::Image* images = image.GetImages();
+    for (size_t index = 0; index < image.GetImageCount(); ++index) {
+        uint8_t* pixel = images[index].pixels;
+        pixel[0] = red;
+        pixel[1] = green;
+        pixel[2] = blue;
+        pixel[3] = alpha;
+    }
+
+    TextureData& textureData = textureDatas_[name];
+    textureData.metadata = image.GetMetadata();
+    textureData.resource =
+        dxCommon_->CreateTextureResource(textureData.metadata);
+    dxCommon_->UploadTextureData(textureData.resource, image);
+
+    textureData.srvIndex = srvManager_->Allocate();
+    srvManager_->CreateSRVforTextureCube(
+        textureData.srvIndex,
+        textureData.resource.Get(),
+        textureData.metadata.format,
+        UINT(textureData.metadata.mipLevels));
 }
 
 const DirectX::TexMetadata&
