@@ -23,6 +23,7 @@ public:
         uint8_t green,
         uint8_t blue,
         uint8_t alpha = 255);
+    void CreateSkyGradientCubeTexture(const std::string& name);
 
     // ===== getter =====
     const DirectX::TexMetadata& GetMetaData(const std::string& filePath);

@@ -104,31 +104,31 @@ void Enemy::Initialize(
     age_ = 0;
     hitFlashTimer_ = 0;
     moveTimer_ = 0.0f;
-    visualScaleRate_ = 0.28f;
+    visualScaleRate_ = 0.42f;
 
     switch (behavior_) {
     case Behavior::Swoop:
-        baseScale_ = { 1.18f, 1.18f, 1.18f };
+        baseScale_ = { 1.55f, 1.55f, 1.55f };
         baseColor_ = { 0.95f, 0.35f, 1.0f, 1.0f };
         maxHp_ = 2;
         horizontalAmplitude_ = 0.75f;
         verticalAmplitude_ = 0.35f;
-        collisionRadius_ = 0.85f;
+        collisionRadius_ = 1.05f;
         break;
     case Behavior::StrafeShooter:
-        baseScale_ = { 1.62f, 1.62f, 1.62f };
+        baseScale_ = { 2.05f, 2.05f, 2.05f };
         baseColor_ = { 1.0f, 0.65f, 0.2f, 1.0f };
         maxHp_ = 3;
         horizontalAmplitude_ = 1.9f;
         verticalAmplitude_ = 0.25f;
-        collisionRadius_ = 1.05f;
+        collisionRadius_ = 1.25f;
         break;
     case Behavior::Formation:
     default:
-        baseScale_ = { 1.30f, 1.30f, 1.30f };
+        baseScale_ = { 1.70f, 1.70f, 1.70f };
         baseColor_ = { 1.0f, 0.25f, 0.25f, 1.0f };
         maxHp_ = 2;
-        collisionRadius_ = 0.9f;
+        collisionRadius_ = 1.05f;
         break;
     }
     hp_ = maxHp_;
@@ -197,9 +197,9 @@ void Enemy::Update(float railDistance)
             std::sin(moveTimer_ * 0.064f + phase_) * 0.20f;
         translate_.z =
             railDistance +
-            Lerp(66.0f, laneZ, entryRate);
+            Lerp(58.0f, laneZ, entryRate);
         visualScaleTarget =
-            Lerp(0.22f, 1.0f, entryRate) +
+            Lerp(0.42f, 1.0f, entryRate) +
             std::sin(entryRate * kPi) * 0.05f;
         colorAlphaRate = Lerp(0.28f, 1.0f, entryRate);
         objectRotate.y = side * Lerp(0.35f, -0.25f, passRate);
@@ -233,11 +233,11 @@ void Enemy::Update(float railDistance)
             exitRate * 4.8f;
         translate_.z =
             railDistance +
-            Lerp(64.0f, 19.0f, attackRate) +
+            Lerp(56.0f, 17.0f, attackRate) +
             std::cos(moveTimer_ * 0.030f + phase_) * 1.3f +
             exitRate * 11.0f;
         visualScaleTarget =
-            Lerp(0.25f, 1.0f, attackRate) +
+            Lerp(0.44f, 1.0f, attackRate) +
             std::sin(attackRate * kPi) * 0.06f;
         colorAlphaRate = Lerp(0.24f, 1.0f, attackRate);
         objectRotate.y = -translate_.x * 0.030f;
@@ -273,11 +273,11 @@ void Enemy::Update(float railDistance)
             exitRate * 4.1f;
         translate_.z =
             railDistance +
-            Lerp(68.0f, 19.5f, entryRate) -
+            Lerp(58.0f, 17.5f, entryRate) -
             holdRate * 1.6f +
             std::sin(moveTimer_ * 0.022f + phase_) * 1.5f;
         visualScaleTarget =
-            Lerp(0.24f, 1.0f, entryRate) +
+            Lerp(0.42f, 1.0f, entryRate) +
             std::sin(entryRate * kPi) * 0.055f;
         colorAlphaRate = Lerp(0.26f, 1.0f, entryRate);
         objectRotate.y = -translate_.x * 0.018f;
@@ -296,7 +296,7 @@ void Enemy::Update(float railDistance)
     const float hitRate = hitReacting ? static_cast<float>(hitFlashTimer_) / 18.0f : 0.0f;
     const float hitPunch = hitReacting ? std::sin(Clamp01(hitRate) * kPi) * 0.16f : 0.0f;
     const float flashScale = 1.0f + hitPunch;
-    visualScaleRate_ = std::clamp(visualScaleTarget, 0.18f, 1.10f);
+    visualScaleRate_ = std::clamp(visualScaleTarget, 0.34f, 1.12f);
     Math::Vector4 color = baseColor_;
     color.w *= std::clamp(colorAlphaRate, 0.18f, 1.0f);
     if (hitReacting) {
@@ -351,7 +351,7 @@ bool Enemy::Damage(int damage)
 
 bool Enemy::IsTargetable() const
 {
-    return lifeState_ == LifeState::Alive && visualScaleRate_ >= 0.52f;
+    return lifeState_ == LifeState::Alive && visualScaleRate_ >= 0.46f;
 }
 
 Math::Vector3 Enemy::GetAimPosition() const
@@ -366,13 +366,22 @@ Math::Vector3 Enemy::GetAimPosition() const
 
 float Enemy::GetAimRadius() const
 {
-    return aimRadius_ * (std::max)(visualScaleRate_, 0.42f);
+    return aimRadius_ * (std::max)(visualScaleRate_, 0.48f);
 }
 
 bool Enemy::CanShoot() const
 {
-    return IsTargetable() &&
-        behavior_ == Behavior::StrafeShooter &&
-        68 <= age_ &&
-        age_ <= 210;
+    if (!IsTargetable()) {
+        return false;
+    }
+
+    switch (behavior_) {
+    case Behavior::StrafeShooter:
+        return 48 <= age_ && age_ <= 250;
+    case Behavior::Swoop:
+        return 46 <= age_ && age_ <= 160;
+    case Behavior::Formation:
+    default:
+        return 54 <= age_ && age_ <= 210;
+    }
 }

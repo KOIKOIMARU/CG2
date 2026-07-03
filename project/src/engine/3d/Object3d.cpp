@@ -31,7 +31,6 @@ void Object3d::Initialize(Object3dCommon* object3dCommon)
     CreateSpotLight();
     CreateMaterialOverride();
     CreateSkinningPalette();
-    CreateComputeSkinningPipeline();
 
     transform_ = {
         {1.0f, 1.0f, 1.0f},
@@ -115,26 +114,6 @@ void Object3d::UpdateAnimation(float deltaTime)
 void Object3d::Draw()
 {
     auto commandList = object3dCommon_->GetDxCommon()->GetCommandList();
-
-    // Transform
-    commandList->SetGraphicsRootConstantBufferView(
-        1, transformationMatrixResource_->GetGPUVirtualAddress());
-
-    // Light
-    commandList->SetGraphicsRootConstantBufferView(
-        2, cameraResource_->GetGPUVirtualAddress());
-
-    commandList->SetGraphicsRootConstantBufferView(
-        5, directionalLightResource_->GetGPUVirtualAddress());
-
-    commandList->SetGraphicsRootConstantBufferView(
-        6, pointLightResource_->GetGPUVirtualAddress());
-
-    commandList->SetGraphicsRootConstantBufferView(
-        7, spotLightResource_->GetGPUVirtualAddress());
-
-    commandList->SetGraphicsRootConstantBufferView(
-        8, skinningPaletteResource_->GetGPUVirtualAddress());
 
     // Model 描画
     if (enableComputeSkinning_) {
@@ -429,6 +408,10 @@ void Object3d::InitializeComputeSkinningResources()
 {
     if (!model_ || !hasSkeleton_) {
         return;
+    }
+
+    if (!computeRootSignature_ || !computePipelineState_) {
+        CreateComputeSkinningPipeline();
     }
 
     auto* dxCommon = object3dCommon_->GetDxCommon();

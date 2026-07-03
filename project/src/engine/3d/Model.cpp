@@ -1,5 +1,6 @@
 #include "engine/3d/Model.h"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <cassert>
@@ -82,6 +83,51 @@ VertexData MakeDefaultVertexData()
         { 0.0f, 0.0f, 0.0f, 0.0f },
         { 0, 0, 0, 0 }
     };
+}
+
+void GenerateFallbackObjTexcoords(std::vector<VertexData>& vertices)
+{
+    if (vertices.empty()) {
+        return;
+    }
+
+    Vector4 minPosition = vertices.front().position;
+    Vector4 maxPosition = vertices.front().position;
+    for (const VertexData& vertex : vertices) {
+        minPosition.x = (std::min)(minPosition.x, vertex.position.x);
+        minPosition.y = (std::min)(minPosition.y, vertex.position.y);
+        minPosition.z = (std::min)(minPosition.z, vertex.position.z);
+        maxPosition.x = (std::max)(maxPosition.x, vertex.position.x);
+        maxPosition.y = (std::max)(maxPosition.y, vertex.position.y);
+        maxPosition.z = (std::max)(maxPosition.z, vertex.position.z);
+    }
+
+    const float width = (std::max)(maxPosition.x - minPosition.x, 0.001f);
+    const float height = (std::max)(maxPosition.y - minPosition.y, 0.001f);
+    const float depth = (std::max)(maxPosition.z - minPosition.z, 0.001f);
+
+    for (VertexData& vertex : vertices) {
+        const float normalX = std::abs(vertex.normal.x);
+        const float normalY = std::abs(vertex.normal.y);
+        const float normalZ = std::abs(vertex.normal.z);
+
+        if (normalY > normalX && normalY > normalZ) {
+            vertex.texcoord = {
+                (vertex.position.x - minPosition.x) / width,
+                (vertex.position.z - minPosition.z) / depth
+            };
+        } else if (normalX > normalZ) {
+            vertex.texcoord = {
+                (vertex.position.z - minPosition.z) / depth,
+                1.0f - (vertex.position.y - minPosition.y) / height
+            };
+        } else {
+            vertex.texcoord = {
+                (vertex.position.x - minPosition.x) / width,
+                1.0f - (vertex.position.y - minPosition.y) / height
+            };
+        }
+    }
 }
 
 void SetVertexInfluence(
@@ -664,13 +710,10 @@ ModelData Model::LoadObjFile(const std::string& directoryPath, const std::string
             normals.push_back(n);
 
         } else if (id == "f") {
-            VertexData tri[3]{};
+            std::vector<VertexData> faceVertices;
+            std::string vStr;
 
-            for (int i = 0; i < 3; ++i) {
-                std::string vStr;
-                s >> vStr;
-                if (vStr.empty()) continue;
-
+            while (s >> vStr) {
                 int idxV = 0, idxT = 0, idxN = 0;
                 std::istringstream vs(vStr);
                 std::string token;
@@ -679,27 +722,56 @@ ModelData Model::LoadObjFile(const std::string& directoryPath, const std::string
                 if (std::getline(vs, token, '/') && !token.empty()) idxT = std::stoi(token);
                 if (std::getline(vs, token, '/') && !token.empty()) idxN = std::stoi(token);
 
-                Vector4 pos{ 0,0,0,1 };
-                if (idxV > 0 && idxV <= (int)positions.size()) pos = positions[idxV - 1];
+                auto resolveObjIndex = [](int index, size_t count) -> int {
+                    if (index > 0) {
+                        return index - 1;
+                    }
+                    if (index < 0) {
+                        return static_cast<int>(count) + index;
+                    }
+                    return -1;
+                };
+
+                const int positionIndex = resolveObjIndex(idxV, positions.size());
+                const int texcoordIndex = resolveObjIndex(idxT, texcoords.size());
+                const int normalIndex = resolveObjIndex(idxN, normals.size());
+
+                Vector4 pos{ 0, 0, 0, 1 };
+                if (positionIndex >= 0 &&
+                    positionIndex < static_cast<int>(positions.size())) {
+                    pos = positions[static_cast<size_t>(positionIndex)];
+                }
 
                 Vector2 uv{ 0.0f, 0.0f };
-                if (idxT > 0 && idxT <= (int)texcoords.size()) uv = texcoords[idxT - 1];
+                if (texcoordIndex >= 0 &&
+                    texcoordIndex < static_cast<int>(texcoords.size())) {
+                    uv = texcoords[static_cast<size_t>(texcoordIndex)];
+                }
 
                 Vector3 nor{ 0.0f, 1.0f, 0.0f };
-                if (idxN > 0 && idxN <= (int)normals.size()) nor = normals[idxN - 1];
+                if (normalIndex >= 0 &&
+                    normalIndex < static_cast<int>(normals.size())) {
+                    nor = normals[static_cast<size_t>(normalIndex)];
+                }
 
-                tri[i] = { pos, uv, nor };
+                faceVertices.push_back({ pos, uv, nor });
             }
 
-            modelData.vertices.push_back(tri[0]);
-            modelData.vertices.push_back(tri[1]);
-            modelData.vertices.push_back(tri[2]);
+            for (size_t i = 1; i + 1 < faceVertices.size(); ++i) {
+                modelData.vertices.push_back(faceVertices[0]);
+                modelData.vertices.push_back(faceVertices[i]);
+                modelData.vertices.push_back(faceVertices[i + 1]);
+            }
 
         } else if (id == "mtllib") {
             std::string mtl;
             s >> mtl;
             modelData.material = LoadMaterialTemplate(directoryPath, mtl);
         }
+    }
+
+    if (texcoords.empty()) {
+        GenerateFallbackObjTexcoords(modelData.vertices);
     }
 
     if (modelData.material.textureFilePath.empty()) {

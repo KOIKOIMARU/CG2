@@ -94,6 +94,19 @@ private:
         bool isActive = false;
     };
 
+    struct PlayerFlightAura {
+        std::unique_ptr<Object3d> object;
+        Model* model = nullptr;
+        Math::Vector3 offset{};
+        Math::Vector4 color{ 0.70f, 0.95f, 1.0f, 0.16f };
+        float baseSize = 1.0f;
+        float aspectX = 1.0f;
+        float aspectY = 1.0f;
+        float pulseOffset = 0.0f;
+        float roll = 0.0f;
+        float rollSpeed = 0.0f;
+    };
+
     struct RewardHeart {
         std::unique_ptr<Object3d> object;
         Math::Vector3 position{};
@@ -159,6 +172,14 @@ private:
     void InitializeRailScenery();
     void UpdateRailScenery();
     void DrawRailScenery();
+    void UpdateStageDirector();
+    void SpawnStageEnemy(
+        float x,
+        float y,
+        float leadDistance,
+        Enemy::Behavior behavior,
+        Enemy::EntryStyle entryStyle);
+    void UpdateStageEnemyEvents();
     void UpdateEnemyWave();
     void AdvanceEnemyWaveIfCleared();
     void UpdateLockOnTarget();
@@ -209,6 +230,8 @@ private:
     void SpawnPlayerDodgeAfterimage();
     void UpdatePlayerDodgeAfterimages();
     void DrawPlayerDodgeAfterimages();
+    void InitializePlayerFlightAura();
+    void DrawPlayerFlightAura();
     void DrawEditorOverlayGuiRich();
     void DrawHud();
     void DrawLockOnHud();
@@ -261,6 +284,9 @@ private:
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
     std::array<PlayerDodgeAfterimage, 5> playerDodgeAfterimages_;
+    std::array<PlayerFlightAura, 5> playerFlightAuras_;
+    std::array<bool, 5> stageRailEventTriggered_{};
+    std::array<bool, 16> stageEnemyEventTriggered_{};
     std::array<WaveTuning, 3> waveTuning_{ {
         { 6, 42, 30.0f },
         { 8, 38, 34.0f },
@@ -285,7 +311,7 @@ private:
     int shootCooldown_ = 0;
     int shootBufferTimer_ = 0;
     int enemySpawnTimer_ = 0;
-    int enemyShotTimer_ = 60;
+    int enemyShotTimer_ = 32;
     int currentWaveIndex_ = 0;
     int spawnedEnemyCountInWave_ = 0;
     int defeatedEnemyCountInWave_ = 0;
@@ -308,16 +334,21 @@ private:
     int chargeShotThreshold_ = 70;
     int normalShootCooldown_ = 4;
     int chargedShootCooldown_ = 14;
-    int enemyShotInterval_ = 75;
+    int enemyShotInterval_ = 44;
     int waveStartDelay_ = 90;
     float cameraTimer_ = 0.0f;
     float cameraShakePower_ = 0.0f;
     float railDistance_ = 0.0f;
     float railSpeed_ = 0.045f;
+    float targetRailSpeed_ = 0.045f;
+    float stageCameraYawBias_ = 0.0f;
+    float stageCameraRollBias_ = 0.0f;
+    float stageCameraLiftBias_ = 0.0f;
+    float stageCameraFovBoost_ = 0.0f;
     float playerBulletSpeed_ = 1.28f;
     float lockBulletSpeed_ = 1.48f;
     float chargedBulletSpeedMultiplier_ = 1.10f;
-    float enemyBulletSpeed_ = 0.36f;
+    float enemyBulletSpeed_ = 0.40f;
     float lockRadius_ = 118.0f;
     float cameraFovY_ = 0.5f;
     Math::Vector2 hudViewportMin_{ 0.0f, 0.0f };
@@ -329,6 +360,8 @@ private:
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
     const Enemy* lockedEnemy_ = nullptr;
+    const char* stageSectionName_ = "Opening";
+    const char* stageCombatBeatName_ = "Intro";
     Math::Vector2 lockedEnemyScreen_{ 0.0f, 0.0f };
     Math::Vector2 reticleScreen_{ 0.0f, 0.0f };
     std::string currentSceneFilePath_{ "resources/game_scene.json" };

@@ -2,6 +2,8 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include <cassert>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 TextureManager* TextureManager::instance_ = nullptr;
@@ -99,6 +101,84 @@ void TextureManager::CreateSolidCubeTexture(
         pixel[1] = green;
         pixel[2] = blue;
         pixel[3] = alpha;
+    }
+
+    TextureData& textureData = textureDatas_[name];
+    textureData.metadata = image.GetMetadata();
+    textureData.resource =
+        dxCommon_->CreateTextureResource(textureData.metadata);
+    dxCommon_->UploadTextureData(textureData.resource, image);
+
+    textureData.srvIndex = srvManager_->Allocate();
+    srvManager_->CreateSRVforTextureCube(
+        textureData.srvIndex,
+        textureData.resource.Get(),
+        textureData.metadata.format,
+        UINT(textureData.metadata.mipLevels));
+}
+
+void TextureManager::CreateSkyGradientCubeTexture(const std::string& name)
+{
+    if (textureDatas_.contains(name)) {
+        return;
+    }
+
+    constexpr size_t kSize = 16;
+    DirectX::ScratchImage image;
+    HRESULT hr = image.InitializeCube(
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        kSize,
+        kSize,
+        1,
+        1);
+    assert(SUCCEEDED(hr));
+
+    const auto writePixel =
+        [](uint8_t* pixel, float red, float green, float blue) {
+            pixel[0] = static_cast<uint8_t>(std::clamp(red, 0.0f, 255.0f));
+            pixel[1] = static_cast<uint8_t>(std::clamp(green, 0.0f, 255.0f));
+            pixel[2] = static_cast<uint8_t>(std::clamp(blue, 0.0f, 255.0f));
+            pixel[3] = 255;
+        };
+    const auto mix = [](float a, float b, float rate) {
+        return a + (b - a) * std::clamp(rate, 0.0f, 1.0f);
+    };
+
+    const DirectX::Image* images = image.GetImages();
+    for (size_t face = 0; face < image.GetImageCount(); ++face) {
+        DirectX::Image faceImage = images[face];
+        for (size_t y = 0; y < kSize; ++y) {
+            uint8_t* row = faceImage.pixels + faceImage.rowPitch * y;
+            for (size_t x = 0; x < kSize; ++x) {
+                const float v =
+                    (static_cast<float>(y) + 0.5f) / static_cast<float>(kSize) *
+                    2.0f - 1.0f;
+                float dirY = -v;
+                if (face == 2) {
+                    dirY = 1.0f;
+                } else if (face == 3) {
+                    dirY = -1.0f;
+                }
+
+                const float skyRate = std::clamp((dirY + 0.15f) * 0.62f, 0.0f, 1.0f);
+                const float horizonGlow =
+                    (std::max)(0.0f, 1.0f - std::abs(dirY + 0.12f) * 3.1f);
+                const float cloudBand =
+                    (std::max)(0.0f, 1.0f - std::abs(dirY + 0.36f) * 4.4f);
+
+                float red = mix(86.0f, 156.0f, skyRate);
+                float green = mix(126.0f, 190.0f, skyRate);
+                float blue = mix(184.0f, 232.0f, skyRate);
+                red = mix(red, 225.0f, horizonGlow * 0.34f);
+                green = mix(green, 235.0f, horizonGlow * 0.34f);
+                blue = mix(blue, 246.0f, horizonGlow * 0.34f);
+                red = mix(red, 208.0f, cloudBand * 0.20f);
+                green = mix(green, 224.0f, cloudBand * 0.20f);
+                blue = mix(blue, 238.0f, cloudBand * 0.20f);
+
+                writePixel(row + x * 4, red, green, blue);
+            }
+        }
     }
 
     TextureData& textureData = textureDatas_[name];
