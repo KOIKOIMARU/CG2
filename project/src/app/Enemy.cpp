@@ -108,7 +108,7 @@ void Enemy::Initialize(
 
     switch (behavior_) {
     case Behavior::Swoop:
-        baseScale_ = { 1.55f, 1.55f, 1.55f };
+        baseScale_ = { 2.10f, 2.10f, 2.10f };
         baseColor_ = { 0.95f, 0.35f, 1.0f, 1.0f };
         maxHp_ = 2;
         horizontalAmplitude_ = 0.75f;
@@ -116,7 +116,7 @@ void Enemy::Initialize(
         collisionRadius_ = 1.05f;
         break;
     case Behavior::StrafeShooter:
-        baseScale_ = { 2.05f, 2.05f, 2.05f };
+        baseScale_ = { 2.55f, 2.55f, 2.55f };
         baseColor_ = { 1.0f, 0.65f, 0.2f, 1.0f };
         maxHp_ = 3;
         horizontalAmplitude_ = 1.9f;
@@ -125,7 +125,7 @@ void Enemy::Initialize(
         break;
     case Behavior::Formation:
     default:
-        baseScale_ = { 1.70f, 1.70f, 1.70f };
+        baseScale_ = { 2.25f, 2.25f, 2.25f };
         baseColor_ = { 1.0f, 0.25f, 0.25f, 1.0f };
         maxHp_ = 2;
         collisionRadius_ = 1.05f;
@@ -149,7 +149,7 @@ void Enemy::Initialize(
     phase_ = position.x * 0.75f + position.y * 1.35f;
     object_->SetScale(baseScale_);
     object_->SetColor(baseColor_);
-    object_->SetEnvironmentCoefficient(0.10f);
+    object_->SetEnvironmentCoefficient(0.18f);
     object_->SetTranslate(translate_);
     object_->SetRotate({ 0.0f, 0.0f, 0.0f });
     object_->Update();

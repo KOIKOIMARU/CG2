@@ -27,7 +27,8 @@ constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
 constexpr const char* kGameEnvironmentTexturePath =
     "__generated/game_fast_sky_cube";
 constexpr const char* kFreePlayerModelPath = "free_models/kenney_space_kit/craft_speederA.glb";
-constexpr const char* kFreeEnemyModelPath = "free_models/kenney_space_kit/meteor_detailed.glb";
+constexpr const char* kFreeEnemyModelPath =
+    "free_models/quaternius_sci_fi_essentials/Enemy_EyeDrone_Static.gltf";
 constexpr int kInitialPlayerBulletPoolCount = 10;
 constexpr int kInitialEnemyBulletPoolCount = 4;
 constexpr int kTargetPlayerBulletPoolCount = 24;
@@ -344,7 +345,7 @@ bool GameRuntime::PreloadSharedResourceStep(
         modelManager->LoadModel(kFreePlayerModelPath);
         break;
     case 6:
-        gSharedResourcePreloadLabel = "Enemy model";
+        gSharedResourcePreloadLabel = "Enemy eye drone model";
         modelManager->LoadModel(kFreeEnemyModelPath);
         break;
     default:
