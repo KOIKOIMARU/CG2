@@ -21,6 +21,7 @@ project/imgui.ini
 project/externals/generated/
 project/externals/DirectXTex/x64/
 tmp_*/
+project/.tmp_*/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

@@ -169,6 +169,7 @@ private:
     ComPtr<ID3D12Resource> materialResource_;
     Material* materialData_ = nullptr;
     std::string textureFilePath_;
+    bool hasTextureOverride_ = false;
 
     ComPtr<ID3D12Resource> skinningPaletteResource_;
     SkinningPaletteForGPU* skinningPaletteData_ = nullptr;

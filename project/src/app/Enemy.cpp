@@ -149,7 +149,7 @@ void Enemy::Initialize(
     phase_ = position.x * 0.75f + position.y * 1.35f;
     object_->SetScale(baseScale_);
     object_->SetColor(baseColor_);
-    object_->SetEnvironmentCoefficient(0.18f);
+    object_->SetEnvironmentCoefficient(0.0f);
     object_->SetTranslate(translate_);
     object_->SetRotate({ 0.0f, 0.0f, 0.0f });
     object_->Update();

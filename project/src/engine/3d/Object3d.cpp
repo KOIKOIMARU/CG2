@@ -135,16 +135,18 @@ void Object3d::Draw()
         8, skinningPaletteResource_->GetGPUVirtualAddress());
 
     if (model_) {
+        const std::string* textureOverride =
+            hasTextureOverride_ ? &textureFilePath_ : nullptr;
         if (enableComputeSkinning_) {
             model_->Draw(
                 &computeOutputVertexBufferView_,
                 materialResource_.Get(),
-                &textureFilePath_);
+                textureOverride);
         } else {
             model_->Draw(
                 nullptr,
                 materialResource_.Get(),
-                &textureFilePath_);
+                textureOverride);
         }
     }
 }
@@ -255,6 +257,7 @@ void Object3d::CreateMaterialOverride()
     materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
     materialData_->uvTransform = MakeIdentity4x4();
     textureFilePath_ = "resources/uvChecker.png";
+    hasTextureOverride_ = false;
 }
 
 void Object3d::CreateSkinningPalette()
@@ -724,6 +727,7 @@ void Object3d::SetModel(Model* model)
     if (model_ && materialData_) {
         *materialData_ = model_->GetMaterial();
         textureFilePath_ = model_->GetTextureFilePath();
+        hasTextureOverride_ = false;
     }
     InitializeSkinning();
 }
@@ -767,6 +771,7 @@ void Object3d::SetTextureFilePath(const std::string& textureFilePath)
 {
     if (!textureFilePath.empty()) {
         textureFilePath_ = textureFilePath;
+        hasTextureOverride_ = true;
         TextureManager::GetInstance()->LoadTexture(textureFilePath_);
     }
 }
@@ -827,6 +832,7 @@ void Object3d::SetModel(const std::string& filePath)
     if (model_ && materialData_) {
         *materialData_ = model_->GetMaterial();
         textureFilePath_ = model_->GetTextureFilePath();
+        hasTextureOverride_ = false;
     }
     InitializeSkinning();
 }

@@ -29,6 +29,30 @@ constexpr const char* kGameEnvironmentTexturePath =
 constexpr const char* kFreePlayerModelPath = "free_models/kenney_space_kit/craft_speederA.glb";
 constexpr const char* kFreeEnemyModelPath =
     "free_models/quaternius_sci_fi_essentials/Enemy_EyeDrone_Static.gltf";
+constexpr const char* kCityStreet4LaneModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Street_4Lane.gltf";
+constexpr const char* kCityStreet4LaneNoSidewalkModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Street_4Lane_noSidewalk.gltf";
+constexpr const char* kCitySidewalkNoCurbModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Sidewalk_NoCurb_3m.gltf";
+constexpr const char* kCityManholeCoverModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Prop_ManholeCover.gltf";
+constexpr const char* kCityDrainModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Prop_Drain.gltf";
+constexpr const char* kCityBuildingSmallModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Building_Small_1.gltf";
+constexpr const char* kCityBuildingMediumModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Building_Medium_2_001.gltf";
+constexpr const char* kCityBuildingLargeModelPath =
+    "free_models/Downtown City MegaKit[Standard]/"
+    "Exports/glTF (Godot)/Building_Large_2.gltf";
 constexpr int kInitialPlayerBulletPoolCount = 10;
 constexpr int kInitialEnemyBulletPoolCount = 4;
 constexpr int kTargetPlayerBulletPoolCount = 24;
@@ -100,11 +124,11 @@ struct StageEnemySpawnEvent {
 constexpr int kWaveCount = 3;
 
 constexpr StageSegment kStageSegments[] = {
-    {   0.0f,  20.0f, 0.045f,  0.00f,  0.00f,  0.00f, 0.000f, "Opening" },
-    {  20.0f,  52.0f, 0.054f,  0.00f, 0.000f,  0.12f, 0.006f, "Left sweep" },
-    {  52.0f,  86.0f, 0.049f,  0.00f, 0.000f,  0.20f, 0.004f, "Cloud climb" },
-    {  86.0f, 124.0f, 0.060f,  0.00f, 0.000f, -0.08f, 0.010f, "Fast dive" },
-    { 124.0f, 999.0f, 0.052f,  0.00f, 0.000f,  0.06f, 0.004f, "Final approach" }
+    {   0.0f,  20.0f, 0.115f,  0.00f,  0.00f,  0.00f, 0.035f, "Opening" },
+    {  20.0f,  52.0f, 0.145f,  0.00f, 0.000f,  0.12f, 0.052f, "Left sweep" },
+    {  52.0f,  86.0f, 0.132f,  0.00f, 0.000f,  0.20f, 0.044f, "Cloud climb" },
+    {  86.0f, 124.0f, 0.185f,  0.00f, 0.000f, -0.08f, 0.075f, "Fast dive" },
+    { 124.0f, 999.0f, 0.155f,  0.00f, 0.000f,  0.06f, 0.048f, "Final approach" }
 };
 
 constexpr StageRailEvent kStageRailEvents[] = {
@@ -416,8 +440,8 @@ void GameRuntime::Initialize()
     enemyShotTimer_ = 32;
     resultTransitionTimer_ = -1;
     railDistance_ = 0.0f;
-    railSpeed_ = 0.045f;
-    targetRailSpeed_ = 0.045f;
+    railSpeed_ = 0.115f;
+    targetRailSpeed_ = 0.115f;
     stageCameraYawBias_ = 0.0f;
     stageCameraRollBias_ = 0.0f;
     stageCameraLiftBias_ = 0.0f;
@@ -474,9 +498,10 @@ void GameRuntime::Initialize()
     effectMagicShardModel_ = ModelManager::GetInstance()->FindModel("effect_magic_shard");
 
     camera_ = std::make_unique<Camera>();
-    camera_->SetRotate({ 0.15f, 0.0f, 0.0f });
-    camera_->SetTranslate({ 0.0f, 2.5f, -13.0f });
-    camera_->SetFovY(0.5f);
+    camera_->SetRotate({ 0.06f, 0.0f, 0.0f });
+    camera_->SetTranslate({ 0.0f, 2.65f, -19.5f });
+    camera_->SetFovY(0.620f);
+    camera_->SetFarClip(240.0f);
     camera_->Update();
     object3dCommon_->SetDefaultCamera(camera_.get());
 
@@ -491,15 +516,15 @@ void GameRuntime::Initialize()
     const Math::Vector3 initialPlayerTranslate = player_->GetTranslate();
     cameraTranslate_ = {
         initialPlayerTranslate.x * 0.22f,
-        2.55f + initialPlayerTranslate.y * 0.15f,
-        railDistance_ - 13.8f,
+        2.70f + initialPlayerTranslate.y * 0.12f,
+        railDistance_ - 19.8f,
     };
     cameraRotate_ = {
-        0.18f + initialPlayerTranslate.y * 0.006f,
+        0.065f + initialPlayerTranslate.y * 0.003f,
         -initialPlayerTranslate.x * 0.004f,
         0.0f,
     };
-    cameraFovY_ = 0.5f;
+    cameraFovY_ = 0.620f;
     camera_->SetTranslate(cameraTranslate_);
     camera_->SetRotate(cameraRotate_);
     camera_->SetFovY(cameraFovY_);
@@ -510,7 +535,6 @@ void GameRuntime::Initialize()
 
     PrewarmBulletPools();
     PrewarmHitEffectObjectPool();
-    InitializeDepthCueEffects();
     InitializeRailScenery();
 
     LoadSceneObjects(kGameSceneFilePath);
@@ -571,7 +595,6 @@ void GameRuntime::Update()
     UpdateBulletPoolWarmup();
     UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
-    UpdateDepthCueEffects();
     UpdatePlayerAndCamera();
 
     if (!isGameOver_ && !isGameClear_) {
@@ -669,7 +692,7 @@ void GameRuntime::UpdateRailProgress()
 {
     if (!isGameOver_ && !isGameClear_) {
         UpdateStageDirector();
-        railSpeed_ = Lerp(railSpeed_, targetRailSpeed_, 0.040f);
+        railSpeed_ = Lerp(railSpeed_, targetRailSpeed_, 0.070f);
         railDistance_ += railSpeed_;
     }
 }
@@ -1123,6 +1146,189 @@ void GameRuntime::DrawDepthCueEffects()
 void GameRuntime::InitializeRailScenery()
 {
     railSceneryObjects_.clear();
+
+    if (!object3dCommon_) {
+        return;
+    }
+
+    ModelManager* modelManager = ModelManager::GetInstance();
+
+    const auto addSceneryStyled =
+        [&](const char* modelPath,
+            const Math::Vector3& anchor,
+            const Math::Vector3& scale,
+            const Math::Vector3& rotate,
+            float loopLength,
+            float phase,
+            const Math::Vector4& color,
+            int lightingMode,
+            float environmentCoefficient) {
+            modelManager->LoadModel(modelPath);
+            Model* model = modelManager->FindModel(modelPath);
+            if (!model) {
+                return;
+            }
+
+            RailSceneryObject scenery;
+            scenery.object = std::make_unique<Object3d>();
+            scenery.object->Initialize(object3dCommon_.get());
+            scenery.object->SetModel(model);
+            scenery.object->SetTranslate(anchor);
+            scenery.object->SetRotate(rotate);
+            scenery.object->SetScale(scale);
+            scenery.object->SetColor(color);
+            scenery.object->SetLightingMode(lightingMode);
+            scenery.object->SetEnvironmentCoefficient(environmentCoefficient);
+            scenery.object->SetAlphaReference(0.01f);
+            scenery.object->Update();
+            scenery.anchor = anchor;
+            scenery.scale = scale;
+            scenery.rotate = rotate;
+            scenery.color = color;
+            scenery.loopLength = loopLength;
+            scenery.speedMultiplier = 1.0f;
+            scenery.driftSpeed = 0.0f;
+            scenery.phase = phase;
+            railSceneryObjects_.push_back(std::move(scenery));
+        };
+
+    const auto addScenery =
+        [&](const char* modelPath,
+            const Math::Vector3& anchor,
+            const Math::Vector3& scale,
+            const Math::Vector3& rotate,
+            float loopLength,
+            float phase) {
+            addSceneryStyled(
+                modelPath,
+                anchor,
+                scale,
+                rotate,
+                loopLength,
+                phase,
+                { 1.0f, 1.0f, 1.0f, 1.0f },
+                2,
+                0.04f);
+        };
+
+    constexpr float kCityLoopLength = 162.0f;
+    constexpr float kRoadY = -2.075f;
+    constexpr float kSurfaceDetailY = -2.21f;
+    constexpr float kBuildingY = kRoadY - 0.15f;
+    constexpr float kHalfPi = 1.57079632679f;
+
+    for (int i = 0; i < 9; ++i) {
+        const float segmentZ = 18.0f * static_cast<float>(i);
+        addScenery(
+            kCityStreet4LaneModelPath,
+            { 0.0f, kRoadY, -9.0f + segmentZ },
+            { 14.00f, 1.0f, 1.0f },
+            { 0.0f, 0.0f, 0.0f },
+            kCityLoopLength,
+            0.0f);
+    }
+
+    struct CityBuildingPlacement {
+        const char* modelPath;
+        Math::Vector3 anchor;
+        Math::Vector3 scale;
+        Math::Vector3 rotate;
+        Math::Vector4 color;
+    };
+
+    const CityBuildingPlacement cityBuildings[] = {
+        { kCityBuildingLargeModelPath,
+            { -31.5f, kBuildingY, 4.0f },
+            { 0.95f, 1.30f, 0.95f },
+            { 0.0f, kHalfPi, 0.0f },
+            { 0.92f, 0.96f, 1.0f, 1.0f } },
+        { kCityBuildingMediumModelPath,
+            { 31.5f, kBuildingY, 10.0f },
+            { 1.05f, 1.22f, 1.05f },
+            { 0.0f, -kHalfPi, 0.0f },
+            { 0.95f, 0.98f, 1.0f, 1.0f } },
+        { kCityBuildingSmallModelPath,
+            { -31.5f, kBuildingY, 24.0f },
+            { 1.10f, 1.20f, 1.10f },
+            { 0.0f, kHalfPi, 0.0f },
+            { 0.98f, 0.97f, 0.94f, 1.0f } },
+        { kCityBuildingLargeModelPath,
+            { 31.5f, kBuildingY, 31.0f },
+            { 1.05f, 1.42f, 1.05f },
+            { 0.0f, -kHalfPi, 0.0f },
+            { 0.93f, 0.96f, 1.0f, 1.0f } },
+        { kCityBuildingMediumModelPath,
+            { -31.5f, kBuildingY, 48.0f },
+            { 1.08f, 1.28f, 1.08f },
+            { 0.0f, kHalfPi, 0.0f },
+            { 0.96f, 0.98f, 1.0f, 1.0f } },
+        { kCityBuildingSmallModelPath,
+            { 31.5f, kBuildingY, 56.0f },
+            { 1.15f, 1.26f, 1.15f },
+            { 0.0f, -kHalfPi, 0.0f },
+            { 0.98f, 0.96f, 0.93f, 1.0f } },
+        { kCityBuildingLargeModelPath,
+            { -31.5f, kBuildingY, 73.0f },
+            { 1.05f, 1.46f, 1.05f },
+            { 0.0f, kHalfPi, 0.0f },
+            { 0.92f, 0.95f, 0.99f, 1.0f } },
+        { kCityBuildingMediumModelPath,
+            { 31.5f, kBuildingY, 82.0f },
+            { 1.10f, 1.32f, 1.10f },
+            { 0.0f, -kHalfPi, 0.0f },
+            { 0.96f, 0.98f, 1.0f, 1.0f } },
+        { kCityBuildingSmallModelPath,
+            { -31.5f, kBuildingY, 101.0f },
+            { 1.12f, 1.22f, 1.12f },
+            { 0.0f, kHalfPi, 0.0f },
+            { 0.98f, 0.97f, 0.94f, 1.0f } },
+        { kCityBuildingLargeModelPath,
+            { 31.5f, kBuildingY, 111.0f },
+            { 1.00f, 1.38f, 1.00f },
+            { 0.0f, -kHalfPi, 0.0f },
+            { 0.93f, 0.96f, 1.0f, 1.0f } },
+        { kCityBuildingMediumModelPath,
+            { -31.5f, kBuildingY, 132.0f },
+            { 1.08f, 1.30f, 1.08f },
+            { 0.0f, kHalfPi, 0.0f },
+            { 0.96f, 0.98f, 1.0f, 1.0f } },
+        { kCityBuildingSmallModelPath,
+            { 31.5f, kBuildingY, 145.0f },
+            { 1.14f, 1.24f, 1.14f },
+            { 0.0f, -kHalfPi, 0.0f },
+            { 0.98f, 0.96f, 0.93f, 1.0f } },
+    };
+
+    for (const CityBuildingPlacement& building : cityBuildings) {
+        addSceneryStyled(
+            building.modelPath,
+            building.anchor,
+            building.scale,
+            building.rotate,
+            kCityLoopLength,
+            0.0f,
+            building.color,
+            2,
+            0.06f);
+    }
+
+    for (int i = 0; i < 5; ++i) {
+        const float detailZ = 18.0f + 30.0f * static_cast<float>(i);
+        addScenery(
+            kCityManholeCoverModelPath,
+            { -1.6f, kSurfaceDetailY, detailZ },
+            { 1.15f, 1.15f, 1.15f },
+            { 0.0f, 0.22f * static_cast<float>(i), 0.0f },
+            kCityLoopLength,
+            0.0f);
+        addScenery(
+            kCityDrainModelPath,
+            { 4.2f, kSurfaceDetailY, detailZ + 8.0f },
+            { 1.2f, 1.2f, 1.2f },
+            { 0.0f, 0.0f, 0.0f },
+            kCityLoopLength,
+            0.0f);
+    }
 }
 
 void GameRuntime::UpdateRailScenery()
@@ -1151,14 +1357,19 @@ void GameRuntime::UpdateRailScenery()
         const Math::Vector3 position{
             scenery.anchor.x +
                 std::sin(driftPhase) * scenery.lateralDrift +
-                railCurve * (0.25f + nearRate * 0.75f),
+                railCurve * scenery.curveInfluence *
+                    (0.25f + nearRate * 0.75f),
             scenery.anchor.y +
                 std::cos(driftPhase * 0.82f) * scenery.verticalDrift,
             railDistance_ + localZ
         };
+        const float yawWobble =
+            std::abs(scenery.driftSpeed) > 0.0001f ?
+            std::sin(driftPhase * 0.55f) * 0.08f :
+            0.0f;
         const Math::Vector3 rotate{
             scenery.rotate.x,
-            scenery.rotate.y + std::sin(driftPhase * 0.55f) * 0.08f,
+            scenery.rotate.y + yawWobble,
             scenery.rotate.z + railDistance_ * scenery.rollSpeed
         };
 
@@ -1293,7 +1504,7 @@ bool GameRuntime::LoadSceneObjects(const char* path)
     if (settings.hasCamera && camera_) {
         cameraTranslate_ = settings.cameraTranslate;
         cameraRotate_ = settings.cameraRotate;
-        cameraFovY_ = 0.5f;
+        cameraFovY_ = 0.620f;
         camera_->SetTranslate(settings.cameraTranslate);
         camera_->SetRotate(settings.cameraRotate);
         camera_->SetFovY(cameraFovY_);
@@ -1336,7 +1547,6 @@ void GameRuntime::Draw()
         skybox_->Draw();
     }
 
-    DrawDepthCueEffects();
     DrawRailScenery();
 
     object3dCommon_->CommonDrawSetting();
@@ -2984,7 +3194,8 @@ void GameRuntime::DrawEditorOverlayGuiRich()
                 { 8, 38, 34.0f },
                 { 10, 34, 38.0f }
             } };
-            railSpeed_ = 0.045f;
+            railSpeed_ = 0.115f;
+            targetRailSpeed_ = 0.115f;
             playerBulletSpeed_ = 0.65f;
             lockBulletSpeed_ = 0.82f;
             chargedBulletSpeedMultiplier_ = 1.18f;
@@ -3003,7 +3214,7 @@ void GameRuntime::DrawEditorOverlayGuiRich()
         }
 
         if (ImGui::CollapsingHeader(ICON_FA_WAND_MAGIC_SPARKLES " 操作感", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.120f, "%.3f");
+            ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.240f, "%.3f");
             ImGui::SliderFloat("自弾速度", &playerBulletSpeed_, 0.30f, 1.20f, "%.2f");
             ImGui::SliderFloat("チャージ弾速度", &lockBulletSpeed_, 0.70f, 2.20f, "%.2f");
             ImGui::SliderFloat("チャージ弾速度倍率", &chargedBulletSpeedMultiplier_, 1.00f, 2.00f, "%.2f");
@@ -3863,28 +4074,28 @@ void GameRuntime::UpdateGameCamera()
             railWideCurve * 0.22f +
             railDrift * 0.04f +
             shakeX,
-        2.58f +
-            playerTranslate.y * 0.14f +
-            playerVelocity.y * 0.90f +
+        2.65f +
+            playerTranslate.y * 0.10f +
+            playerVelocity.y * 0.64f +
             railLift +
             stageCameraLiftBias_ +
             std::sin(railDistance_ * 0.017f + 0.35f) * 0.16f +
             bob +
             shakeY,
-        railDistance_ -
-            (14.05f + speedPulse * 0.20f + std::abs(turnRate) * 0.12f) +
+            railDistance_ -
+            (20.30f + speedPulse * 0.85f + std::abs(turnRate) * 0.25f) +
             resultZoom,
     };
 
     cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, 0.065f);
 
     const Math::Vector3 targetRotate = {
-        0.18f +
-            playerTranslate.y * 0.006f +
-            railLift * 0.010f +
-            speedPulse * 0.006f +
-            bob * 0.01f +
-            shakeY * 0.01f,
+        0.065f +
+            playerTranslate.y * 0.003f +
+            railLift * 0.005f +
+            speedPulse * 0.004f +
+            bob * 0.006f +
+            shakeY * 0.008f,
         -playerTranslate.x * 0.0045f +
             railWideCurve * 0.018f +
             railDrift * 0.004f +
@@ -3894,10 +4105,10 @@ void GameRuntime::UpdateGameCamera()
     };
 
     const float targetFov =
-        0.5f +
-        speedPulse * 0.014f +
-        std::abs(turnRate) * 0.010f +
-        inputSpeed * 0.012f +
+        0.620f +
+        speedPulse * 0.040f +
+        std::abs(turnRate) * 0.020f +
+        inputSpeed * 0.025f +
         stageCameraFovBoost_ +
         (isGameClear_ ? -0.035f : 0.0f) +
         (isGameOver_ ? 0.025f : 0.0f) +

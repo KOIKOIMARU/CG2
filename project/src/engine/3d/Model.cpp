@@ -285,24 +285,112 @@ Animation ReadAnimation(const aiScene* scene)
     return animation;
 }
 
-std::string GetAssimpTexturePath(
-    const aiScene* scene,
+std::string ResolveAssimpTexturePath(
+    const aiString& texturePath,
     const std::string& directoryPath)
 {
-    for (uint32_t i = 0; i < scene->mNumMaterials; ++i) {
-        aiMaterial* material = scene->mMaterials[i];
-        aiString texturePath;
+    const std::string texturePathString = texturePath.C_Str();
+    if (texturePathString.empty() || texturePathString[0] == '*') {
+        return kDefaultTextureFilePath;
+    }
 
-        if (material->GetTexture(aiTextureType_BASE_COLOR, 0, &texturePath) ==
-                AI_SUCCESS ||
-            material->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath) ==
-                AI_SUCCESS) {
-            std::filesystem::path path = texturePath.C_Str();
-            return directoryPath + "/" + path.filename().string();
+    const std::filesystem::path textureRelativePath = texturePathString;
+    if (textureRelativePath.is_absolute()) {
+        if (std::filesystem::exists(textureRelativePath)) {
+            return textureRelativePath.generic_string();
+        }
+
+        return kDefaultTextureFilePath;
+    }
+
+    const std::filesystem::path directory = directoryPath;
+    const std::filesystem::path resolvedPath = directory / textureRelativePath;
+    if (std::filesystem::exists(resolvedPath)) {
+        return resolvedPath.generic_string();
+    }
+
+    const std::filesystem::path legacyPath = directory / textureRelativePath.filename();
+    if (std::filesystem::exists(legacyPath)) {
+        return legacyPath.generic_string();
+    }
+
+    return kDefaultTextureFilePath;
+}
+
+std::string ResolveAssimpFallbackTexture(
+    const std::string& directoryPath,
+    const char* textureFilename)
+{
+    const std::filesystem::path candidate =
+        std::filesystem::path(directoryPath) / textureFilename;
+    if (std::filesystem::exists(candidate)) {
+        return candidate.generic_string();
+    }
+
+    return kDefaultTextureFilePath;
+}
+
+std::string GetAssimpMaterialTexturePath(
+    const aiMaterial* material,
+    const std::string& directoryPath)
+{
+    if (!material) {
+        return kDefaultTextureFilePath;
+    }
+
+    aiString texturePath;
+    if (material->GetTexture(aiTextureType_BASE_COLOR, 0, &texturePath) ==
+            AI_SUCCESS ||
+        material->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath) ==
+            AI_SUCCESS) {
+        return ResolveAssimpTexturePath(texturePath, directoryPath);
+    }
+
+    aiString materialNameString;
+    if (material->Get(AI_MATKEY_NAME, materialNameString) == AI_SUCCESS) {
+        const std::string materialName = materialNameString.C_Str();
+        if (materialName.find("Glass") != std::string::npos) {
+            return ResolveAssimpFallbackTexture(directoryPath, "T_dark_interior.png");
+        }
+        if (materialName.find("FakeInterior") != std::string::npos ||
+            materialName.find("Interior") != std::string::npos) {
+            return ResolveAssimpFallbackTexture(directoryPath, "T_lit_interior_1.png");
         }
     }
 
-    return directoryPath + "/uvChecker.png";
+    return kDefaultTextureFilePath;
+}
+
+void EnsureModelDrawData(ModelData& modelData)
+{
+    if (modelData.material.textureFilePath.empty()) {
+        modelData.material.textureFilePath = kDefaultTextureFilePath;
+    }
+
+    if (modelData.materials.empty()) {
+        modelData.materials.push_back(modelData.material);
+    }
+    for (MaterialData& material : modelData.materials) {
+        if (material.textureFilePath.empty()) {
+            material.textureFilePath = kDefaultTextureFilePath;
+        }
+    }
+
+    modelData.material = modelData.materials.front();
+
+    if (modelData.drawRanges.empty() && !modelData.indices.empty()) {
+        modelData.drawRanges.push_back({
+            0,
+            static_cast<uint32_t>(modelData.indices.size()),
+            0
+        });
+    }
+
+    for (ModelDrawRange& drawRange : modelData.drawRanges) {
+        if (drawRange.materialIndex >= modelData.materials.size()) {
+            drawRange.materialIndex = 0;
+        }
+    }
 }
 
 void AppendAssimpNode(
@@ -323,6 +411,8 @@ void AppendAssimpNode(
 
         const uint32_t vertexOffset =
             static_cast<uint32_t>(modelData.vertices.size());
+        const uint32_t indexOffset =
+            static_cast<uint32_t>(modelData.indices.size());
         std::vector<VertexData> originalVertices(mesh->mNumVertices);
         for (uint32_t vertexIndex = 0; vertexIndex < mesh->mNumVertices; ++vertexIndex) {
             VertexData vertex = MakeDefaultVertexData();
@@ -394,6 +484,16 @@ void AppendAssimpNode(
                 modelData.indices.push_back(vertexOffset + vertexIndex);
             }
         }
+
+        const uint32_t indexCount =
+            static_cast<uint32_t>(modelData.indices.size()) - indexOffset;
+        if (indexCount > 0) {
+            modelData.drawRanges.push_back({
+                indexOffset,
+                indexCount,
+                mesh->mMaterialIndex
+            });
+        }
     }
 
     for (uint32_t childIndex = 0; childIndex < node->mNumChildren; ++childIndex) {
@@ -463,14 +563,15 @@ void Model::Initialize(ModelCommon* modelCommon,
             modelData_.indices[index] = index;
         }
     }
+    EnsureModelDrawData(modelData_);
 
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateMaterial();
 
-    TextureManager::GetInstance()->LoadTexture(
-        modelData_.material.textureFilePath
-    );
+    for (const MaterialData& material : modelData_.materials) {
+        TextureManager::GetInstance()->LoadTexture(material.textureFilePath);
+    }
 }
 
 void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
@@ -485,14 +586,15 @@ void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
             modelData_.indices[index] = index;
         }
     }
+    EnsureModelDrawData(modelData_);
 
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateMaterial();
 
-    TextureManager::GetInstance()->LoadTexture(
-        modelData_.material.textureFilePath
-    );
+    for (const MaterialData& material : modelData_.materials) {
+        TextureManager::GetInstance()->LoadTexture(material.textureFilePath);
+    }
 }
 
 void Model::Draw(
@@ -518,17 +620,6 @@ void Model::Draw(
         materialResource->GetGPUVirtualAddress()
     );
 
-    // Texture SRV
-    const std::string& textureFilePath =
-        overrideTextureFilePath ? *overrideTextureFilePath :
-        modelData_.material.textureFilePath;
-    srvManager->SetGraphicsRootDescriptorTable(
-        3,
-        TextureManager::GetInstance()->GetSrvIndex(
-            textureFilePath
-        )
-    );
-
     srvManager->SetGraphicsRootDescriptorTable(
         4,
         TextureManager::GetInstance()->GetSrvIndex(
@@ -536,10 +627,32 @@ void Model::Draw(
         )
     );
 
-    commandList->DrawIndexedInstanced(
-        static_cast<UINT>(modelData_.indices.size()),
-        1, 0, 0, 0
-    );
+    for (const ModelDrawRange& drawRange : modelData_.drawRanges) {
+        if (drawRange.indexCount == 0) {
+            continue;
+        }
+
+        const uint32_t materialIndex =
+            drawRange.materialIndex < modelData_.materials.size() ?
+            drawRange.materialIndex :
+            0;
+        const std::string& textureFilePath =
+            overrideTextureFilePath ? *overrideTextureFilePath :
+            modelData_.materials[materialIndex].textureFilePath;
+
+        srvManager->SetGraphicsRootDescriptorTable(
+            3,
+            TextureManager::GetInstance()->GetSrvIndex(textureFilePath)
+        );
+
+        commandList->DrawIndexedInstanced(
+            static_cast<UINT>(drawRange.indexCount),
+            1,
+            drawRange.indexOffset,
+            0,
+            0
+        );
+    }
 }
 
 void Model::CreateVertexBuffer()
@@ -639,6 +752,12 @@ int32_t Model::GetLightingMode() const
 void Model::SetTextureFilePath(const std::string& textureFilePath)
 {
     modelData_.material.textureFilePath = textureFilePath;
+    if (modelData_.materials.empty()) {
+        modelData_.materials.push_back(modelData_.material);
+    }
+    for (MaterialData& material : modelData_.materials) {
+        material.textureFilePath = textureFilePath;
+    }
     TextureManager::GetInstance()->LoadTexture(textureFilePath);
 }
 
@@ -801,8 +920,17 @@ ModelData Model::LoadAssimpFile(
     assert(scene->HasMeshes());
     assert(scene->mRootNode);
 
-    modelData.material.textureFilePath =
-        GetAssimpTexturePath(scene, directoryPath);
+    modelData.materials.reserve(scene->mNumMaterials);
+    for (uint32_t materialIndex = 0; materialIndex < scene->mNumMaterials; ++materialIndex) {
+        MaterialData materialData;
+        materialData.textureFilePath =
+            GetAssimpMaterialTexturePath(scene->mMaterials[materialIndex], directoryPath);
+        modelData.materials.push_back(materialData);
+    }
+    if (modelData.materials.empty()) {
+        modelData.materials.push_back({ kDefaultTextureFilePath });
+    }
+    modelData.material = modelData.materials.front();
     modelData.rootNode = ReadNode(scene->mRootNode);
     modelData.animation = ReadAnimation(scene);
 
@@ -816,6 +944,8 @@ ModelData Model::LoadAssimpFile(
         MakeIdentity4x4(),
         modelData,
         nodeIndexMap);
+
+    EnsureModelDrawData(modelData);
 
     return modelData;
 }

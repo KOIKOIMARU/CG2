@@ -30,6 +30,12 @@ struct MaterialData {
     std::string textureFilePath;
 };
 
+struct ModelDrawRange {
+    uint32_t indexOffset = 0;
+    uint32_t indexCount = 0;
+    uint32_t materialIndex = 0;
+};
+
 template <typename T>
 struct Keyframe {
     float time;
@@ -84,6 +90,8 @@ struct ModelData {
     std::vector<VertexData> vertices;
     std::vector<uint32_t> indices;
     MaterialData material;
+    std::vector<MaterialData> materials;
+    std::vector<ModelDrawRange> drawRanges;
     Node rootNode;
     Animation animation;
     SkinClusterData skinClusterData;

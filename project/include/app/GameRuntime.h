@@ -133,6 +133,7 @@ private:
         float verticalDrift = 0.0f;
         float driftSpeed = 0.02f;
         float rollSpeed = 0.0f;
+        float curveInfluence = 0.0f;
         float phase = 0.0f;
         bool billboard = false;
     };
@@ -339,8 +340,8 @@ private:
     float cameraTimer_ = 0.0f;
     float cameraShakePower_ = 0.0f;
     float railDistance_ = 0.0f;
-    float railSpeed_ = 0.045f;
-    float targetRailSpeed_ = 0.045f;
+    float railSpeed_ = 0.115f;
+    float targetRailSpeed_ = 0.115f;
     float stageCameraYawBias_ = 0.0f;
     float stageCameraRollBias_ = 0.0f;
     float stageCameraLiftBias_ = 0.0f;
@@ -350,13 +351,13 @@ private:
     float chargedBulletSpeedMultiplier_ = 1.10f;
     float enemyBulletSpeed_ = 0.40f;
     float lockRadius_ = 118.0f;
-    float cameraFovY_ = 0.5f;
+    float cameraFovY_ = 0.620f;
     Math::Vector2 hudViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 hudViewportSize_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportSize_{ 0.0f, 0.0f };
     size_t nextPlayerDodgeAfterimageIndex_ = 0;
-    Math::Vector3 cameraTranslate_{ 0.0f, 2.5f, -13.0f };
+    Math::Vector3 cameraTranslate_{ 0.0f, 2.65f, -19.8f };
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
     const Enemy* lockedEnemy_ = nullptr;
