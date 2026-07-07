@@ -13,7 +13,8 @@ public:
     enum class Behavior {
         Formation,
         Swoop,
-        StrafeShooter
+        StrafeShooter,
+        Boss
     };
 
     enum class EntryStyle {
@@ -35,7 +36,10 @@ public:
         Model* model,
         const Math::Vector3& position,
         Behavior behavior,
-        EntryStyle entryStyle = EntryStyle::Direct);
+        EntryStyle entryStyle = EntryStyle::Direct,
+        int maxHpOverride = 0,
+        float scaleMultiplier = 1.0f,
+        const char* textureOverride = nullptr);
     void Update(float railDistance);
     void Draw();
 
@@ -45,7 +49,10 @@ public:
     bool IsDead() const { return lifeState_ == LifeState::Destroyed || lifeState_ == LifeState::Escaped; }
     bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
     bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
+    bool IsBoss() const { return behavior_ == Behavior::Boss; }
     bool IsTargetable() const;
+    int GetHp() const { return hp_; }
+    int GetMaxHp() const { return maxHp_; }
     const Math::Vector3& GetTranslate() const { return translate_; }
     Math::Vector3 GetAimPosition() const;
     float GetRadius() const { return collisionRadius_; }

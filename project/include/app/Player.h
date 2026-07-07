@@ -31,11 +31,11 @@ private:
 private:
     std::unique_ptr<Object3d> object_;
     Math::Vector3 translate_{ 0.0f, 0.0f, 0.0f };
-    Math::Vector3 objectScale_{ 0.62f, 0.62f, 0.62f };
+    Math::Vector3 objectScale_{ 1.26f, 1.26f, 1.26f };
     Math::Vector3 objectRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 modelLocalCenterOffset_{ 0.0f, 0.0f, 0.0f };
     float moveSpeed_ = 0.18f;
-    float collisionRadius_ = 0.7f;
+    float collisionRadius_ = 0.86f;
     int dodgeTimer_ = 0;
     int dodgeCooldownTimer_ = 0;
     int invincibleTimer_ = 0;

@@ -79,8 +79,9 @@ private:
             float aspectX = 1.0f;
             float aspectY = 1.0f;
             Math::Vector3 velocity{};
+            bool additive = true;
         };
-        static constexpr size_t kMaxVisuals = 12;
+        static constexpr size_t kMaxVisuals = 16;
         std::array<Visual, kMaxVisuals> visuals{};
         size_t visualCount = 0;
     };
@@ -179,7 +180,12 @@ private:
         float y,
         float leadDistance,
         Enemy::Behavior behavior,
-        Enemy::EntryStyle entryStyle);
+        Enemy::EntryStyle entryStyle,
+        int maxHpOverride = 0,
+        float scaleMultiplier = 1.0f);
+    Model* GetEnemyModelForBehavior(Enemy::Behavior behavior) const;
+    const char* GetEnemyTextureOverrideForBehavior(Enemy::Behavior behavior) const;
+    void SpawnBossEnemy();
     void UpdateStageEnemyEvents();
     void UpdateEnemyWave();
     void AdvanceEnemyWaveIfCleared();
@@ -211,7 +217,8 @@ private:
         float popDelay,
         float aspectX,
         float aspectY,
-        const Math::Vector3& velocity);
+        const Math::Vector3& velocity,
+        bool additive = true);
     void PrewarmHitEffectObjectPool();
     void UpdateHitEffectObjectPoolWarmup();
     std::unique_ptr<Object3d> CreatePooledHitEffectObject();
@@ -235,6 +242,7 @@ private:
     void DrawPlayerFlightAura();
     void DrawEditorOverlayGuiRich();
     void DrawHud();
+    void DrawBossHud();
     void DrawLockOnHud();
     void DrawResultOverlay();
     void DrawPerformanceOverlay();
@@ -247,6 +255,8 @@ private:
     Math::Vector3 CalculateAimDirection(const Math::Vector3& origin) const;
     const Enemy* FindHomingTargetForBullet(const Bullet& bullet) const;
     int GetTotalEnemyTargetCount() const;
+    int GetRequiredEnemyDefeatsForClear() const;
+    const Enemy* GetBossEnemy() const;
     void CheckBulletEnemyCollisions();
     void CheckEnemyBulletPlayerCollisions();
     void UpdateGameCamera();
@@ -287,7 +297,7 @@ private:
     std::array<PlayerDodgeAfterimage, 5> playerDodgeAfterimages_;
     std::array<PlayerFlightAura, 5> playerFlightAuras_;
     std::array<bool, 5> stageRailEventTriggered_{};
-    std::array<bool, 16> stageEnemyEventTriggered_{};
+    std::array<bool, 24> stageEnemyEventTriggered_{};
     std::array<WaveTuning, 3> waveTuning_{ {
         { 6, 42, 30.0f },
         { 8, 38, 34.0f },
@@ -297,6 +307,11 @@ private:
     Model* playerModel_ = nullptr;
     Model* bulletModel_ = nullptr;
     Model* enemyModel_ = nullptr;
+    Model* enemyFormationModel_ = nullptr;
+    Model* enemySwoopModel_ = nullptr;
+    Model* enemyShooterModel_ = nullptr;
+    Model* enemyHeavyModel_ = nullptr;
+    Model* bossModel_ = nullptr;
     Model* effectGlowCoreModel_ = nullptr;
     Model* effectGlowRingModel_ = nullptr;
     Model* effectSparkStarModel_ = nullptr;
@@ -304,10 +319,15 @@ private:
     Model* effectBulletTrailModel_ = nullptr;
     Model* effectPlayerBulletCoreModel_ = nullptr;
     Model* effectPlayerBulletTrailModel_ = nullptr;
+    Model* effectPlayerChargeCoreModel_ = nullptr;
+    Model* effectPlayerChargeTrailModel_ = nullptr;
     Model* effectEnemyBulletCoreModel_ = nullptr;
     Model* effectEnemyBulletTailModel_ = nullptr;
     Model* effectImpactBurstModel_ = nullptr;
     Model* effectMagicShardModel_ = nullptr;
+    Model* effectExplosionFireballModel_ = nullptr;
+    Model* effectExplosionSmokeModel_ = nullptr;
+    Model* effectExplosionSparksModel_ = nullptr;
 
     int shootCooldown_ = 0;
     int shootBufferTimer_ = 0;
@@ -332,9 +352,9 @@ private:
     size_t rewardHeartPoolMisses_ = 0;
     size_t maxActivePlayerBullets_ = 0;
     size_t maxActiveEnemyBullets_ = 0;
-    int chargeShotThreshold_ = 70;
-    int normalShootCooldown_ = 4;
-    int chargedShootCooldown_ = 14;
+    int chargeShotThreshold_ = 88;
+    int normalShootCooldown_ = 16;
+    int chargedShootCooldown_ = 28;
     int enemyShotInterval_ = 44;
     int waveStartDelay_ = 90;
     float cameraTimer_ = 0.0f;
@@ -351,13 +371,13 @@ private:
     float chargedBulletSpeedMultiplier_ = 1.10f;
     float enemyBulletSpeed_ = 0.40f;
     float lockRadius_ = 118.0f;
-    float cameraFovY_ = 0.620f;
+    float cameraFovY_ = 0.590f;
     Math::Vector2 hudViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 hudViewportSize_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportSize_{ 0.0f, 0.0f };
     size_t nextPlayerDodgeAfterimageIndex_ = 0;
-    Math::Vector3 cameraTranslate_{ 0.0f, 2.65f, -19.8f };
+    Math::Vector3 cameraTranslate_{ 0.0f, 2.65f, -15.8f };
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
     const Enemy* lockedEnemy_ = nullptr;
@@ -377,6 +397,8 @@ private:
     bool isPostEffectBypassEnabled_ = false;
     bool isExitRequested_ = false;
     bool showSkybox_ = true;
+    bool bossSpawned_ = false;
+    bool bossDefeated_ = false;
     bool wasPlayerDodging_ = false;
     bool isHudViewportRectEnabled_ = false;
     bool hasEditorOverlayViewportRect_ = false;

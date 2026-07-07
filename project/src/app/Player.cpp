@@ -14,6 +14,9 @@ constexpr int kDodgeCooldown = 42;
 constexpr int kDodgeInvincibleDuration = 16;
 constexpr float kDodgeBaseSpeed = 0.14f;
 constexpr float kDodgePeakSpeed = 0.08f;
+constexpr float kPlayerHorizontalLimit = 8.2f;
+constexpr float kPlayerLowerLimitY = -1.05f;
+constexpr float kPlayerUpperLimitY = 5.10f;
 
 Math::Vector3 CalculateModelLocalCenterOffset(const Model* model)
 {
@@ -141,8 +144,10 @@ void Player::Update(Input* input)
         --dodgeTimer_;
     }
 
-    translate_.x = std::clamp(translate_.x + move.x, -5.5f, 5.5f);
-    translate_.y = std::clamp(translate_.y + move.y, -3.0f, 3.0f);
+    translate_.x =
+        std::clamp(translate_.x + move.x, -kPlayerHorizontalLimit, kPlayerHorizontalLimit);
+    translate_.y =
+        std::clamp(translate_.y + move.y, kPlayerLowerLimitY, kPlayerUpperLimitY);
 
     objectRotate_ = rotate;
     object_->SetColor(

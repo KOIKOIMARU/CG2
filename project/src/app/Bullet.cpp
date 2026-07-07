@@ -3,6 +3,55 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+
+Math::Vector3 TransformDirection(
+    const Math::Vector3& direction,
+    const Math::Matrix4x4& matrix)
+{
+    return {
+        direction.x * matrix.m[0][0] +
+            direction.y * matrix.m[1][0] +
+            direction.z * matrix.m[2][0],
+        direction.x * matrix.m[0][1] +
+            direction.y * matrix.m[1][1] +
+            direction.z * matrix.m[2][1],
+        direction.x * matrix.m[0][2] +
+            direction.y * matrix.m[1][2] +
+            direction.z * matrix.m[2][2],
+    };
+}
+
+float Dot(const Math::Vector3& a, const Math::Vector3& b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float CalculateBillboardRoll(
+    const Math::Vector3& velocity,
+    const Math::Vector3& cameraRotate,
+    float fallbackRoll)
+{
+    const Math::Matrix4x4 cameraMatrix =
+        Math::Multiply(
+            Math::MakeRotateXMatrix(cameraRotate.x),
+            Math::Multiply(
+                Math::MakeRotateYMatrix(cameraRotate.y),
+                Math::MakeRotateZMatrix(cameraRotate.z)));
+    const Math::Vector3 cameraRight =
+        TransformDirection({ 1.0f, 0.0f, 0.0f }, cameraMatrix);
+    const Math::Vector3 cameraUp =
+        TransformDirection({ 0.0f, 1.0f, 0.0f }, cameraMatrix);
+    const float projectedX = Dot(velocity, cameraRight);
+    const float projectedY = Dot(velocity, cameraUp);
+    if (std::abs(projectedX) <= 0.001f && std::abs(projectedY) <= 0.001f) {
+        return fallbackRoll;
+    }
+    return std::atan2(-projectedX, projectedY);
+}
+
+} // namespace
+
 void Bullet::Initialize(
     Object3dCommon* object3dCommon,
     Model* model,
@@ -111,31 +160,8 @@ void Bullet::Initialize(
         });
         trailObject_->Update();
 
-        for (size_t index = 0; index < trailEchoObjects_.size(); ++index) {
-            auto& echoObject = trailEchoObjects_[index];
-            if (!echoObject) {
-                echoObject = std::make_unique<Object3d>();
-                echoObject->Initialize(object3dCommon);
-            }
-            echoObject->SetModel(trailModel);
-            echoObject->SetScale(trailBaseScale_);
-            echoObject->SetColor(trailBaseColor_);
-            echoObject->SetLightingMode(0);
-            echoObject->SetEnvironmentCoefficient(0.0f);
-            echoObject->SetRotate({ 0.0f, 0.0f, trailRoll_ });
-            const float offsetScale = 1.55f + static_cast<float>(index) * 0.72f;
-            echoObject->SetTranslate({
-                translate_.x + trailOffset_.x * offsetScale,
-                translate_.y + trailOffset_.y * offsetScale,
-                translate_.z + trailOffset_.z * offsetScale
-            });
-            echoObject->Update();
-        }
     } else {
         trailObject_.reset();
-        for (auto& echoObject : trailEchoObjects_) {
-            echoObject.reset();
-        }
     }
     if (sparkleModel) {
         for (size_t index = 0; index < sparkleObjects_.size(); ++index) {
@@ -264,44 +290,34 @@ void Bullet::DrawGlow(const Math::Vector3& cameraRotate)
 
     if (!isDead_ && trailObject_) {
         Math::Vector3 trailRotate = cameraRotate;
-        trailRotate.z += trailRoll_;
+        const float billboardRoll =
+            CalculateBillboardRoll(velocity_, cameraRotate, trailRoll_);
+        trailRotate.z += billboardRoll;
         const float trailFade = 0.74f + 0.26f * lifeRate;
 
-        auto drawTrailNode = [&](
-                                Object3d* trail,
-                                float offsetScale,
-                                float sizeScale,
-                                float alphaScale) {
-            if (!trail) {
-                return;
-            }
-            trail->SetRotate(trailRotate);
-            trail->SetScale({
-                trailBaseScale_.x * tailBreath * sizeScale,
-                trailBaseScale_.y * tailBreath * sizeScale,
-                trailBaseScale_.z
-            });
-            Math::Vector4 trailColor = trailBaseColor_;
-            trailColor.w *=
-                (0.96f + 0.20f * flicker) *
-                trailFade *
-                alphaScale;
-            trail->SetColor(trailColor);
-            trail->SetTranslate({
-                translate_.x + trailOffset_.x * offsetScale,
-                translate_.y + trailOffset_.y * offsetScale,
-                translate_.z + trailOffset_.z * offsetScale
-            });
-            trail->Update();
-            trail->Draw();
-        };
-
-        drawTrailNode(trailEchoObjects_[0].get(), 1.92f, 1.06f, 0.68f);
-        drawTrailNode(trailObject_.get(), 0.72f, 0.88f, 1.22f);
+        trailObject_->SetRotate(trailRotate);
+        trailObject_->SetScale({
+            trailBaseScale_.x * tailBreath * 0.78f,
+            trailBaseScale_.y * tailBreath * 0.78f,
+            trailBaseScale_.z
+        });
+        Math::Vector4 trailColor = trailBaseColor_;
+        trailColor.w *=
+            (0.92f + 0.16f * flicker) *
+            trailFade *
+            0.82f;
+        trailObject_->SetColor(trailColor);
+        trailObject_->SetTranslate({
+            translate_.x + trailOffset_.x * 0.56f,
+            translate_.y + trailOffset_.y * 0.56f,
+            translate_.z + trailOffset_.z * 0.56f
+        });
+        trailObject_->Update();
+        trailObject_->Draw();
     }
     if (!isDead_ && glowObject_) {
         Math::Vector3 glowRotate = cameraRotate;
-        glowRotate.z += trailRoll_;
+        glowRotate.z += CalculateBillboardRoll(velocity_, cameraRotate, trailRoll_);
         glowObject_->SetRotate(glowRotate);
         const float glowPunch = 1.0f + 0.05f * std::sin(static_cast<float>(age_) * 0.78f);
         glowObject_->SetScale({

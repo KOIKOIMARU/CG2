@@ -25,19 +25,33 @@ namespace {
 
 constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
 constexpr const char* kGameEnvironmentTexturePath =
-    "__generated/game_fast_sky_cube";
+    "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
 constexpr const char* kFreePlayerModelPath = "free_models/kenney_space_kit/craft_speederA.glb";
 constexpr const char* kFreeEnemyModelPath =
     "free_models/quaternius_sci_fi_essentials/Enemy_EyeDrone_Static.gltf";
+constexpr const char* kEnemyFormationModelPath =
+    "free_models/Spitfire-20260707T202640Z-3-001/Spitfire/glTF/Spitfire.gltf";
+constexpr const char* kEnemyFormationTexturePath =
+    "resources/free_models/Spitfire-20260707T202640Z-3-001/Spitfire/Textures/Spitfire_Red.png";
+constexpr const char* kEnemySwoopModelPath =
+    "free_models/Striker-20260707T202647Z-3-001/Striker/glTF/Striker.gltf";
+constexpr const char* kEnemySwoopTexturePath =
+    "resources/free_models/Striker-20260707T202647Z-3-001/Striker/Textures/Striker_Purple.png";
+constexpr const char* kEnemyShooterModelPath =
+    "free_models/Pancake-20260707T202659Z-3-001/Pancake/glTF/Pancake.gltf";
+constexpr const char* kEnemyShooterTexturePath =
+    "resources/free_models/Pancake-20260707T202659Z-3-001/Pancake/Textures/Pancake_Orange.png";
+constexpr const char* kEnemyHeavyModelPath =
+    "free_models/Challenger-20260707T202702Z-3-001/Challenger/glTF/Challenger.gltf";
+constexpr const char* kEnemyHeavyTexturePath =
+    "resources/free_models/Challenger-20260707T202702Z-3-001/Challenger/Textures/Challenger_Blue.png";
+constexpr const char* kBossModelPath =
+    "free_models/Imperial-20260707T180457Z-3-001/Imperial/glTF/Imperial.gltf";
+constexpr const char* kBossTexturePath =
+    "resources/free_models/Imperial-20260707T180457Z-3-001/Imperial/Textures/Imperial_Purple.png";
 constexpr const char* kCityStreet4LaneModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Street_4Lane.gltf";
-constexpr const char* kCityStreet4LaneNoSidewalkModelPath =
-    "free_models/Downtown City MegaKit[Standard]/"
-    "Exports/glTF (Godot)/Street_4Lane_noSidewalk.gltf";
-constexpr const char* kCitySidewalkNoCurbModelPath =
-    "free_models/Downtown City MegaKit[Standard]/"
-    "Exports/glTF (Godot)/Sidewalk_NoCurb_3m.gltf";
 constexpr const char* kCityManholeCoverModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Prop_ManholeCover.gltf";
@@ -53,14 +67,14 @@ constexpr const char* kCityBuildingMediumModelPath =
 constexpr const char* kCityBuildingLargeModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Building_Large_2.gltf";
-constexpr int kInitialPlayerBulletPoolCount = 10;
-constexpr int kInitialEnemyBulletPoolCount = 4;
+constexpr int kInitialPlayerBulletPoolCount = 24;
+constexpr int kInitialEnemyBulletPoolCount = 12;
 constexpr int kTargetPlayerBulletPoolCount = 24;
 constexpr int kTargetEnemyBulletPoolCount = 12;
 constexpr int kBulletPoolWarmupStartDelayFrames = 45;
 constexpr int kBulletPoolWarmupIntervalFrames = 6;
-constexpr int kInitialHitEffectObjectPoolCount = 16;
-constexpr int kTargetHitEffectObjectPoolCount = 48;
+constexpr int kInitialHitEffectObjectPoolCount = 96;
+constexpr int kTargetHitEffectObjectPoolCount = 120;
 constexpr int kHitEffectPoolWarmupStartDelayFrames = 45;
 constexpr int kHitEffectPoolWarmupIntervalFrames = 4;
 constexpr int kRewardHeartPoolCount = 40;
@@ -72,12 +86,17 @@ constexpr float kDepthCueLoopLength = 132.0f;
 constexpr float kTwoPi = 6.28318530718f;
 constexpr float kRailCameraCurveFrequency = 0.050f;
 constexpr float kRailCameraDriftFrequency = 0.027f;
+constexpr float kGameplayCameraBaseFovY = 0.590f;
+constexpr float kGameplayCameraInitialDistance = 15.8f;
+constexpr float kGameplayCameraBaseDistance = 16.10f;
 constexpr int kPlayerDodgeAfterimageIntervalFrames = 3;
 constexpr float kPlayerDodgeAfterimageDuration = 16.0f;
-constexpr int kSharedResourcePreloadStepCount = 7;
-constexpr float kSceneryNearLocalZ = -20.0f;
-constexpr float kSceneryFarLocalZ = 138.0f;
-constexpr float kStageClearDistance = 100.0f;
+constexpr int kSharedResourcePreloadStepCount = 13;
+constexpr float kSceneryNearLocalZ = -24.0f;
+constexpr float kSceneryFarLocalZ = 300.0f;
+constexpr float kStageClearDistance = 185.0f;
+constexpr float kBossSpawnDistance = 181.0f;
+constexpr int kBossMaxHp = 52;
 int gSharedResourcePreloadStep = 0;
 bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
@@ -118,6 +137,8 @@ struct StageEnemySpawnEvent {
     Enemy::EntryStyle entryStyle;
     float shakePower;
     int shakeDuration;
+    int maxHpOverride;
+    float scaleMultiplier;
     const char* beatName;
 };
 
@@ -140,22 +161,32 @@ constexpr StageRailEvent kStageRailEvents[] = {
 };
 
 constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
-    {  7.5f, -2.7f, -0.5f, 34.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation,   0.020f,  4, "Front trio" },
-    {  7.5f,  0.0f,  0.2f, 34.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation,   0.020f,  4, "Front trio" },
-    {  7.5f,  2.7f, -0.5f, 34.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation,   0.020f,  4, "Front trio" },
-    { 18.0f,  5.0f,  1.2f, 42.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep,   0.030f,  6, "Right curve ambush" },
-    { 20.5f,  3.8f, -0.6f, 38.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep,   0.020f,  4, "Right curve ambush" },
-    { 31.0f, -3.0f,  1.3f, 36.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter,   0.035f,  7, "Dodge lesson" },
-    { 34.0f,  3.0f,  1.0f, 36.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter,   0.035f,  7, "Dodge lesson" },
-    { 45.0f, -3.4f, -0.8f, 32.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation,   0.018f,  4, "Narrow lane" },
-    { 45.0f,  0.0f,  0.0f, 32.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation,   0.018f,  4, "Narrow lane" },
-    { 45.0f,  3.4f, -0.8f, 32.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation,   0.018f,  4, "Narrow lane" },
-    { 62.0f,  0.0f,  1.3f, 40.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter,   0.055f, 11, "Charge target" },
-    { 77.0f, -4.2f,  1.2f, 46.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,    0.030f,  7, "Exit sweep" },
-    { 79.0f,  4.2f,  0.4f, 46.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep,   0.030f,  7, "Exit sweep" }
+    {   7.5f, -2.7f, -0.5f, 34.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  0, 1.00f, "Front trio" },
+    {   7.5f,  0.0f,  0.2f, 34.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  0, 1.00f, "Front trio" },
+    {   7.5f,  2.7f, -0.5f, 34.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  0, 1.00f, "Front trio" },
+    {  18.0f,  5.0f,  1.2f, 42.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.030f,  6,  0, 1.00f, "Right curve ambush" },
+    {  20.5f,  3.8f, -0.6f, 38.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.020f,  4,  0, 1.00f, "Right curve ambush" },
+    {  31.0f, -3.0f,  1.3f, 36.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.035f,  7,  0, 1.00f, "Dodge lesson" },
+    {  34.0f,  3.0f,  1.0f, 36.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.035f,  7,  0, 1.00f, "Dodge lesson" },
+    {  45.0f, -3.4f, -0.8f, 32.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.018f,  4,  0, 1.00f, "Narrow lane" },
+    {  45.0f,  0.0f,  0.0f, 32.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.018f,  4,  0, 1.00f, "Narrow lane" },
+    {  45.0f,  3.4f, -0.8f, 32.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.018f,  4,  0, 1.00f, "Narrow lane" },
+    {  62.0f,  0.0f,  1.3f, 40.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.055f, 11,  0, 1.00f, "Charge target" },
+    {  77.0f, -4.2f,  1.2f, 46.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.030f,  7,  0, 1.00f, "Exit sweep" },
+    {  79.0f,  4.2f,  0.4f, 46.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.030f,  7,  0, 1.00f, "Exit sweep" },
+    { 104.0f, -4.8f,  1.0f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.035f,  8,  5, 1.14f, "Late sweep" },
+    { 106.5f,  4.8f,  1.0f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.035f,  8,  5, 1.14f, "Late sweep" },
+    { 119.0f, -3.0f, -0.2f, 38.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  6,  4, 1.08f, "Guard pair" },
+    { 119.0f,  3.0f, -0.2f, 38.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  6,  4, 1.08f, "Guard pair" },
+    { 134.0f,  0.0f,  1.35f, 52.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.085f, 16, 16, 1.68f, "Heavy drone" },
+    { 151.0f, -3.6f,  0.6f, 42.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
+    { 151.0f,  3.6f,  0.6f, 42.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
+    { 166.0f, -2.4f, -0.5f, 36.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.026f,  6,  5, 1.12f, "Last gate" },
+    { 166.0f,  0.0f,  0.2f, 36.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.026f,  6,  5, 1.12f, "Last gate" },
+    { 166.0f,  2.4f, -0.5f, 36.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.026f,  6,  5, 1.12f, "Last gate" }
 };
 
-constexpr size_t kStageEnemyEventCapacity = 16;
+constexpr size_t kStageEnemyEventCapacity = 24;
 constexpr size_t kStageEnemyEventCount =
     sizeof(kStageEnemySpawnEvents) / sizeof(kStageEnemySpawnEvents[0]);
 static_assert(kStageEnemyEventCount <= kStageEnemyEventCapacity);
@@ -325,13 +356,11 @@ bool GameRuntime::PreloadSharedResourceStep(
         gSharedResourcePreloadLabel = "Renderer resources";
         modelManager->Initialize(dxCommon, srvManager);
         modelManager->SetEnvironmentTexturePath(kGameEnvironmentTexturePath);
-        TextureManager::GetInstance()->CreateSkyGradientCubeTexture(
-            kGameEnvironmentTexturePath);
         break;
     case 1:
         gSharedResourcePreloadLabel = "Core game meshes";
         modelManager->CreateBox("game_player", 1.0f, 0.45f, 1.3f, "resources/uvChecker.png");
-        modelManager->CreateSphere("game_bullet", 12, 24, 0.35f, "resources/gradationLine.png");
+        modelManager->CreateSphere("game_bullet", 12, 24, 0.35f, "resources/human/white.png");
         modelManager->CreateSphere("game_enemy", 16, 32, 0.9f, "resources/uvChecker.png");
         modelManager->CreatePlane("primitive_plane", 8.0f, 8.0f, "resources/checkerBoard.png");
         modelManager->CreateTriangle("primitive_triangle", 1.6f, 1.6f, "resources/uvChecker.png");
@@ -348,12 +377,17 @@ bool GameRuntime::PreloadSharedResourceStep(
     case 3:
         gSharedResourcePreloadLabel = "Projectile effect meshes";
         modelManager->CreatePlane("effect_bullet_trail", 1.0f, 1.0f, "resources/effects/bullet_trail.png");
-        modelManager->CreatePlane("effect_player_bullet_core", 1.0f, 1.0f, "resources/effects/pal_arrow_core.png");
-        modelManager->CreatePlane("effect_player_bullet_trail", 1.0f, 1.0f, "resources/effects/pal_arrow_trail.png");
-        modelManager->CreatePlane("effect_enemy_bullet_core", 1.0f, 1.0f, "resources/effects/pal_enemy_bullet_core.png");
-        modelManager->CreatePlane("effect_enemy_bullet_tail", 1.0f, 1.0f, "resources/effects/pal_enemy_bullet_tail.png");
+        modelManager->CreatePlane("effect_player_bullet_core", 1.0f, 1.0f, "resources/effects/rail_player_bolt_core.png");
+        modelManager->CreatePlane("effect_player_bullet_trail", 1.0f, 1.0f, "resources/effects/rail_player_bolt_trail.png");
+        modelManager->CreatePlane("effect_player_charge_core", 1.0f, 1.0f, "resources/effects/rail_charge_lance_core.png");
+        modelManager->CreatePlane("effect_player_charge_trail", 1.0f, 1.0f, "resources/effects/rail_charge_lance_trail.png");
+        modelManager->CreatePlane("effect_enemy_bullet_core", 1.0f, 1.0f, "resources/effects/rail_enemy_orb_core.png");
+        modelManager->CreatePlane("effect_enemy_bullet_tail", 1.0f, 1.0f, "resources/effects/rail_enemy_tail.png");
         modelManager->CreatePlane("effect_impact_burst", 1.0f, 1.0f, "resources/effects/pal_impact_burst.png");
         modelManager->CreatePlane("effect_magic_shard", 1.0f, 1.0f, "resources/effects/pal_magic_shard.png");
+        modelManager->CreatePlane("effect_explosion_fireball", 1.0f, 1.0f, "resources/effects/rail_explosion_fireball.png");
+        modelManager->CreatePlane("effect_explosion_smoke", 1.0f, 1.0f, "resources/effects/rail_explosion_smoke.png");
+        modelManager->CreatePlane("effect_explosion_sparks", 1.0f, 1.0f, "resources/effects/rail_explosion_sparks.png");
         break;
     case 4:
         gSharedResourcePreloadLabel = "Primitive scene meshes";
@@ -369,8 +403,42 @@ bool GameRuntime::PreloadSharedResourceStep(
         modelManager->LoadModel(kFreePlayerModelPath);
         break;
     case 6:
-        gSharedResourcePreloadLabel = "Enemy eye drone model";
+        gSharedResourcePreloadLabel = "Enemy ship models";
+        modelManager->LoadModel(kEnemyFormationModelPath);
+        modelManager->LoadModel(kEnemySwoopModelPath);
+        modelManager->LoadModel(kEnemyShooterModelPath);
+        modelManager->LoadModel(kEnemyHeavyModelPath);
         modelManager->LoadModel(kFreeEnemyModelPath);
+        TextureManager::GetInstance()->LoadTexture(kEnemyFormationTexturePath);
+        TextureManager::GetInstance()->LoadTexture(kEnemySwoopTexturePath);
+        TextureManager::GetInstance()->LoadTexture(kEnemyShooterTexturePath);
+        TextureManager::GetInstance()->LoadTexture(kEnemyHeavyTexturePath);
+        TextureManager::GetInstance()->LoadTexture(kBossTexturePath);
+        break;
+    case 7:
+        gSharedResourcePreloadLabel = "City road model";
+        modelManager->LoadModel(kCityStreet4LaneModelPath);
+        break;
+    case 8:
+        gSharedResourcePreloadLabel = "City street detail models";
+        modelManager->LoadModel(kCityManholeCoverModelPath);
+        modelManager->LoadModel(kCityDrainModelPath);
+        break;
+    case 9:
+        gSharedResourcePreloadLabel = "City building small model";
+        modelManager->LoadModel(kCityBuildingSmallModelPath);
+        break;
+    case 10:
+        gSharedResourcePreloadLabel = "City building medium model";
+        modelManager->LoadModel(kCityBuildingMediumModelPath);
+        break;
+    case 11:
+        gSharedResourcePreloadLabel = "City building large model";
+        modelManager->LoadModel(kCityBuildingLargeModelPath);
+        break;
+    case 12:
+        gSharedResourcePreloadLabel = "Boss spaceship model";
+        modelManager->LoadModel(kBossModelPath);
         break;
     default:
         gSharedResourcesPreloaded = true;
@@ -429,6 +497,8 @@ void GameRuntime::Initialize()
     isExitRequested_ = false;
     isGameClear_ = false;
     isGameOver_ = false;
+    bossSpawned_ = false;
+    bossDefeated_ = false;
     showSkybox_ = true;
     currentWaveIndex_ = 0;
     spawnedEnemyCountInWave_ = 0;
@@ -485,6 +555,14 @@ void GameRuntime::Initialize()
     if (!enemyModel_) {
         enemyModel_ = ModelManager::GetInstance()->FindModel("game_enemy");
     }
+    enemyFormationModel_ = ModelManager::GetInstance()->FindModel(kEnemyFormationModelPath);
+    enemySwoopModel_ = ModelManager::GetInstance()->FindModel(kEnemySwoopModelPath);
+    enemyShooterModel_ = ModelManager::GetInstance()->FindModel(kEnemyShooterModelPath);
+    enemyHeavyModel_ = ModelManager::GetInstance()->FindModel(kEnemyHeavyModelPath);
+    bossModel_ = ModelManager::GetInstance()->FindModel(kBossModelPath);
+    if (!bossModel_) {
+        bossModel_ = enemyModel_;
+    }
     effectGlowCoreModel_ = ModelManager::GetInstance()->FindModel("effect_glow_core");
     effectGlowRingModel_ = ModelManager::GetInstance()->FindModel("effect_glow_ring");
     effectSparkStarModel_ = ModelManager::GetInstance()->FindModel("effect_spark_star");
@@ -492,16 +570,21 @@ void GameRuntime::Initialize()
     effectBulletTrailModel_ = ModelManager::GetInstance()->FindModel("effect_bullet_trail");
     effectPlayerBulletCoreModel_ = ModelManager::GetInstance()->FindModel("effect_player_bullet_core");
     effectPlayerBulletTrailModel_ = ModelManager::GetInstance()->FindModel("effect_player_bullet_trail");
+    effectPlayerChargeCoreModel_ = ModelManager::GetInstance()->FindModel("effect_player_charge_core");
+    effectPlayerChargeTrailModel_ = ModelManager::GetInstance()->FindModel("effect_player_charge_trail");
     effectEnemyBulletCoreModel_ = ModelManager::GetInstance()->FindModel("effect_enemy_bullet_core");
     effectEnemyBulletTailModel_ = ModelManager::GetInstance()->FindModel("effect_enemy_bullet_tail");
     effectImpactBurstModel_ = ModelManager::GetInstance()->FindModel("effect_impact_burst");
     effectMagicShardModel_ = ModelManager::GetInstance()->FindModel("effect_magic_shard");
+    effectExplosionFireballModel_ = ModelManager::GetInstance()->FindModel("effect_explosion_fireball");
+    effectExplosionSmokeModel_ = ModelManager::GetInstance()->FindModel("effect_explosion_smoke");
+    effectExplosionSparksModel_ = ModelManager::GetInstance()->FindModel("effect_explosion_sparks");
 
     camera_ = std::make_unique<Camera>();
     camera_->SetRotate({ 0.06f, 0.0f, 0.0f });
-    camera_->SetTranslate({ 0.0f, 2.65f, -19.5f });
-    camera_->SetFovY(0.620f);
-    camera_->SetFarClip(240.0f);
+    camera_->SetTranslate({ 0.0f, 2.65f, -kGameplayCameraInitialDistance });
+    camera_->SetFovY(kGameplayCameraBaseFovY);
+    camera_->SetFarClip(520.0f);
     camera_->Update();
     object3dCommon_->SetDefaultCamera(camera_.get());
 
@@ -515,16 +598,16 @@ void GameRuntime::Initialize()
     previousPlayerTranslate_ = player_->GetTranslate();
     const Math::Vector3 initialPlayerTranslate = player_->GetTranslate();
     cameraTranslate_ = {
-        initialPlayerTranslate.x * 0.22f,
-        2.70f + initialPlayerTranslate.y * 0.12f,
-        railDistance_ - 19.8f,
+        initialPlayerTranslate.x * 0.10f,
+        2.70f + initialPlayerTranslate.y * 0.05f,
+        railDistance_ - kGameplayCameraInitialDistance,
     };
     cameraRotate_ = {
         0.065f + initialPlayerTranslate.y * 0.003f,
         -initialPlayerTranslate.x * 0.004f,
         0.0f,
     };
-    cameraFovY_ = 0.620f;
+    cameraFovY_ = kGameplayCameraBaseFovY;
     camera_->SetTranslate(cameraTranslate_);
     camera_->SetRotate(cameraRotate_);
     camera_->SetFovY(cameraFovY_);
@@ -572,6 +655,11 @@ void GameRuntime::Finalize()
     playerModel_ = nullptr;
     bulletModel_ = nullptr;
     enemyModel_ = nullptr;
+    enemyFormationModel_ = nullptr;
+    enemySwoopModel_ = nullptr;
+    enemyShooterModel_ = nullptr;
+    enemyHeavyModel_ = nullptr;
+    bossModel_ = nullptr;
     effectGlowCoreModel_ = nullptr;
     effectGlowRingModel_ = nullptr;
     effectSparkStarModel_ = nullptr;
@@ -579,10 +667,15 @@ void GameRuntime::Finalize()
     effectBulletTrailModel_ = nullptr;
     effectPlayerBulletCoreModel_ = nullptr;
     effectPlayerBulletTrailModel_ = nullptr;
+    effectPlayerChargeCoreModel_ = nullptr;
+    effectPlayerChargeTrailModel_ = nullptr;
     effectEnemyBulletCoreModel_ = nullptr;
     effectEnemyBulletTailModel_ = nullptr;
     effectImpactBurstModel_ = nullptr;
     effectMagicShardModel_ = nullptr;
+    effectExplosionFireballModel_ = nullptr;
+    effectExplosionSmokeModel_ = nullptr;
+    effectExplosionSparksModel_ = nullptr;
 
 }
 
@@ -656,8 +749,8 @@ void GameRuntime::UpdateStageDirector()
 
     stageSectionName_ = activeSegment->name;
     currentWaveIndex_ =
-        railDistance_ < 20.0f ? 0 :
-        railDistance_ < 54.0f ? 1 :
+        railDistance_ < 52.0f ? 0 :
+        railDistance_ < 124.0f ? 1 :
         2;
     targetRailSpeed_ = activeSegment->targetSpeed;
     stageCameraYawBias_ =
@@ -1211,13 +1304,13 @@ void GameRuntime::InitializeRailScenery()
                 0.04f);
         };
 
-    constexpr float kCityLoopLength = 162.0f;
-    constexpr float kRoadY = -2.075f;
-    constexpr float kSurfaceDetailY = -2.21f;
+    constexpr float kCityLoopLength = 324.0f;
+    constexpr float kRoadY = -3.05f;
+    constexpr float kSurfaceDetailY = kRoadY - 0.135f;
     constexpr float kBuildingY = kRoadY - 0.15f;
     constexpr float kHalfPi = 1.57079632679f;
 
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 18; ++i) {
         const float segmentZ = 18.0f * static_cast<float>(i);
         addScenery(
             kCityStreet4LaneModelPath,
@@ -1299,7 +1392,10 @@ void GameRuntime::InitializeRailScenery()
             { 0.98f, 0.96f, 0.93f, 1.0f } },
     };
 
-    for (const CityBuildingPlacement& building : cityBuildings) {
+    constexpr size_t kCityBuildingCount =
+        sizeof(cityBuildings) / sizeof(cityBuildings[0]);
+    for (size_t index = 0; index < kCityBuildingCount; ++index) {
+        const CityBuildingPlacement& building = cityBuildings[index];
         addSceneryStyled(
             building.modelPath,
             building.anchor,
@@ -1310,9 +1406,27 @@ void GameRuntime::InitializeRailScenery()
             building.color,
             2,
             0.06f);
+        const bool keepFarPair = index % 4 == 0 || index % 4 == 1;
+        if (!keepFarPair) {
+            continue;
+        }
+        Math::Vector3 farAnchor = building.anchor;
+        farAnchor.z += 162.0f;
+        if (farAnchor.z <= kSceneryFarLocalZ) {
+            addSceneryStyled(
+                building.modelPath,
+                farAnchor,
+                building.scale,
+                building.rotate,
+                kCityLoopLength,
+                0.0f,
+                building.color,
+                2,
+                0.06f);
+        }
     }
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 7; ++i) {
         const float detailZ = 18.0f + 30.0f * static_cast<float>(i);
         addScenery(
             kCityManholeCoverModelPath,
@@ -1504,7 +1618,7 @@ bool GameRuntime::LoadSceneObjects(const char* path)
     if (settings.hasCamera && camera_) {
         cameraTranslate_ = settings.cameraTranslate;
         cameraRotate_ = settings.cameraRotate;
-        cameraFovY_ = 0.620f;
+        cameraFovY_ = kGameplayCameraBaseFovY;
         camera_->SetTranslate(settings.cameraTranslate);
         camera_->SetRotate(settings.cameraRotate);
         camera_->SetFovY(cameraFovY_);
@@ -1635,20 +1749,20 @@ std::unique_ptr<Bullet> GameRuntime::CreatePooledPlayerBullet()
         bulletModel_,
         offscreenPosition,
         { 0.0f, 0.0f, playerBulletSpeed_ },
-        { 1.0f, 0.98f, 0.52f, 1.0f },
+        { 0.70f, 1.0f, 1.0f, 0.88f },
         1,
-        { 0.30f, 0.30f, 0.82f },
-        0.36f,
+        { 0.36f, 0.36f, 0.88f },
+        0.40f,
         1,
-        effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.98f, 0.54f, 1.0f },
-        { 0.38f, 1.24f, 1.0f },
-        effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : effectBulletTrailModel_,
-        { 1.0f, 0.92f, 0.36f, 1.0f },
-        { 0.34f, 3.35f, 1.0f },
+        effectBulletGlowModel_ ? effectBulletGlowModel_ : effectPlayerBulletCoreModel_,
+        { 0.66f, 1.0f, 1.0f, 0.88f },
+        { 0.72f, 1.75f, 1.0f },
+        nullptr,
+        { 0.54f, 0.96f, 1.0f, 0.64f },
+        { 0.42f, 3.50f, 1.0f },
         1.78f,
-        effectSparkStarModel_,
-        { 1.0f, 0.98f, 0.54f, 1.0f },
+        nullptr,
+        { 0.70f, 1.0f, 1.0f, 0.0f },
         { 0.075f, 0.075f, 1.0f });
     bullet->Kill();
     return bullet;
@@ -1664,20 +1778,20 @@ std::unique_ptr<Bullet> GameRuntime::CreatePooledEnemyBullet()
         bulletModel_,
         offscreenPosition,
         { 0.0f, 0.0f, -enemyBulletSpeed_ },
-        { 1.0f, 0.08f, 0.42f, 1.0f },
+        { 1.0f, 0.18f, 0.42f, 1.0f },
         1,
-        { 0.54f, 0.54f, 0.76f },
-        0.62f,
+        { 0.62f, 0.62f, 0.78f },
+        0.66f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.08f, 0.48f, 1.0f },
-        { 1.12f, 1.12f, 1.0f },
-        effectEnemyBulletTailModel_ ? effectEnemyBulletTailModel_ : effectBulletTrailModel_,
-        { 1.0f, 0.06f, 0.46f, 1.0f },
-        { 0.58f, 4.40f, 1.0f },
-        2.55f,
-        effectSparkStarModel_,
-        { 1.0f, 0.30f, 0.70f, 1.0f },
+        { 1.0f, 0.18f, 0.54f, 0.95f },
+        { 1.50f, 1.50f, 1.0f },
+        nullptr,
+        { 1.0f, 0.10f, 0.44f, 0.72f },
+        { 0.62f, 4.00f, 1.0f },
+        2.25f,
+        nullptr,
+        { 1.0f, 0.30f, 0.70f, 0.0f },
         { 0.14f, 0.14f, 1.0f });
     bullet->Kill();
     return bullet;
@@ -1781,7 +1895,7 @@ void GameRuntime::FirePlayerBullet()
     }
 
     Math::Vector3 spawnPosition = player_->GetTranslate();
-    spawnPosition.z += 1.2f;
+    spawnPosition.z += 1.65f;
     const Enemy* aimedTarget = (isReticleOnTarget_ && lockedEnemy_ && !lockedEnemy_->IsDead()) ? lockedEnemy_ : nullptr;
     Math::Vector3 aimDirection = CalculateAimDirection(spawnPosition);
     if (aimedTarget) {
@@ -1796,18 +1910,18 @@ void GameRuntime::FirePlayerBullet()
         }
     }
     Math::Vector3 velocity = aimDirection * playerBulletSpeed_;
-    Math::Vector4 color{ 1.0f, 0.98f, 0.52f, 1.0f };
-    Math::Vector3 scale{ 0.30f, 0.30f, 0.82f };
-    float collisionRadius = 0.36f;
+    Math::Vector4 color{ 0.70f, 1.0f, 1.0f, 0.88f };
+    Math::Vector3 scale{ 0.36f, 0.36f, 0.88f };
+    float collisionRadius = 0.40f;
     int lifeTimer = 180;
     int hitLimit = 1;
     const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
 
     if (isCharged) {
         velocity = aimDirection * lockBulletSpeed_ * chargedBulletSpeedMultiplier_;
-        color = { 0.72f, 1.0f, 0.96f, 1.0f };
-        scale = { 0.48f, 0.48f, 1.30f };
-        collisionRadius = 0.80f;
+        color = { 0.70f, 1.0f, 0.98f, 0.96f };
+        scale = { 0.62f, 0.62f, 1.48f };
+        collisionRadius = 0.94f;
         lifeTimer = 260;
         hitLimit = 1;
     }
@@ -1817,6 +1931,8 @@ void GameRuntime::FirePlayerBullet()
         ++playerBulletPoolMisses_;
         return;
     }
+    Model* coreModel =
+        effectBulletGlowModel_ ? effectBulletGlowModel_ : effectPlayerBulletCoreModel_;
     bullet->Initialize(
         object3dCommon_.get(),
         bulletModel_,
@@ -1827,31 +1943,31 @@ void GameRuntime::FirePlayerBullet()
         scale,
         collisionRadius,
         hitLimit,
-        effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : effectBulletGlowModel_,
+        coreModel,
         isCharged ?
-            Math::Vector4{ 0.78f, 1.0f, 0.98f, 1.0f } :
-            Math::Vector4{ 1.0f, 0.98f, 0.54f, 1.0f },
+            Math::Vector4{ 0.70f, 1.0f, 0.98f, 1.0f } :
+            Math::Vector4{ 0.66f, 1.0f, 1.0f, 0.88f },
         isCharged ?
-            Math::Vector3{ 0.56f, 1.72f, 1.0f } :
-            Math::Vector3{ 0.34f, 1.08f, 1.0f },
-        effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : effectBulletTrailModel_,
+            Math::Vector3{ 1.36f, 2.95f, 1.0f } :
+            Math::Vector3{ 0.72f, 1.75f, 1.0f },
+        nullptr,
         isCharged ?
-            Math::Vector4{ 0.70f, 1.0f, 0.96f, 1.0f } :
-            Math::Vector4{ 1.0f, 0.96f, 0.44f, 1.0f },
+            Math::Vector4{ 0.56f, 1.0f, 0.96f, 0.88f } :
+            Math::Vector4{ 0.54f, 0.96f, 1.0f, 0.64f },
         isCharged ?
-            Math::Vector3{ 0.42f, 5.10f, 1.0f } :
-            Math::Vector3{ 0.38f, 4.10f, 1.0f },
-        isCharged ? 3.45f : 2.18f,
-        effectSparkStarModel_,
+            Math::Vector3{ 0.92f, 7.80f, 1.0f } :
+            Math::Vector3{ 0.42f, 3.50f, 1.0f },
+        isCharged ? 4.50f : 1.78f,
+        isCharged ? effectSparkStarModel_ : nullptr,
         isCharged ?
-            Math::Vector4{ 1.0f, 1.0f, 0.84f, 1.0f } :
-            Math::Vector4{ 1.0f, 1.0f, 0.62f, 1.0f },
+            Math::Vector4{ 0.84f, 1.0f, 0.98f, 0.72f } :
+            Math::Vector4{ 0.70f, 1.0f, 1.0f, 0.0f },
         isCharged ?
-            Math::Vector3{ 0.13f, 0.13f, 1.0f } :
+            Math::Vector3{ 0.17f, 0.17f, 1.0f } :
             Math::Vector3{ 0.092f, 0.092f, 1.0f });
     const Enemy* homingTarget = aimedTarget;
     if (homingTarget) {
-        bullet->EnableHoming(isCharged ? 0.18f : 0.11f);
+        bullet->EnableHoming(isCharged ? 0.18f : 0.08f);
         bullet->SetHomingTarget(homingTarget->GetAimPosition());
         homingBulletTargets_[bullet.get()] = homingTarget;
     }
@@ -1907,20 +2023,20 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         bulletModel_,
         spawnPosition,
         bulletDirection * enemyBulletSpeed_,
-        { 1.0f, 0.08f, 0.42f, 1.0f },
+        { 1.0f, 0.18f, 0.42f, 1.0f },
         240,
-        { 0.54f, 0.54f, 0.76f },
-        0.62f,
+        { 0.62f, 0.62f, 0.78f },
+        0.66f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.08f, 0.48f, 1.0f },
-        { 1.12f, 1.12f, 1.0f },
-        effectEnemyBulletTailModel_ ? effectEnemyBulletTailModel_ : effectBulletTrailModel_,
-        { 1.0f, 0.06f, 0.46f, 1.0f },
-        { 0.58f, 4.40f, 1.0f },
-        2.55f,
-        effectSparkStarModel_,
-        { 1.0f, 0.30f, 0.70f, 1.0f },
+        { 1.0f, 0.18f, 0.54f, 0.95f },
+        { 1.50f, 1.50f, 1.0f },
+        nullptr,
+        { 1.0f, 0.10f, 0.44f, 0.72f },
+        { 0.62f, 4.00f, 1.0f },
+        2.25f,
+        nullptr,
+        { 1.0f, 0.30f, 0.70f, 0.0f },
         { 0.14f, 0.14f, 1.0f });
     AddEnemyMuzzleFlashEffect(spawnPosition);
     enemyBullets_.push_back(std::move(bullet));
@@ -1930,7 +2046,7 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
 
 void GameRuntime::SpawnEnemy()
 {
-    if (!enemyModel_ || currentWaveIndex_ >= kWaveCount) {
+    if (!object3dCommon_ || currentWaveIndex_ >= kWaveCount) {
         return;
     }
 
@@ -1965,13 +2081,20 @@ void GameRuntime::SpawnEnemy()
         ++spawnSequenceIndex_;
         ++spawnedEnemyCountInWave_;
 
+        Model* model = GetEnemyModelForBehavior(pattern.behavior);
+        if (!model) {
+            continue;
+        }
         auto enemy = std::make_unique<Enemy>();
         enemy->Initialize(
             object3dCommon_.get(),
-            enemyModel_,
+            model,
             { pattern.x, pattern.y, railDistance_ + wave.spawnLeadDistance },
             pattern.behavior,
-            pattern.entryStyle);
+            pattern.entryStyle,
+            0,
+            1.0f,
+            GetEnemyTextureOverrideForBehavior(pattern.behavior));
         enemies_.push_back(std::move(enemy));
     }
 }
@@ -1981,22 +2104,96 @@ void GameRuntime::SpawnStageEnemy(
     float y,
     float leadDistance,
     Enemy::Behavior behavior,
-    Enemy::EntryStyle entryStyle)
+    Enemy::EntryStyle entryStyle,
+    int maxHpOverride,
+    float scaleMultiplier)
 {
-    if (!enemyModel_ || !object3dCommon_) {
+    if (!object3dCommon_) {
+        return;
+    }
+
+    Model* model = GetEnemyModelForBehavior(behavior);
+    const char* textureOverride = GetEnemyTextureOverrideForBehavior(behavior);
+    if (behavior == Enemy::Behavior::StrafeShooter &&
+        maxHpOverride >= 7 &&
+        enemyHeavyModel_) {
+        model = enemyHeavyModel_;
+        textureOverride = kEnemyHeavyTexturePath;
+    }
+    if (!model) {
+        return;
+    }
+    auto enemy = std::make_unique<Enemy>();
+    enemy->Initialize(
+        object3dCommon_.get(),
+        model,
+        { x, y, railDistance_ + leadDistance },
+        behavior,
+        entryStyle,
+        maxHpOverride,
+        scaleMultiplier,
+        textureOverride);
+    enemies_.push_back(std::move(enemy));
+    ++spawnSequenceIndex_;
+    ++spawnedEnemyCountInWave_;
+}
+
+Model* GameRuntime::GetEnemyModelForBehavior(Enemy::Behavior behavior) const
+{
+    switch (behavior) {
+    case Enemy::Behavior::Swoop:
+        return enemySwoopModel_ ? enemySwoopModel_ : enemyModel_;
+    case Enemy::Behavior::StrafeShooter:
+        return enemyShooterModel_ ? enemyShooterModel_ : enemyModel_;
+    case Enemy::Behavior::Formation:
+    default:
+        return enemyFormationModel_ ? enemyFormationModel_ : enemyModel_;
+    }
+}
+
+const char* GameRuntime::GetEnemyTextureOverrideForBehavior(Enemy::Behavior behavior) const
+{
+    switch (behavior) {
+    case Enemy::Behavior::Swoop:
+        return enemySwoopModel_ ? kEnemySwoopTexturePath : nullptr;
+    case Enemy::Behavior::StrafeShooter:
+        return enemyShooterModel_ ? kEnemyShooterTexturePath : nullptr;
+    case Enemy::Behavior::Formation:
+    default:
+        return enemyFormationModel_ ? kEnemyFormationTexturePath : nullptr;
+    }
+}
+
+void GameRuntime::SpawnBossEnemy()
+{
+    if (bossSpawned_ ||
+        bossDefeated_ ||
+        isGameOver_ ||
+        isGameClear_ ||
+        railDistance_ < kBossSpawnDistance ||
+        !object3dCommon_) {
+        return;
+    }
+
+    Model* model = bossModel_ ? bossModel_ : enemyModel_;
+    if (!model) {
         return;
     }
 
     auto enemy = std::make_unique<Enemy>();
     enemy->Initialize(
         object3dCommon_.get(),
-        enemyModel_,
-        { x, y, railDistance_ + leadDistance },
-        behavior,
-        entryStyle);
+        model,
+        { 0.0f, 2.05f, railDistance_ + 98.0f },
+        Enemy::Behavior::Boss,
+        Enemy::EntryStyle::Direct,
+        kBossMaxHp,
+        1.0f,
+        kBossTexturePath);
     enemies_.push_back(std::move(enemy));
-    ++spawnSequenceIndex_;
-    ++spawnedEnemyCountInWave_;
+    bossSpawned_ = true;
+    stageCombatBeatName_ = "Boss / Imperial";
+    AddCameraShake(0.12f, 24);
 }
 
 void GameRuntime::UpdateStageEnemyEvents()
@@ -2021,7 +2218,9 @@ void GameRuntime::UpdateStageEnemyEvents()
             event.y,
             event.leadDistance,
             event.behavior,
-            event.entryStyle);
+            event.entryStyle,
+            event.maxHpOverride,
+            event.scaleMultiplier);
         AddCameraShake(event.shakePower, event.shakeDuration);
     }
 }
@@ -2029,6 +2228,7 @@ void GameRuntime::UpdateStageEnemyEvents()
 void GameRuntime::UpdateEnemyWave()
 {
     UpdateStageEnemyEvents();
+    SpawnBossEnemy();
 }
 
 void GameRuntime::AdvanceEnemyWaveIfCleared()
@@ -2037,9 +2237,15 @@ void GameRuntime::AdvanceEnemyWaveIfCleared()
         return;
     }
 
-    if (spawnedEnemyCountInWave_ < GetTotalEnemyTargetCount() ||
-        railDistance_ < kStageClearDistance ||
-        !enemies_.empty()) {
+    if (railDistance_ < kStageClearDistance) {
+        return;
+    }
+
+    if (!bossSpawned_ || !bossDefeated_) {
+        return;
+    }
+
+    if (!enemies_.empty()) {
         return;
     }
 
@@ -2192,28 +2398,64 @@ void GameRuntime::AddEnemyHitEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 34;
-    effect.strength = strength * 1.02f;
+    const bool isHeavyExplosion = strength >= 1.7f;
+    effect.duration = isHeavyExplosion ? 78 : 58;
+    effect.strength = strength * (isHeavyExplosion ? 1.36f : 1.16f);
     effect.scoreValue = 100;
     effect.type = HitEffectType::EnemyDestroy;
 
-    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.98f, 0.70f, 1.0f }, 0.92f, 0.72f, 0.46f, 0.0f, 1.0f, 1.0f, {});
-    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
-        { 0.62f, 0.96f, 1.0f, 0.72f }, 0.62f, 0.46f, -1.25f, 0.04f, 1.0f, 1.0f, {});
-    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.78f, 0.58f, 1.0f, 0.96f }, 0.46f, 0.42f, 2.70f, 0.02f, 0.54f, 1.28f, { -0.118f, 0.080f, 0.016f });
-    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.58f, 0.96f, 1.0f, 0.92f }, 0.42f, 0.40f, -2.40f, 0.03f, 0.52f, 1.16f, { 0.124f, 0.070f, 0.014f });
-    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.82f, 0.34f, 0.88f }, 0.38f, 0.38f, 1.90f, 0.06f, 0.50f, 1.02f, { -0.082f, -0.104f, 0.010f });
-    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.98f, 0.94f, 1.0f, 0.84f }, 0.36f, 0.36f, -2.05f, 0.08f, 0.48f, 0.96f, { 0.090f, -0.098f, 0.010f });
-    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.98f, 0.72f, 1.0f }, 0.20f, 0.58f, -1.60f, 0.00f, 1.10f, 0.64f, { -0.104f, 0.084f, 0.010f });
-    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.76f, 0.98f, 1.0f, 0.98f }, 0.19f, 0.54f, 1.85f, 0.02f, 1.00f, 0.60f, { 0.112f, 0.074f, 0.010f });
-    hitEffects_.push_back(std::move(effect));
+    Model* fireballModel = effectExplosionFireballModel_ ? effectExplosionFireballModel_ : effectImpactBurstModel_;
+    Model* smokeModel = effectExplosionSmokeModel_ ? effectExplosionSmokeModel_ : effectGlowCoreModel_;
+    Model* sparksModel = effectExplosionSparksModel_ ? effectExplosionSparksModel_ : effectSparkStarModel_;
+    Model* debrisModel = effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_;
+
+    AddHitEffectVisual(effect, smokeModel, worldPosition,
+        { 0.42f, 0.39f, 0.34f, 0.72f }, 1.18f, 2.15f, 0.18f, 0.06f, 1.12f, 0.92f,
+        { -0.014f, 0.038f, -0.004f }, false);
+    AddHitEffectVisual(effect, smokeModel, worldPosition,
+        { 0.32f, 0.30f, 0.27f, 0.62f }, 1.04f, 2.42f, -0.14f, 0.12f, 0.86f, 1.05f,
+        { 0.038f, 0.028f, -0.006f }, false);
+    AddHitEffectVisual(effect, smokeModel, worldPosition,
+        { 0.46f, 0.43f, 0.38f, 0.48f }, 0.82f, 2.70f, 0.10f, 0.20f, 1.22f, 0.78f,
+        { -0.052f, 0.012f, -0.002f }, false);
+    AddHitEffectVisual(effect, smokeModel, worldPosition,
+        { 0.24f, 0.23f, 0.22f, 0.50f }, 0.70f, 2.32f, -0.22f, 0.24f, 0.90f, 0.82f,
+        { 0.060f, -0.002f, -0.002f }, false);
+
+    AddHitEffectVisual(effect, fireballModel, worldPosition,
+        { 1.0f, 0.72f, 0.34f, 1.0f }, 1.24f, 0.88f, 0.34f, 0.00f, 1.08f, 0.92f, {});
+    AddHitEffectVisual(effect, fireballModel, worldPosition,
+        { 1.0f, 0.36f, 0.12f, 0.82f }, 0.92f, 1.18f, -0.44f, 0.04f, 0.88f, 1.06f,
+        { 0.018f, 0.010f, 0.0f });
+    AddHitEffectVisual(effect, effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_, worldPosition,
+        { 1.0f, 0.58f, 0.18f, 0.42f }, 0.92f, 2.80f, 0.0f, 0.0f, 1.14f, 0.72f, {});
+    AddHitEffectVisual(effect, sparksModel, worldPosition,
+        { 1.0f, 0.82f, 0.38f, 1.0f }, 0.74f, 0.86f, 0.32f, 0.00f, 1.0f, 1.0f, {});
+
+    AddHitEffectVisual(effect, debrisModel, worldPosition,
+        { 1.0f, 0.72f, 0.26f, 1.0f }, 0.40f, 0.76f, 2.40f, 0.00f, 0.38f, 1.44f,
+        { -0.185f, 0.108f, 0.016f });
+    AddHitEffectVisual(effect, debrisModel, worldPosition,
+        { 1.0f, 0.55f, 0.18f, 0.92f }, 0.38f, 0.72f, -2.15f, 0.02f, 0.40f, 1.28f,
+        { 0.198f, 0.076f, 0.014f });
+    AddHitEffectVisual(effect, debrisModel, worldPosition,
+        { 1.0f, 0.66f, 0.24f, 0.86f }, 0.34f, 0.68f, 1.74f, 0.04f, 0.36f, 1.18f,
+        { -0.126f, -0.148f, 0.010f });
+    AddHitEffectVisual(effect, debrisModel, worldPosition,
+        { 1.0f, 0.84f, 0.42f, 0.82f }, 0.32f, 0.64f, -1.92f, 0.05f, 0.38f, 1.08f,
+        { 0.144f, -0.132f, 0.010f });
+    AddHitEffectVisual(effect, sparksModel, worldPosition,
+        { 1.0f, 0.94f, 0.58f, 0.88f }, 0.38f, 0.95f, 1.15f, 0.02f, 1.0f, 1.0f,
+        { -0.104f, 0.154f, 0.006f });
+    AddHitEffectVisual(effect, sparksModel, worldPosition,
+        { 1.0f, 0.62f, 0.20f, 0.78f }, 0.34f, 0.90f, -1.30f, 0.04f, 1.0f, 1.0f,
+        { 0.118f, 0.132f, 0.006f });
+    AddHitEffectVisual(effect, sparksModel, worldPosition,
+        { 1.0f, 0.42f, 0.14f, 0.64f }, 0.28f, 0.82f, 0.92f, 0.08f, 1.0f, 1.0f,
+        { 0.026f, -0.172f, 0.004f });
+    if (effect.visualCount > 0) {
+        hitEffects_.push_back(std::move(effect));
+    }
 }
 
 void GameRuntime::AddEnemyImpactEffect(
@@ -2222,20 +2464,30 @@ void GameRuntime::AddEnemyImpactEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 18;
-    effect.strength = strength * 1.08f;
+    effect.duration = 24;
+    effect.strength = strength * 1.18f;
     effect.type = HitEffectType::EnemyImpact;
 
-    AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.98f, 0.70f, 1.0f }, 0.52f, 0.80f, 0.35f, 0.0f, 1.12f, 0.72f, {});
-    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 0.82f, 1.0f, 0.92f, 0.94f }, 0.22f, 0.62f, -1.85f, 0.02f, 0.52f, 1.32f, { -0.052f, 0.034f, 0.006f });
-    AddHitEffectVisual(effect, effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.82f, 0.34f, 0.90f }, 0.20f, 0.58f, 1.95f, 0.04f, 0.50f, 1.18f, { 0.056f, -0.038f, 0.006f });
-    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 0.72f, 0.96f, 1.0f, 1.0f }, 0.20f, 0.66f, -1.30f, 0.0f, 1.42f, 0.48f, { -0.052f, 0.040f, 0.0f });
+    Model* fireballModel = effectExplosionFireballModel_ ? effectExplosionFireballModel_ : effectImpactBurstModel_;
+    Model* sparksModel = effectExplosionSparksModel_ ? effectExplosionSparksModel_ : effectSparkStarModel_;
+    Model* debrisModel = effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_;
 
-    hitEffects_.push_back(std::move(effect));
+    AddHitEffectVisual(effect, fireballModel, worldPosition,
+        { 1.0f, 0.54f, 0.18f, 0.88f }, 0.54f, 0.52f, 0.24f, 0.0f, 1.10f, 0.82f, {});
+    AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
+        { 1.0f, 0.74f, 0.34f, 0.54f }, 0.36f, 0.50f, -0.18f, 0.0f, 1.42f, 0.54f, {});
+    AddHitEffectVisual(effect, sparksModel, worldPosition,
+        { 1.0f, 0.76f, 0.32f, 0.88f }, 0.38f, 0.72f, 0.40f, 0.01f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, debrisModel, worldPosition,
+        { 1.0f, 0.88f, 0.46f, 0.95f }, 0.26f, 0.68f, -1.85f, 0.01f, 0.42f, 1.34f,
+        { -0.082f, 0.052f, 0.004f });
+    AddHitEffectVisual(effect, debrisModel, worldPosition,
+        { 1.0f, 0.48f, 0.18f, 0.86f }, 0.24f, 0.62f, 1.95f, 0.03f, 0.42f, 1.16f,
+        { 0.092f, -0.058f, 0.004f });
+
+    if (effect.visualCount > 0) {
+        hitEffects_.push_back(std::move(effect));
+    }
 }
 
 void GameRuntime::AddEnemyMuzzleFlashEffect(const Math::Vector3& worldPosition)
@@ -2349,7 +2601,8 @@ void GameRuntime::AddHitEffectVisual(
     float popDelay,
     float aspectX,
     float aspectY,
-    const Math::Vector3& velocity)
+    const Math::Vector3& velocity,
+    bool additive)
 {
     if (!object3dCommon_ || !model) {
         return;
@@ -2384,6 +2637,7 @@ void GameRuntime::AddHitEffectVisual(
     visual.aspectX = aspectX;
     visual.aspectY = aspectY;
     visual.velocity = velocity;
+    visual.additive = additive;
     ++effect.visualCount;
 }
 
@@ -2483,42 +2737,42 @@ void GameRuntime::InitializePlayerFlightAura()
     setupAura(
         0,
         softGlowModel,
-        { 0.0f, 0.06f, -0.18f },
+        { 0.0f, 0.11f, -0.28f },
         { 0.78f, 0.96f, 1.0f, 0.30f },
-        0.95f,
-        1.55f,
-        0.68f,
+        1.42f,
+        1.64f,
+        0.78f,
         0.0f,
         0.0f,
         0.052f);
     setupAura(
         1,
         softGlowModel,
-        { -0.54f, -0.02f, -0.20f },
+        { -0.88f, -0.02f, -0.28f },
         { 0.46f, 0.86f, 1.0f, 0.22f },
-        0.80f,
-        1.90f,
-        0.34f,
+        1.24f,
+        1.96f,
+        0.42f,
         1.8f,
         -0.18f,
         0.061f);
     setupAura(
         2,
         softGlowModel,
-        { 0.54f, -0.02f, -0.20f },
+        { 0.88f, -0.02f, -0.28f },
         { 0.46f, 0.86f, 1.0f, 0.22f },
-        0.80f,
-        1.90f,
-        0.34f,
+        1.24f,
+        1.96f,
+        0.42f,
         3.6f,
         0.18f,
         0.061f);
     setupAura(
         3,
         sparkleModel,
-        { -0.27f, 0.20f, -0.12f },
+        { -0.50f, 0.34f, -0.18f },
         { 0.92f, 1.0f, 1.0f, 0.26f },
-        0.22f,
+        0.40f,
         1.0f,
         1.0f,
         5.1f,
@@ -2527,9 +2781,9 @@ void GameRuntime::InitializePlayerFlightAura()
     setupAura(
         4,
         sparkleModel,
-        { 0.27f, 0.20f, -0.12f },
+        { 0.50f, 0.34f, -0.18f },
         { 0.92f, 1.0f, 1.0f, 0.26f },
-        0.22f,
+        0.40f,
         1.0f,
         1.0f,
         6.4f,
@@ -2713,8 +2967,8 @@ void GameRuntime::DrawPlayerDodgeAfterimages()
         Math::Vector3 rotate = camera_->GetRotate();
         rotate.z += direction * (0.10f + 0.08f * rate);
 
-        const float length = 0.80f + 0.42f * rate;
-        const float thickness = 0.18f + 0.04f * rate;
+        const float length = 1.48f + 0.70f * rate;
+        const float thickness = 0.32f + 0.08f * rate;
         Math::Vector4 color{
             0.42f,
             1.0f,
@@ -2776,61 +3030,67 @@ void GameRuntime::DrawHitEffectObjects()
     const DepthDrawMode previousDepthMode = object3dCommon_->GetDepthDrawMode();
 
     object3dCommon_->SetDepthDrawMode(DepthDrawMode::Overlay);
-    object3dCommon_->SetBlendMode(BlendMode::Add);
-    object3dCommon_->CommonDrawSetting();
 
-    for (const HitEffect& effect : hitEffects_) {
-        if (effect.visualCount == 0) {
-            continue;
-        }
+    auto drawVisualPass = [&](bool additivePass) {
+        object3dCommon_->SetBlendMode(additivePass ? BlendMode::Add : BlendMode::Normal);
+        object3dCommon_->CommonDrawSetting();
 
-        const float rate =
-            effect.age /
-            static_cast<float>((std::max)(effect.duration, 1));
-        for (size_t index = 0; index < effect.visualCount; ++index) {
-            const HitEffect::Visual& visual = effect.visuals[index];
-            if (!visual.object) {
+        for (const HitEffect& effect : hitEffects_) {
+            if (effect.visualCount == 0) {
                 continue;
             }
-            if (rate < visual.popDelay) {
-                continue;
+
+            const float rate =
+                effect.age /
+                static_cast<float>((std::max)(effect.duration, 1));
+            for (size_t index = 0; index < effect.visualCount; ++index) {
+                const HitEffect::Visual& visual = effect.visuals[index];
+                if (!visual.object || visual.additive != additivePass) {
+                    continue;
+                }
+                if (rate < visual.popDelay) {
+                    continue;
+                }
+                const float localRate = (std::clamp)(
+                    (rate - visual.popDelay) / (std::max)(1.0f - visual.popDelay, 0.001f),
+                    0.0f,
+                    1.0f);
+                const float fade = 1.0f - localRate;
+                const float easeOut = 1.0f - std::pow(1.0f - localRate, 3.0f);
+                const float size =
+                    (visual.baseSize + visual.baseSize * visual.growth * easeOut) *
+                    effect.strength;
+                Math::Vector4 color = visual.color;
+                const float alphaCurve =
+                    effect.type == HitEffectType::RewardCollect ? fade :
+                    effect.type == HitEffectType::PlayerDamage ? fade * fade * fade :
+                    effect.type == HitEffectType::EnemyImpact ? fade :
+                    fade * (0.78f + 0.22f * fade);
+                color.w *= alphaCurve;
+
+                Math::Vector3 rotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
+                rotate.z += localRate * visual.spin;
+                Math::Vector3 translate = effect.worldPosition;
+                translate.x += visual.velocity.x * effect.age;
+                translate.y += visual.velocity.y * effect.age;
+                translate.z += visual.velocity.z * effect.age;
+
+                visual.object->SetTranslate(translate);
+                visual.object->SetScale({
+                    size * visual.aspectX,
+                    size * visual.aspectY,
+                    1.0f
+                });
+                visual.object->SetRotate(rotate);
+                visual.object->SetColor(color);
+                visual.object->Update();
+                visual.object->Draw();
             }
-            const float localRate = (std::clamp)(
-                (rate - visual.popDelay) / (std::max)(1.0f - visual.popDelay, 0.001f),
-                0.0f,
-                1.0f);
-            const float fade = 1.0f - localRate;
-            const float easeOut = 1.0f - std::pow(1.0f - localRate, 3.0f);
-            const float size =
-                (visual.baseSize + visual.baseSize * visual.growth * easeOut) *
-                effect.strength;
-            Math::Vector4 color = visual.color;
-            const float alphaCurve =
-                effect.type == HitEffectType::RewardCollect ? fade :
-                effect.type == HitEffectType::PlayerDamage ? fade * fade * fade :
-                effect.type == HitEffectType::EnemyImpact ? fade :
-                fade * (0.78f + 0.22f * fade);
-            color.w *= alphaCurve;
-
-            Math::Vector3 rotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
-            rotate.z += localRate * visual.spin;
-            Math::Vector3 translate = effect.worldPosition;
-            translate.x += visual.velocity.x * effect.age;
-            translate.y += visual.velocity.y * effect.age;
-            translate.z += visual.velocity.z * effect.age;
-
-            visual.object->SetTranslate(translate);
-            visual.object->SetScale({
-                size * visual.aspectX,
-                size * visual.aspectY,
-                1.0f
-            });
-            visual.object->SetRotate(rotate);
-            visual.object->SetColor(color);
-            visual.object->Update();
-            visual.object->Draw();
         }
-    }
+    };
+
+    drawVisualPass(false);
+    drawVisualPass(true);
 
     object3dCommon_->SetBlendMode(previousBlendMode);
     object3dCommon_->SetDepthDrawMode(previousDepthMode);
@@ -3196,14 +3456,14 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             } };
             railSpeed_ = 0.115f;
             targetRailSpeed_ = 0.115f;
-            playerBulletSpeed_ = 0.65f;
-            lockBulletSpeed_ = 0.82f;
+            playerBulletSpeed_ = 1.28f;
+            lockBulletSpeed_ = 1.48f;
             chargedBulletSpeedMultiplier_ = 1.18f;
             enemyBulletSpeed_ = 0.40f;
             lockRadius_ = 118.0f;
-            chargeShotThreshold_ = 70;
-            normalShootCooldown_ = 8;
-            chargedShootCooldown_ = 14;
+            chargeShotThreshold_ = 88;
+            normalShootCooldown_ = 16;
+            chargedShootCooldown_ = 28;
             enemyShotInterval_ = 44;
             waveStartDelay_ = 90;
             editorStatusMessage_ = "ゲーム調整をリセットしました。";
@@ -3515,8 +3775,73 @@ void GameRuntime::DrawHud()
         IM_COL32(180, 202, 222, 205),
         enemyText.c_str());
 
+    DrawBossHud();
     DrawHitEffects();
     DrawLockOnHud();
+}
+
+void GameRuntime::DrawBossHud()
+{
+    const Enemy* boss = GetBossEnemy();
+    if (!boss || !bossSpawned_ || bossDefeated_) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 origin(hudMin.x, hudMin.y);
+    const ImVec2 drawSize(hudSize.x, hudSize.y);
+
+    const int maxHp = (std::max)(boss->GetMaxHp(), 1);
+    const int hp = std::clamp(boss->GetHp(), 0, maxHp);
+    const float hpRate = static_cast<float>(hp) / static_cast<float>(maxHp);
+    const float panelWidth = std::clamp(drawSize.x * 0.38f, 360.0f, 560.0f);
+    const ImVec2 panelMin(
+        origin.x + (drawSize.x - panelWidth) * 0.5f,
+        origin.y + 18.0f);
+    const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 54.0f);
+    const ImVec2 barMin(panelMin.x + 18.0f, panelMin.y + 31.0f);
+    const ImVec2 barMax(panelMax.x - 18.0f, panelMin.y + 43.0f);
+    const ImVec2 barFillMax(
+        barMin.x + (barMax.x - barMin.x) * std::clamp(hpRate, 0.0f, 1.0f),
+        barMax.y);
+    const std::string hpText = std::to_string(hp) + " / " + std::to_string(maxHp);
+
+    drawList->AddRectFilled(
+        ImVec2(panelMin.x + 4.0f, panelMin.y + 5.0f),
+        ImVec2(panelMax.x + 4.0f, panelMax.y + 5.0f),
+        IM_COL32(0, 0, 0, 78),
+        6.0f);
+    drawList->AddRectFilled(
+        panelMin,
+        panelMax,
+        IM_COL32(10, 8, 20, 188),
+        6.0f);
+    drawList->AddRect(
+        panelMin,
+        panelMax,
+        IM_COL32(205, 120, 255, 130),
+        6.0f);
+    drawList->AddText(
+        ImVec2(panelMin.x + 16.0f, panelMin.y + 10.0f),
+        IM_COL32(238, 222, 255, 245),
+        "BOSS  IMPERIAL");
+    drawList->AddText(
+        ImVec2(panelMax.x - 16.0f - ImGui::CalcTextSize(hpText.c_str()).x,
+               panelMin.y + 10.0f),
+        IM_COL32(255, 238, 210, 245),
+        hpText.c_str());
+    drawList->AddRectFilled(barMin, barMax, IM_COL32(18, 16, 28, 235), 4.0f);
+    drawList->AddRectFilled(
+        barMin,
+        barFillMax,
+        hpRate <= 0.35f ?
+            IM_COL32(255, 70, 92, 245) :
+            IM_COL32(255, 88, 176, 245),
+        4.0f);
+    drawList->AddRect(barMin, barMax, IM_COL32(250, 230, 255, 120), 4.0f);
 }
 
 void GameRuntime::DrawLockOnHud()
@@ -3935,6 +4260,22 @@ int GameRuntime::GetTotalEnemyTargetCount() const
     return static_cast<int>(kStageEnemyEventCount);
 }
 
+int GameRuntime::GetRequiredEnemyDefeatsForClear() const
+{
+    const int totalEnemyCount = GetTotalEnemyTargetCount();
+    return (std::max)(1, (totalEnemyCount * 7 + 9) / 10);
+}
+
+const Enemy* GameRuntime::GetBossEnemy() const
+{
+    for (const auto& enemy : enemies_) {
+        if (enemy && enemy->IsBoss() && !enemy->IsDead()) {
+            return enemy.get();
+        }
+    }
+    return nullptr;
+}
+
 void GameRuntime::CheckBulletEnemyCollisions()
 {
     for (auto& bullet : playerBullets_) {
@@ -3953,23 +4294,44 @@ void GameRuntime::CheckBulletEnemyCollisions()
                 bullet->GetTranslate(),
                 enemyAimPosition) <= radius * radius) {
                 const bool isChargedHit = bullet->GetRadius() >= 0.8f;
-                const int damage = isChargedHit ? 3 : 1;
+                const bool isBossHit = enemy->IsBoss();
+                const int damage = isChargedHit ? (isBossHit ? 4 : 3) : 1;
+                const Math::Vector3 bulletImpactPosition = bullet->GetTranslate();
+                const float centerEffectRate = isBossHit ? 0.68f : 0.42f;
+                const Math::Vector3 visibleImpactPosition{
+                    Lerp(bulletImpactPosition.x, enemyAimPosition.x, centerEffectRate),
+                    Lerp(bulletImpactPosition.y, enemyAimPosition.y, centerEffectRate),
+                    Lerp(bulletImpactPosition.z, enemyAimPosition.z, centerEffectRate)
+                };
                 AddEnemyImpactEffect(
-                    bullet->GetTranslate(),
-                    isChargedHit ? 1.16f : 1.0f);
+                    visibleImpactPosition,
+                    isBossHit ? 1.85f : (isChargedHit ? 1.42f : 1.20f));
                 bullet->RegisterHit();
                 const bool isDestroyed = enemy->Damage(damage);
                 AddCameraShake(
-                    isDestroyed ? (isChargedHit ? 0.075f : 0.055f) : 0.022f,
-                    isDestroyed ? (isChargedHit ? 11 : 8) : 4);
+                    isDestroyed ?
+                        (isBossHit ? 0.18f : (isChargedHit ? 0.075f : 0.055f)) :
+                        (isBossHit ? 0.035f : 0.022f),
+                    isDestroyed ?
+                        (isBossHit ? 30 : (isChargedHit ? 11 : 8)) :
+                        (isBossHit ? 6 : 4));
                 if (isDestroyed) {
                     AddEnemyHitEffect(
                         enemyAimPosition,
-                        isChargedHit ? 1.32f : 1.0f);
-                    SpawnRewardHearts(enemyAimPosition, isChargedHit ? 6 : 4);
-                    score_ += 100;
+                        isBossHit ? 2.0f : (isChargedHit ? 1.32f : 1.0f));
+                    SpawnRewardHearts(
+                        enemyAimPosition,
+                        isBossHit ? 14 : (isChargedHit ? 6 : 4));
+                    score_ += isBossHit ? 1500 : 100;
                     ++defeatedEnemyCount_;
                     ++defeatedEnemyCountInWave_;
+                    if (isBossHit) {
+                        bossDefeated_ = true;
+                        currentWaveIndex_ = kWaveCount - 1;
+                        isGameClear_ = true;
+                        resultTransitionTimer_ = 90;
+                        stageCombatBeatName_ = "Boss destroyed";
+                    }
                 }
                 if (bullet->IsDead()) {
                     break;
@@ -4069,21 +4431,21 @@ void GameRuntime::UpdateGameCamera()
         0.0f;
 
     const Math::Vector3 targetTranslate = {
-        playerTranslate.x * 0.20f +
-            playerVelocity.x * 0.85f +
+        playerTranslate.x * 0.08f +
+            playerVelocity.x * 0.55f +
             railWideCurve * 0.22f +
             railDrift * 0.04f +
             shakeX,
         2.65f +
-            playerTranslate.y * 0.10f +
-            playerVelocity.y * 0.64f +
+            playerTranslate.y * 0.04f +
+            playerVelocity.y * 0.38f +
             railLift +
             stageCameraLiftBias_ +
             std::sin(railDistance_ * 0.017f + 0.35f) * 0.16f +
             bob +
             shakeY,
             railDistance_ -
-            (20.30f + speedPulse * 0.85f + std::abs(turnRate) * 0.25f) +
+            (kGameplayCameraBaseDistance + speedPulse * 0.55f + std::abs(turnRate) * 0.18f) +
             resultZoom,
     };
 
@@ -4105,7 +4467,7 @@ void GameRuntime::UpdateGameCamera()
     };
 
     const float targetFov =
-        0.620f +
+        kGameplayCameraBaseFovY +
         speedPulse * 0.040f +
         std::abs(turnRate) * 0.020f +
         inputSpeed * 0.025f +
