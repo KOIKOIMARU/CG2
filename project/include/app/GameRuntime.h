@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class DirectXCommon;
@@ -136,6 +137,9 @@ private:
         float rollSpeed = 0.0f;
         float curveInfluence = 0.0f;
         float phase = 0.0f;
+        float currentLocalZ = 0.0f;
+        float drawFarLocalZ = 300.0f;
+        bool isVisible = true;
         bool billboard = false;
     };
 
@@ -206,6 +210,7 @@ private:
     void AddRewardHeartCollectEffect(const Math::Vector3& worldPosition);
     void AddPlayerDamageEffect(const Math::Vector3& worldPosition);
     void AddPlayerDodgeGrazeEffect(const Math::Vector3& worldPosition);
+    void TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPosition);
     void AddHitEffectVisual(
         HitEffect& effect,
         Model* model,
@@ -243,6 +248,7 @@ private:
     void DrawEditorOverlayGuiRich();
     void DrawHud();
     void DrawBossHud();
+    void DrawStageCueHud();
     void DrawLockOnHud();
     void DrawResultOverlay();
     void DrawPerformanceOverlay();
@@ -289,12 +295,13 @@ private:
     std::vector<std::unique_ptr<Bullet>> enemyBulletPool_;
     std::list<std::unique_ptr<Enemy>> enemies_;
     std::unordered_map<Bullet*, const Enemy*> homingBulletTargets_;
+    std::unordered_set<Bullet*> justDodgedEnemyBullets_;
     std::vector<HitEffect> hitEffects_;
     std::vector<std::unique_ptr<Object3d>> hitEffectObjectPool_;
     std::vector<RailSceneryObject> railSceneryObjects_;
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
-    std::array<PlayerDodgeAfterimage, 5> playerDodgeAfterimages_;
+    std::array<PlayerDodgeAfterimage, 9> playerDodgeAfterimages_;
     std::array<PlayerFlightAura, 5> playerFlightAuras_;
     std::array<bool, 5> stageRailEventTriggered_{};
     std::array<bool, 24> stageEnemyEventTriggered_{};
@@ -333,6 +340,9 @@ private:
     int shootBufferTimer_ = 0;
     int enemySpawnTimer_ = 0;
     int enemyShotTimer_ = 32;
+    int bossWarningTimer_ = 0;
+    int bossIntroTimer_ = 0;
+    int bossDefeatFlashTimer_ = 0;
     int currentWaveIndex_ = 0;
     int spawnedEnemyCountInWave_ = 0;
     int defeatedEnemyCountInWave_ = 0;
@@ -343,6 +353,9 @@ private:
     int chargeTimer_ = 0;
     int chargeFlashTimer_ = 0;
     int playerDodgeAfterimageTimer_ = 0;
+    int justDodgeFlashTimer_ = 0;
+    int justDodgeTextTimer_ = 0;
+    int justDodgeSlowTimer_ = 0;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
     int bulletPoolWarmupTimer_ = 0;
@@ -350,12 +363,13 @@ private:
     size_t enemyBulletPoolMisses_ = 0;
     size_t hitEffectObjectPoolMisses_ = 0;
     size_t rewardHeartPoolMisses_ = 0;
+    size_t visibleSceneryCount_ = 0;
     size_t maxActivePlayerBullets_ = 0;
     size_t maxActiveEnemyBullets_ = 0;
     int chargeShotThreshold_ = 88;
     int normalShootCooldown_ = 16;
     int chargedShootCooldown_ = 28;
-    int enemyShotInterval_ = 44;
+    int enemyShotInterval_ = 56;
     int waveStartDelay_ = 90;
     float cameraTimer_ = 0.0f;
     float cameraShakePower_ = 0.0f;
@@ -393,12 +407,13 @@ private:
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isEditorOverlayVisible_ = false;
-    bool isPerformanceOverlayVisible_ = true;
+    bool isPerformanceOverlayVisible_ = false;
     bool isPostEffectBypassEnabled_ = false;
     bool isExitRequested_ = false;
     bool showSkybox_ = true;
     bool bossSpawned_ = false;
     bool bossDefeated_ = false;
+    bool bossWarningTriggered_ = false;
     bool wasPlayerDodging_ = false;
     bool isHudViewportRectEnabled_ = false;
     bool hasEditorOverlayViewportRect_ = false;
