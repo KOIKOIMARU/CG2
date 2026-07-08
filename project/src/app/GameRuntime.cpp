@@ -1338,6 +1338,7 @@ void GameRuntime::InitializeRailScenery()
                 return;
             }
 
+            const std::string modelPathText = modelPath ? modelPath : "";
             RailSceneryObject scenery;
             scenery.object = std::make_unique<Object3d>();
             scenery.object->Initialize(object3dCommon_.get());
@@ -1348,6 +1349,16 @@ void GameRuntime::InitializeRailScenery()
             scenery.object->SetColor(color);
             scenery.object->SetLightingMode(lightingMode);
             scenery.object->SetEnvironmentCoefficient(environmentCoefficient);
+            if (modelPathText.find("Street") != std::string::npos) {
+                scenery.object->SetShininess(18.0f);
+                scenery.object->SetSpecularColor({ 0.08f, 0.08f, 0.09f });
+            } else if (modelPathText.find("Building") != std::string::npos) {
+                scenery.object->SetShininess(22.0f);
+                scenery.object->SetSpecularColor({ 0.10f, 0.10f, 0.11f });
+            } else {
+                scenery.object->SetShininess(26.0f);
+                scenery.object->SetSpecularColor({ 0.12f, 0.12f, 0.13f });
+            }
             scenery.object->SetAlphaReference(0.01f);
             scenery.object->Update();
             scenery.anchor = anchor;
@@ -1360,7 +1371,6 @@ void GameRuntime::InitializeRailScenery()
             scenery.phase = phase;
             scenery.currentLocalZ = anchor.z;
             scenery.drawFarLocalZ = kSceneryFarLocalZ;
-            const std::string modelPathText = modelPath ? modelPath : "";
             if (modelPathText.find("Building") != std::string::npos) {
                 const bool isBackRow = std::abs(anchor.x) > 40.0f;
                 scenery.drawFarLocalZ = isBackRow ? 178.0f : 220.0f;
@@ -1400,13 +1410,16 @@ void GameRuntime::InitializeRailScenery()
 
     for (int i = 0; i < 18; ++i) {
         const float segmentZ = 18.0f * static_cast<float>(i);
-        addScenery(
+        addSceneryStyled(
             kCityStreet4LaneModelPath,
             { 0.0f, kRoadY, -9.0f + segmentZ },
             { 14.00f, 1.0f, 1.0f },
             { 0.0f, 0.0f, 0.0f },
             kCityLoopLength,
-            0.0f);
+            0.0f,
+            { 0.84f, 0.88f, 0.91f, 1.0f },
+            2,
+            0.02f);
     }
 
     struct CityBuildingPlacement {
@@ -1493,7 +1506,7 @@ void GameRuntime::InitializeRailScenery()
             0.0f,
             building.color,
             2,
-            0.06f);
+            0.04f);
         const bool keepFarPair = index % 4 == 0 || index % 4 == 1;
         if (!keepFarPair) {
             continue;
@@ -1512,7 +1525,7 @@ void GameRuntime::InitializeRailScenery()
             0.0f,
             building.color,
             2,
-            0.06f);
+            0.04f);
     }
 
     struct CityBackRowPlacement {
@@ -1553,7 +1566,7 @@ void GameRuntime::InitializeRailScenery()
                 0.0f,
                 row.color,
                 2,
-                0.04f);
+                0.03f);
         }
     }
 

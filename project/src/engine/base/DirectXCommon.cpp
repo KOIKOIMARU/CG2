@@ -157,11 +157,11 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     assert(bloomCompositePipelineState_);
     assert(srvDescriptorHeap_);
 
-    const bool useDepthTexture = postEffectMode == 7;
     const bool useDissolve = postEffectMode == 9;
     const bool useRandom = postEffectMode == 10;
     const bool useGameTone =
         12 <= postEffectMode && postEffectMode <= 15;
+    const bool useDepthTexture = postEffectMode == 7 || useGameTone;
     if (useDissolve) {
         dissolveThreshold_ += deltaTime_ * 0.25f;
         if (dissolveThreshold_ > 1.0f) {
@@ -174,25 +174,35 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         randomParameterData_->time = randomTime_;
     }
     if (useGameTone) {
-        gameToneParameterData_->vignetteStrength = 0.52f;
-        gameToneParameterData_->saturation = 1.10f;
-        gameToneParameterData_->contrast = 1.08f;
+        gameToneParameterData_->vignetteStrength = 0.62f;
+        gameToneParameterData_->saturation = 1.12f;
+        gameToneParameterData_->contrast = 1.15f;
         gameToneParameterData_->damageTint = 0.0f;
+        gameToneParameterData_->fogStart = 78.0f;
+        gameToneParameterData_->fogEnd = 235.0f;
+        gameToneParameterData_->fogStrength = 0.12f;
+        gameToneParameterData_->horizonFogStrength = 0.10f;
         if (postEffectMode == 13) {
             gameToneParameterData_->vignetteStrength = 0.92f;
-            gameToneParameterData_->saturation = 0.92f;
-            gameToneParameterData_->contrast = 1.18f;
+            gameToneParameterData_->saturation = 0.86f;
+            gameToneParameterData_->contrast = 1.22f;
             gameToneParameterData_->damageTint = 0.24f;
+            gameToneParameterData_->fogStrength = 0.16f;
+            gameToneParameterData_->horizonFogStrength = 0.13f;
         } else if (postEffectMode == 14) {
             gameToneParameterData_->vignetteStrength = 0.36f;
             gameToneParameterData_->saturation = 1.18f;
             gameToneParameterData_->contrast = 1.12f;
             gameToneParameterData_->damageTint = 0.0f;
+            gameToneParameterData_->fogStrength = 0.10f;
+            gameToneParameterData_->horizonFogStrength = 0.08f;
         } else if (postEffectMode == 15) {
             gameToneParameterData_->vignetteStrength = 1.12f;
-            gameToneParameterData_->saturation = 0.25f;
+            gameToneParameterData_->saturation = 0.28f;
             gameToneParameterData_->contrast = 1.22f;
             gameToneParameterData_->damageTint = 0.18f;
+            gameToneParameterData_->fogStrength = 0.20f;
+            gameToneParameterData_->horizonFogStrength = 0.16f;
         }
     }
 
@@ -420,12 +430,15 @@ Math::Vector2 DirectXCommon::GetRenderTextureSize() const
 void DirectXCommon::SetPostEffectProjectionMatrix(
     const Math::Matrix4x4& projectionMatrix)
 {
-    if (!depthOutlineParameterData_) {
-        return;
-    }
-
-    depthOutlineParameterData_->projectionInverse =
+    const Math::Matrix4x4 projectionInverse =
         Math::Transpose(Math::Inverse(projectionMatrix));
+
+    if (depthOutlineParameterData_) {
+        depthOutlineParameterData_->projectionInverse = projectionInverse;
+    }
+    if (gameToneParameterData_) {
+        gameToneParameterData_->projectionInverse = projectionInverse;
+    }
 }
 
 
@@ -1512,10 +1525,16 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
         nullptr,
         reinterpret_cast<void**>(&gameToneParameterData_)
     );
+    gameToneParameterData_->projectionInverse =
+        Math::Transpose(Math::MakeIdentity4x4());
     gameToneParameterData_->vignetteStrength = 0.52f;
     gameToneParameterData_->saturation = 1.10f;
     gameToneParameterData_->contrast = 1.08f;
     gameToneParameterData_->damageTint = 0.0f;
+    gameToneParameterData_->fogStart = 78.0f;
+    gameToneParameterData_->fogEnd = 235.0f;
+    gameToneParameterData_->fogStrength = 0.12f;
+    gameToneParameterData_->horizonFogStrength = 0.10f;
 
     depthOutlineParameterResource_ =
         CreateBufferResource(sizeof(DepthOutlineParameter));

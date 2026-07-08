@@ -145,10 +145,15 @@ private:
     };
 
     struct GameToneParameter {
+        Math::Matrix4x4 projectionInverse;
         float vignetteStrength;
         float saturation;
         float contrast;
         float damageTint;
+        float fogStart;
+        float fogEnd;
+        float fogStrength;
+        float horizonFogStrength;
     };
 
     struct DepthOutlineParameter {

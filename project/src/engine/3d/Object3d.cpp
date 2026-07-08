@@ -746,6 +746,20 @@ void Object3d::SetColor(const Vector4& color)
     }
 }
 
+void Object3d::SetShininess(float shininess)
+{
+    if (materialData_) {
+        materialData_->shininess = shininess;
+    }
+}
+
+void Object3d::SetSpecularColor(const Vector3& color)
+{
+    if (materialData_) {
+        materialData_->specularColor = color;
+    }
+}
+
 void Object3d::SetAlphaReference(float alphaReference)
 {
     if (materialData_) {
@@ -803,6 +817,22 @@ Vector4 Object3d::GetColor() const
         return materialData_->color;
     }
     return { 1.0f, 1.0f, 1.0f, 1.0f };
+}
+
+float Object3d::GetShininess() const
+{
+    if (materialData_) {
+        return materialData_->shininess;
+    }
+    return 0.0f;
+}
+
+Vector3 Object3d::GetSpecularColor() const
+{
+    if (materialData_) {
+        return materialData_->specularColor;
+    }
+    return { 0.0f, 0.0f, 0.0f };
 }
 
 float Object3d::GetAlphaReference() const

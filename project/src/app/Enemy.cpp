@@ -171,7 +171,15 @@ void Enemy::Initialize(
     phase_ = position.x * 0.75f + position.y * 1.35f;
     object_->SetScale(baseScale_);
     object_->SetColor(baseColor_);
-    object_->SetEnvironmentCoefficient(0.0f);
+    if (behavior_ == Behavior::Boss) {
+        object_->SetEnvironmentCoefficient(0.08f);
+        object_->SetShininess(30.0f);
+        object_->SetSpecularColor({ 0.38f, 0.34f, 0.46f });
+    } else {
+        object_->SetEnvironmentCoefficient(0.05f);
+        object_->SetShininess(34.0f);
+        object_->SetSpecularColor({ 0.36f, 0.28f, 0.32f });
+    }
     if (textureOverride && textureOverride[0] != '\0') {
         object_->SetTextureFilePath(textureOverride);
     }

@@ -1,14 +1,21 @@
 #include "Fullscreen.hlsli"
 
 Texture2D<float32_t4> gTexture : register(t0);
-SamplerState gSampler : register(s0);
+Texture2D<float32_t> gDepthTexture : register(t1);
+SamplerState gSamplerLinear : register(s0);
+SamplerState gSamplerPoint : register(s1);
 
 cbuffer GameToneParameter : register(b0)
 {
+    float32_t4x4 gProjectionInverse;
     float32_t vignetteStrength;
     float32_t saturation;
     float32_t contrast;
     float32_t damageTint;
+    float32_t fogStart;
+    float32_t fogEnd;
+    float32_t fogStrength;
+    float32_t horizonFogStrength;
 };
 
 struct PixelShaderOutput {
@@ -34,6 +41,28 @@ float32_t3 ApplySaturation(float32_t3 color, float32_t amount) {
     return lerp(float32_t3(luma, luma, luma), color, amount);
 }
 
+float32_t3 ApplyFilmicCurve(float32_t3 color) {
+    color = max(color, float32_t3(0.0f, 0.0f, 0.0f));
+    return saturate(
+        (color * (2.51f * color + 0.03f)) /
+        (color * (2.43f * color + 0.59f) + 0.14f));
+}
+
+float32_t FetchViewDepth(float32_t2 texcoord) {
+    float32_t ndcDepth = gDepthTexture.Sample(gSamplerPoint, texcoord);
+    float32_t4 ndcPosition = float32_t4(
+        texcoord.x * 2.0f - 1.0f,
+        1.0f - texcoord.y * 2.0f,
+        ndcDepth,
+        1.0f);
+
+    float32_t4 viewPosition = mul(ndcPosition, gProjectionInverse);
+    float32_t safeW =
+        abs(viewPosition.w) < 0.00001f ? 0.00001f : viewPosition.w;
+    viewPosition.xyz /= safeW;
+    return abs(viewPosition.z);
+}
+
 PixelShaderOutput main(VertexShaderOutput input) {
     uint32_t width;
     uint32_t height;
@@ -56,18 +85,56 @@ PixelShaderOutput main(VertexShaderOutput input) {
             float32_t2 texcoord =
                 input.texcoord + kIndex3x3[sx][sy] * uvStepSize;
             softColor +=
-                gTexture.Sample(gSampler, texcoord).rgb * kernel3x3[sx][sy];
+                gTexture.Sample(gSamplerLinear, texcoord).rgb *
+                kernel3x3[sx][sy];
         }
     }
     softColor *= rcp(weight);
 
-    float32_t3 baseColor = gTexture.Sample(gSampler, input.texcoord).rgb;
-    float32_t3 color = lerp(baseColor, softColor, 0.28f);
-    color += (baseColor - softColor) * 0.18f;
+    float32_t3 baseColor =
+        gTexture.Sample(gSamplerLinear, input.texcoord).rgb;
+    float32_t3 color = lerp(baseColor, softColor, 0.16f);
+    color += (baseColor - softColor) * 0.10f;
 
     color = (color - 0.5f) * contrast + 0.5f;
     color = ApplySaturation(color, saturation);
-    color *= float32_t3(1.03f, 1.02f, 1.08f);
+    color *= float32_t3(1.04f, 1.02f, 1.08f);
+
+    float32_t luminance =
+        dot(softColor, float32_t3(0.2126f, 0.7152f, 0.0722f));
+    float32_t softGlow = saturate((luminance - 0.62f) * 2.35f);
+    color += softColor * softGlow * 0.11f;
+
+    float32_t viewDepth = FetchViewDepth(input.texcoord);
+    float32_t ndcDepth =
+        gDepthTexture.Sample(gSamplerPoint, input.texcoord);
+    float32_t fogRange = max(fogEnd - fogStart, 1.0f);
+    float32_t depthFog = smoothstep(
+        0.0f,
+        1.0f,
+        saturate((viewDepth - fogStart) / fogRange));
+    float32_t horizonFog = pow(
+        saturate(1.0f - abs(input.texcoord.y - 0.48f) * 3.4f),
+        1.55f);
+    float32_t skyMask = step(0.9999f, ndcDepth);
+    float32_t fogAmount =
+        depthFog * fogStrength +
+        horizonFog * horizonFogStrength * (0.35f + depthFog * 0.65f);
+    fogAmount *= lerp(1.0f, 0.28f, skyMask);
+
+    float32_t3 fogColor = lerp(
+        float32_t3(0.58f, 0.66f, 0.77f),
+        float32_t3(0.78f, 0.85f, 0.94f),
+        saturate(input.texcoord.y * 1.12f));
+    color = lerp(color, fogColor, saturate(fogAmount));
+
+    float32_t sunGlow = pow(
+        saturate(
+            1.0f -
+            distance(input.texcoord, float32_t2(0.58f, 0.38f)) * 1.85f),
+        4.0f);
+    color += sunGlow * 0.035f * float32_t3(1.0f, 0.86f, 0.62f);
+    color = lerp(color, ApplyFilmicCurve(color) * 1.08f, 0.38f);
 
     float32_t2 centeredUv = input.texcoord - float32_t2(0.5f, 0.5f);
     float32_t edgeDistance = dot(centeredUv, centeredUv) * 2.0f;

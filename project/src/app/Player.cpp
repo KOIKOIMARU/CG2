@@ -76,7 +76,9 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     object_->SetModel(model);
     object_->SetScale(objectScale_);
     object_->SetColor({ 0.75f, 0.95f, 1.0f, 1.0f });
-    object_->SetEnvironmentCoefficient(0.18f);
+    object_->SetEnvironmentCoefficient(0.10f);
+    object_->SetShininess(42.0f);
+    object_->SetSpecularColor({ 0.58f, 0.70f, 0.78f });
     modelLocalCenterOffset_ = CalculateModelLocalCenterOffset(model);
     UpdateObjectTransform();
 }

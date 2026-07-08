@@ -103,6 +103,8 @@ public:
     void SetSpotLightIntensity(float intensity);
     void SetEnvironmentCoefficient(float coefficient);
     void SetColor(const Vector4& color);
+    void SetShininess(float shininess);
+    void SetSpecularColor(const Vector3& color);
     void SetAlphaReference(float alphaReference);
     void SetUVTransform(const Matrix4x4& uvTransform);
     void SetLightingMode(int32_t lightingMode);
@@ -117,6 +119,8 @@ public:
     Vector3 GetTranslate() const;
     float GetEnvironmentCoefficient() const;
     Vector4 GetColor() const;
+    float GetShininess() const;
+    Vector3 GetSpecularColor() const;
     float GetAlphaReference() const;
     int32_t GetLightingMode() const;
     const std::string& GetTextureFilePath() const;
