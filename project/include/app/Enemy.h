@@ -40,8 +40,9 @@ public:
         int maxHpOverride = 0,
         float scaleMultiplier = 1.0f,
         const char* textureOverride = nullptr);
-    void Update(float railDistance);
+    void Update(float railDistance, float timeScale = 1.0f);
     void Draw();
+    void DrawShadow(const Math::Matrix4x4& lightViewProjection);
 
     void Kill();
     bool Damage(int damage);
@@ -68,6 +69,7 @@ private:
     Math::Vector3 aimLocalCenter_{ 0.0f, 0.0f, 0.0f };
     Math::Vector4 baseColor_{ 1.0f, 0.25f, 0.25f, 1.0f };
     int age_ = 0;
+    float ageTimer_ = 0.0f;
     int hp_ = 1;
     int maxHp_ = 1;
     int hitFlashTimer_ = 0;

@@ -96,7 +96,9 @@ public:
         const wchar_t* profile);
 
 	// テクスチャ読み込み（static／外から使う便利版）
-    static DirectX::ScratchImage LoadTexture(const std::string& filePath);
+    static DirectX::ScratchImage LoadTexture(
+        const std::string& filePath,
+        bool forceSrgb = true);
 
     // デスクリプタヒープ生成関数（内部用）
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(
@@ -154,6 +156,10 @@ private:
         float fogEnd;
         float fogStrength;
         float horizonFogStrength;
+        float exposure;
+        float blackPoint;
+        float highlightCompression;
+        float colorTemperature;
     };
 
     struct DepthOutlineParameter {
@@ -208,8 +214,15 @@ private:
         uint32_t sourceSrvIndex,
         uint32_t secondarySrvIndex,
         D3D12_GPU_VIRTUAL_ADDRESS parameterAddress);
-    void DrawBloomPasses();
-    void DrawBloomCompositeToBackBuffer();
+    void DrawBloomPasses(
+        uint32_t sourceSrvIndex,
+        uint32_t sourceWidth,
+        uint32_t sourceHeight,
+        float threshold,
+        float scatter);
+    void DrawBloomCompositeToBackBuffer(
+        uint32_t sourceSrvIndex,
+        float intensity);
 
     // 汎用ハンドル取得関数（static／内部用）
     static D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(

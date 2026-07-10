@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <numbers>
 #include <string>
 
 namespace {
@@ -83,14 +84,21 @@ constexpr int kDepthCueEffectCount = 12;
 constexpr float kDepthCueNearLocalZ = -10.0f;
 constexpr float kDepthCueFarLocalZ = 148.0f;
 constexpr float kDepthCueLoopLength = 172.0f;
+constexpr float kContactShadowY = -2.82f;
+constexpr float kContactShadowHalfPi = 1.57079632679f;
 constexpr float kTwoPi = 6.28318530718f;
 constexpr float kRailCameraCurveFrequency = 0.050f;
 constexpr float kRailCameraDriftFrequency = 0.027f;
 constexpr float kGameplayCameraBaseFovY = 0.590f;
 constexpr float kGameplayCameraInitialDistance = 15.8f;
 constexpr float kGameplayCameraBaseDistance = 16.10f;
+constexpr float kJustDodgeCameraClosePushIn = 3.35f;
+constexpr float kJustDodgeCameraPlayerFollowX = 0.115f;
+constexpr float kJustDodgeCameraPlayerFollowY = 0.105f;
+constexpr float kJustDodgeCameraLowAngle = 0.18f;
+constexpr float kJustDodgeCameraFovTighten = 0.140f;
 constexpr int kPlayerDodgeAfterimageIntervalFrames = 2;
-constexpr float kPlayerDodgeAfterimageDuration = 22.0f;
+constexpr float kPlayerDodgeAfterimageDuration = 34.0f;
 constexpr int kSharedResourcePreloadStepCount = 13;
 constexpr float kSceneryNearLocalZ = -24.0f;
 constexpr float kSceneryFarLocalZ = 300.0f;
@@ -102,12 +110,14 @@ constexpr int kBossIntroDuration = 120;
 constexpr int kBossDefeatFlashDuration = 44;
 constexpr int kBossMaxHp = 52;
 constexpr float kJustDodgeGrazePadding = 1.25f;
-constexpr float kJustDodgeRailSlowScale = 0.44f;
+constexpr float kJustDodgeRailSlowScale = 0.08f;
 constexpr int kJustDodgeChargeBonus = 24;
 constexpr int kJustDodgeScoreBonus = 50;
-constexpr int kJustDodgeFlashDuration = 18;
-constexpr int kJustDodgeTextDuration = 44;
-constexpr int kJustDodgeSlowDuration = 14;
+constexpr int kJustDodgeFlashDuration = 46;
+constexpr int kJustDodgeSlowDuration = 46;
+constexpr int kPlayerImpactFlashDuration = 10;
+constexpr int kPlayerImpactSlowDuration = 8;
+constexpr float kPlayerImpactRailSlowScale = 0.42f;
 int gSharedResourcePreloadStep = 0;
 bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
@@ -376,6 +386,7 @@ bool GameRuntime::PreloadSharedResourceStep(
         modelManager->CreateCircle("effect_glow_ring", 64, 1.0f, "resources/effects/glow_ring.png");
         modelManager->CreateCircle("effect_spark_star", 48, 1.0f, "resources/effects/pal_star_spark.png");
         modelManager->CreateCircle("effect_bullet_glow", 48, 1.0f, "resources/effects/glow_core.png");
+        modelManager->CreateCircle("effect_contact_shadow", 64, 1.0f, "resources/effects/glow_core.png");
         break;
     case 3:
         gSharedResourcePreloadLabel = "Projectile effect meshes";
@@ -534,8 +545,12 @@ void GameRuntime::Initialize()
     chargeFlashTimer_ = 0;
     playerDodgeAfterimageTimer_ = 0;
     justDodgeFlashTimer_ = 0;
-    justDodgeTextTimer_ = 0;
     justDodgeSlowTimer_ = 0;
+    playerImpactFlashTimer_ = 0;
+    playerImpactFlashDuration_ = 1;
+    playerImpactSlowTimer_ = 0;
+    playerImpactSlowDuration_ = 1;
+    playerImpactSlowScale_ = 1.0f;
     nextPlayerDodgeAfterimageIndex_ = 0;
     wasPlayerDodging_ = false;
     cameraShakeTimer_ = 0;
@@ -591,6 +606,7 @@ void GameRuntime::Initialize()
     effectExplosionFireballModel_ = ModelManager::GetInstance()->FindModel("effect_explosion_fireball");
     effectExplosionSmokeModel_ = ModelManager::GetInstance()->FindModel("effect_explosion_smoke");
     effectExplosionSparksModel_ = ModelManager::GetInstance()->FindModel("effect_explosion_sparks");
+    effectContactShadowModel_ = ModelManager::GetInstance()->FindModel("effect_contact_shadow");
 
     camera_ = std::make_unique<Camera>();
     camera_->SetRotate({ 0.06f, 0.0f, 0.0f });
@@ -637,6 +653,7 @@ void GameRuntime::Initialize()
     InitializeRewardHearts();
     InitializePlayerDodgeAfterimages();
     InitializePlayerFlightAura();
+    InitializeContactShadows();
 }
 
 void GameRuntime::Finalize()
@@ -649,6 +666,9 @@ void GameRuntime::Finalize()
     }
     for (PlayerFlightAura& aura : playerFlightAuras_) {
         aura.object.reset();
+    }
+    for (ContactShadow& shadow : contactShadows_) {
+        shadow.object.reset();
     }
     playerBullets_.clear();
     enemyBullets_.clear();
@@ -690,6 +710,7 @@ void GameRuntime::Finalize()
     effectExplosionFireballModel_ = nullptr;
     effectExplosionSmokeModel_ = nullptr;
     effectExplosionSparksModel_ = nullptr;
+    effectContactShadowModel_ = nullptr;
 
 }
 
@@ -811,15 +832,13 @@ void GameRuntime::UpdateRailProgress()
     if (!isGameOver_ && !isGameClear_) {
         UpdateStageDirector();
         railSpeed_ = Lerp(railSpeed_, targetRailSpeed_, 0.070f);
-        const float justDodgeTimeScale =
-            justDodgeSlowTimer_ > 0 ? kJustDodgeRailSlowScale : 1.0f;
-        railDistance_ += railSpeed_ * justDodgeTimeScale;
+        railDistance_ += railSpeed_ * GetCinematicWorldTimeScale();
     }
 }
 
 void GameRuntime::UpdatePlayerAndCamera()
 {
-    player_->Update(input_);
+    player_->Update(input_, GetCinematicWorldTimeScale());
     player_->SetRailZ(railDistance_);
     UpdateGameCamera();
     if (skybox_) {
@@ -865,12 +884,16 @@ void GameRuntime::UpdatePlayerShooting()
 
 void GameRuntime::UpdateEnemyActions()
 {
+    if (justDodgeSlowTimer_ > 0) {
+        return;
+    }
+
     UpdateEnemyWave();
 
     --enemyShotTimer_;
     if (enemyShotTimer_ <= 0) {
         int normalEnemyShotsThisVolley = 0;
-        const int maxNormalEnemyShotsThisVolley = bossSpawned_ ? 2 : 3;
+        constexpr int kMaxNormalEnemyShotsThisVolley = 2;
         for (const auto& enemy : enemies_) {
             if (enemy->CanShoot()) {
                 const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
@@ -892,7 +915,7 @@ void GameRuntime::UpdateEnemyActions()
                             enemyAimPosition.z
                         });
                     }
-                } else if (normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
+                } else if (normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
                     FireEnemyBullet(enemyAimPosition);
                     ++normalEnemyShotsThisVolley;
                 }
@@ -934,11 +957,21 @@ void GameRuntime::UpdateResultAndSceneObjects()
     if (justDodgeFlashTimer_ > 0) {
         --justDodgeFlashTimer_;
     }
-    if (justDodgeTextTimer_ > 0) {
-        --justDodgeTextTimer_;
-    }
     if (justDodgeSlowTimer_ > 0) {
         --justDodgeSlowTimer_;
+    }
+    if (playerImpactFlashTimer_ > 0) {
+        --playerImpactFlashTimer_;
+        if (playerImpactFlashTimer_ <= 0) {
+            playerImpactFlashDuration_ = 1;
+        }
+    }
+    if (playerImpactSlowTimer_ > 0) {
+        --playerImpactSlowTimer_;
+        if (playerImpactSlowTimer_ <= 0) {
+            playerImpactSlowDuration_ = 1;
+            playerImpactSlowScale_ = 1.0f;
+        }
     }
     if (resultTransitionTimer_ > 0) {
         --resultTransitionTimer_;
@@ -1349,15 +1382,22 @@ void GameRuntime::InitializeRailScenery()
             scenery.object->SetColor(color);
             scenery.object->SetLightingMode(lightingMode);
             scenery.object->SetEnvironmentCoefficient(environmentCoefficient);
+            scenery.object->SetShadowReceiveStrength(0.0f);
             if (modelPathText.find("Street") != std::string::npos) {
-                scenery.object->SetShininess(18.0f);
-                scenery.object->SetSpecularColor({ 0.08f, 0.08f, 0.09f });
+                scenery.object->SetShininess(24.0f);
+                scenery.object->SetSpecularColor({ 0.055f, 0.060f, 0.070f });
+                scenery.object->SetRoughness(0.84f);
+                scenery.object->SetMetallic(0.02f);
             } else if (modelPathText.find("Building") != std::string::npos) {
-                scenery.object->SetShininess(22.0f);
-                scenery.object->SetSpecularColor({ 0.10f, 0.10f, 0.11f });
+                scenery.object->SetShininess(28.0f);
+                scenery.object->SetSpecularColor({ 0.065f, 0.070f, 0.080f });
+                scenery.object->SetRoughness(0.76f);
+                scenery.object->SetMetallic(0.0f);
             } else {
-                scenery.object->SetShininess(26.0f);
-                scenery.object->SetSpecularColor({ 0.12f, 0.12f, 0.13f });
+                scenery.object->SetShininess(32.0f);
+                scenery.object->SetSpecularColor({ 0.09f, 0.095f, 0.105f });
+                scenery.object->SetRoughness(0.68f);
+                scenery.object->SetMetallic(0.05f);
             }
             scenery.object->SetAlphaReference(0.01f);
             scenery.object->Update();
@@ -1417,9 +1457,9 @@ void GameRuntime::InitializeRailScenery()
             { 0.0f, 0.0f, 0.0f },
             kCityLoopLength,
             0.0f,
-            { 0.84f, 0.88f, 0.91f, 1.0f },
+            { 0.78f, 0.82f, 0.86f, 1.0f },
             2,
-            0.02f);
+            0.015f);
     }
 
     struct CityBuildingPlacement {
@@ -1668,6 +1708,216 @@ void GameRuntime::DrawRailScenery()
     object3dCommon_->CommonDrawSetting();
 }
 
+void GameRuntime::RenderShadowMap()
+{
+    if (!object3dCommon_) {
+        return;
+    }
+
+    const Math::Vector3 shadowFocusCenter{
+        0.0f,
+        10.0f,
+        railDistance_ + 105.0f
+    };
+    if (!object3dCommon_->BeginShadowPass(shadowFocusCenter)) {
+        return;
+    }
+
+    const Math::Matrix4x4& lightViewProjection =
+        object3dCommon_->GetShadowLightViewProjection();
+
+    for (const auto& sceneObject : sceneObjects_) {
+        if (sceneObject) {
+            sceneObject->DrawShadow(lightViewProjection);
+        }
+    }
+
+    if (player_ && !player_->IsDead()) {
+        player_->DrawShadow(lightViewProjection);
+    }
+
+    for (const auto& enemy : enemies_) {
+        if (enemy && !enemy->IsDead()) {
+            enemy->DrawShadow(lightViewProjection);
+        }
+    }
+
+    object3dCommon_->EndShadowPass();
+}
+
+void GameRuntime::InitializeContactShadows()
+{
+    if (!object3dCommon_ || !effectContactShadowModel_) {
+        return;
+    }
+
+    for (ContactShadow& shadow : contactShadows_) {
+        shadow.object = std::make_unique<Object3d>();
+        shadow.object->Initialize(object3dCommon_.get());
+        shadow.object->SetModel(effectContactShadowModel_);
+        shadow.object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+        shadow.object->SetRotate({ kContactShadowHalfPi, 0.0f, 0.0f });
+        shadow.object->SetScale({ 0.01f, 0.01f, 1.0f });
+        shadow.object->SetColor({ 0.0f, 0.0f, 0.0f, 0.0f });
+        shadow.object->SetLightingMode(0);
+        shadow.object->SetEnvironmentCoefficient(0.0f);
+        shadow.object->SetAlphaReference(0.01f);
+        shadow.object->Update();
+    }
+}
+
+void GameRuntime::DrawContactShadowObject(
+    Object3d& object,
+    const Math::Vector3& position,
+    float scaleX,
+    float scaleZ,
+    float alpha,
+    float yaw)
+{
+    const float clampedAlpha = std::clamp(alpha, 0.0f, 0.55f);
+    if (clampedAlpha <= 0.001f) {
+        return;
+    }
+
+    object.SetTranslate({ position.x, kContactShadowY, position.z });
+    object.SetRotate({ kContactShadowHalfPi, yaw, 0.0f });
+    object.SetScale({
+        (std::max)(scaleX, 0.01f),
+        (std::max)(scaleZ, 0.01f),
+        1.0f
+    });
+    object.SetColor({ 0.0f, 0.0f, 0.0f, clampedAlpha });
+    object.Update();
+    object.Draw();
+}
+
+void GameRuntime::DrawContactShadows()
+{
+    if (!object3dCommon_ || !effectContactShadowModel_) {
+        return;
+    }
+
+    bool hasShadowObject = false;
+    for (const ContactShadow& shadow : contactShadows_) {
+        if (shadow.object) {
+            hasShadowObject = true;
+            break;
+        }
+    }
+    if (!hasShadowObject) {
+        return;
+    }
+
+    const BlendMode previousBlendMode = object3dCommon_->GetBlendMode();
+    const DepthDrawMode previousDepthMode = object3dCommon_->GetDepthDrawMode();
+    object3dCommon_->SetDepthDrawMode(DepthDrawMode::ReadOnly);
+    object3dCommon_->SetBlendMode(BlendMode::Normal);
+    object3dCommon_->CommonDrawSetting();
+
+    size_t shadowIndex = 0;
+    const auto drawNextShadow =
+        [&](const Math::Vector3& position,
+            float scaleX,
+            float scaleZ,
+            float alpha,
+            float yaw) {
+            if (shadowIndex >= contactShadows_.size()) {
+                return;
+            }
+            ContactShadow& shadow = contactShadows_[shadowIndex++];
+            if (!shadow.object) {
+                return;
+            }
+            DrawContactShadowObject(
+                *shadow.object,
+                position,
+                scaleX,
+                scaleZ,
+                alpha,
+                yaw);
+        };
+
+    if (player_ && !player_->IsDead()) {
+        const Math::Vector3 playerPosition = player_->GetTranslate();
+        const float height =
+            (std::max)(playerPosition.y - kContactShadowY, 0.0f);
+        const float heightFade =
+            std::clamp(1.0f - height / 8.0f, 0.42f, 1.0f);
+        const float dodgeStretch = player_->IsDodging() ? 0.26f : 0.0f;
+        drawNextShadow(
+            playerPosition,
+            1.65f + height * 0.10f + dodgeStretch,
+            1.00f + height * 0.055f,
+            0.19f * heightFade,
+            player_->IsDodging() ?
+                static_cast<float>(player_->GetDodgeDirection()) * 0.20f :
+                0.0f);
+    }
+
+    for (const auto& enemy : enemies_) {
+        if (!enemy || enemy->IsDead()) {
+            continue;
+        }
+        const Math::Vector3 enemyPosition = enemy->GetTranslate();
+        const float localZ = enemyPosition.z - railDistance_;
+        if (localZ < kSceneryNearLocalZ || localZ > 210.0f) {
+            continue;
+        }
+
+        const float height =
+            (std::max)(enemyPosition.y - kContactShadowY, 0.0f);
+        const float heightFade =
+            std::clamp(1.0f - height / 12.0f, 0.32f, 0.88f);
+        const float distanceFade =
+            std::clamp(1.0f - (localZ - 36.0f) / 210.0f, 0.42f, 1.0f);
+        if (enemy->IsBoss()) {
+            drawNextShadow(
+                enemyPosition,
+                6.2f + height * 0.10f,
+                3.3f + height * 0.055f,
+                0.20f * heightFade * distanceFade,
+                std::sin(cameraTimer_ * 0.013f) * 0.20f);
+        } else {
+            const float radius = enemy->GetRadius();
+            drawNextShadow(
+                enemyPosition,
+                1.25f + radius * 0.55f + height * 0.075f,
+                0.78f + radius * 0.30f + height * 0.040f,
+                0.15f * heightFade * distanceFade,
+                std::sin(cameraTimer_ * 0.018f + enemyPosition.x) * 0.18f);
+        }
+    }
+
+    constexpr float kBuildingAoLoopLength = 324.0f;
+    for (int index = 0; index < 8; ++index) {
+        const float localZ =
+            WrapSceneryLocalZ(-4.0f + 42.0f * static_cast<float>(index) - railDistance_,
+                kBuildingAoLoopLength);
+        if (localZ < kSceneryNearLocalZ || localZ > 220.0f) {
+            continue;
+        }
+        const float worldZ = railDistance_ + localZ;
+        const float distanceFade =
+            std::clamp(1.0f - (localZ - 28.0f) / 230.0f, 0.36f, 1.0f);
+        drawNextShadow(
+            { -24.2f, kContactShadowY, worldZ },
+            7.5f,
+            15.0f,
+            0.050f * distanceFade,
+            0.0f);
+        drawNextShadow(
+            { 24.2f, kContactShadowY, worldZ + 18.0f },
+            7.8f,
+            15.5f,
+            0.048f * distanceFade,
+            0.0f);
+    }
+
+    object3dCommon_->SetBlendMode(previousBlendMode);
+    object3dCommon_->SetDepthDrawMode(previousDepthMode);
+    object3dCommon_->CommonDrawSetting();
+}
+
 int GameRuntime::GetPostEffectMode() const
 {
     if (isPostEffectBypassEnabled_) {
@@ -1809,11 +2059,14 @@ bool GameRuntime::LoadSceneObjects(const char* path)
 
 void GameRuntime::Draw()
 {
+    RenderShadowMap();
+
     if (showSkybox_ && skybox_) {
         skybox_->Draw();
     }
 
     DrawRailScenery();
+    DrawContactShadows();
     DrawDepthCueEffects();
 
     object3dCommon_->CommonDrawSetting();
@@ -2048,7 +2301,7 @@ void GameRuntime::FirePlayerBullet()
     }
 
     Math::Vector3 spawnPosition = player_->GetTranslate();
-    spawnPosition.z += 1.65f;
+    spawnPosition.z += 1.75f;
     const Enemy* aimedTarget = (isReticleOnTarget_ && lockedEnemy_ && !lockedEnemy_->IsDead()) ? lockedEnemy_ : nullptr;
     Math::Vector3 aimDirection = CalculateAimDirection(spawnPosition);
     if (aimedTarget) {
@@ -2063,18 +2316,18 @@ void GameRuntime::FirePlayerBullet()
         }
     }
     Math::Vector3 velocity = aimDirection * playerBulletSpeed_;
-    Math::Vector4 color{ 0.70f, 1.0f, 1.0f, 0.88f };
-    Math::Vector3 scale{ 0.36f, 0.36f, 0.88f };
-    float collisionRadius = 0.40f;
+    Math::Vector4 color{ 0.24f, 0.72f, 1.0f, 0.92f };
+    Math::Vector3 scale{ 0.44f, 0.44f, 1.04f };
+    float collisionRadius = 0.42f;
     int lifeTimer = 180;
     int hitLimit = 1;
     const bool isCharged = chargeTimer_ >= chargeShotThreshold_;
 
     if (isCharged) {
         velocity = aimDirection * lockBulletSpeed_ * chargedBulletSpeedMultiplier_;
-        color = { 0.70f, 1.0f, 0.98f, 0.96f };
-        scale = { 0.62f, 0.62f, 1.48f };
-        collisionRadius = 0.94f;
+        color = { 0.40f, 0.84f, 1.0f, 0.98f };
+        scale = { 0.74f, 0.74f, 1.70f };
+        collisionRadius = 1.00f;
         lifeTimer = 260;
         hitLimit = 1;
     }
@@ -2085,7 +2338,7 @@ void GameRuntime::FirePlayerBullet()
         return;
     }
     Model* coreModel =
-        effectBulletGlowModel_ ? effectBulletGlowModel_ : effectPlayerBulletCoreModel_;
+        effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : effectBulletGlowModel_;
     bullet->Initialize(
         object3dCommon_.get(),
         bulletModel_,
@@ -2098,23 +2351,23 @@ void GameRuntime::FirePlayerBullet()
         hitLimit,
         coreModel,
         isCharged ?
-            Math::Vector4{ 0.70f, 1.0f, 0.98f, 1.0f } :
-            Math::Vector4{ 0.66f, 1.0f, 1.0f, 0.88f },
+            Math::Vector4{ 0.48f, 0.92f, 1.0f, 1.0f } :
+            Math::Vector4{ 0.16f, 0.70f, 1.0f, 0.94f },
         isCharged ?
-            Math::Vector3{ 1.36f, 2.95f, 1.0f } :
-            Math::Vector3{ 0.72f, 1.75f, 1.0f },
+            Math::Vector3{ 1.55f, 3.35f, 1.0f } :
+            Math::Vector3{ 0.88f, 2.05f, 1.0f },
         nullptr,
         isCharged ?
-            Math::Vector4{ 0.56f, 1.0f, 0.96f, 0.88f } :
-            Math::Vector4{ 0.54f, 0.96f, 1.0f, 0.64f },
+            Math::Vector4{ 0.28f, 0.78f, 1.0f, 0.88f } :
+            Math::Vector4{ 0.10f, 0.46f, 1.0f, 0.66f },
         isCharged ?
             Math::Vector3{ 0.92f, 7.80f, 1.0f } :
             Math::Vector3{ 0.42f, 3.50f, 1.0f },
         isCharged ? 4.50f : 1.78f,
         isCharged ? effectSparkStarModel_ : nullptr,
         isCharged ?
-            Math::Vector4{ 0.84f, 1.0f, 0.98f, 0.72f } :
-            Math::Vector4{ 0.70f, 1.0f, 1.0f, 0.0f },
+            Math::Vector4{ 0.72f, 0.94f, 1.0f, 0.72f } :
+            Math::Vector4{ 0.34f, 0.72f, 1.0f, 0.0f },
         isCharged ?
             Math::Vector3{ 0.17f, 0.17f, 1.0f } :
             Math::Vector3{ 0.092f, 0.092f, 1.0f });
@@ -2178,14 +2431,14 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         bulletModel_,
         spawnPosition,
         bulletDirection * enemyBulletSpeed_,
-        { 1.0f, 0.18f, 0.42f, 1.0f },
-        240,
-        { 0.62f, 0.62f, 0.78f },
-        0.66f,
+        { 1.0f, 0.12f, 0.46f, 1.0f },
+        260,
+        { 0.76f, 0.76f, 0.92f },
+        0.54f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.18f, 0.54f, 0.95f },
-        { 1.50f, 1.50f, 1.0f },
+        { 1.0f, 0.14f, 0.58f, 0.98f },
+        { 1.85f, 1.85f, 1.0f },
         nullptr,
         { 1.0f, 0.10f, 0.44f, 0.72f },
         { 0.62f, 4.00f, 1.0f },
@@ -2674,8 +2927,8 @@ void GameRuntime::AddMuzzleFlashEffect(
 
     AddHitEffectVisual(effect, effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_, worldPosition,
         isCharged ?
-            Math::Vector4{ 0.58f, 1.0f, 0.96f, 0.72f } :
-            Math::Vector4{ 1.0f, 0.88f, 0.36f, 0.56f },
+            Math::Vector4{ 0.36f, 0.86f, 1.0f, 0.76f } :
+            Math::Vector4{ 0.18f, 0.64f, 1.0f, 0.58f },
         isCharged ? 0.46f : 0.28f,
         isCharged ? 0.22f : 0.14f,
         0.0f,
@@ -2685,8 +2938,8 @@ void GameRuntime::AddMuzzleFlashEffect(
         {});
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
         isCharged ?
-            Math::Vector4{ 0.72f, 1.0f, 0.92f, 0.58f } :
-            Math::Vector4{ 1.0f, 0.92f, 0.46f, 0.48f },
+            Math::Vector4{ 0.62f, 0.94f, 1.0f, 0.62f } :
+            Math::Vector4{ 0.30f, 0.76f, 1.0f, 0.50f },
         isCharged ? 0.24f : 0.16f,
         0.36f,
         isCharged ? 1.4f : -1.0f,
@@ -2758,10 +3011,9 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
 
     score_ += kJustDodgeScoreBonus;
     chargeTimer_ = (std::min)(chargeTimer_ + kJustDodgeChargeBonus, kChargeShotMax);
-    chargeFlashTimer_ = (std::max)(chargeFlashTimer_, 18);
-    justDodgeFlashTimer_ = kJustDodgeFlashDuration;
-    justDodgeTextTimer_ = kJustDodgeTextDuration;
-    justDodgeSlowTimer_ = kJustDodgeSlowDuration;
+    chargeFlashTimer_ = (std::max)(chargeFlashTimer_, 26);
+    justDodgeFlashTimer_ = (std::max)(justDodgeFlashTimer_, kJustDodgeFlashDuration);
+    justDodgeSlowTimer_ = (std::max)(justDodgeSlowTimer_, kJustDodgeSlowDuration);
 
     const Math::Vector3 playerPosition = player_->GetTranslate();
     AddPlayerDodgeGrazeEffect(worldPosition);
@@ -2771,7 +3023,51 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
         playerPosition.z + 0.10f
     });
     SpawnPlayerDodgeAfterimage();
-    AddCameraShake(0.120f, 12);
+    playerDodgeAfterimageTimer_ = 0;
+    AddCameraShake(0.165f, 18);
+}
+
+void GameRuntime::TriggerPlayerImpactMoment(
+    bool isCharged,
+    bool isBossHit,
+    bool isDestroyed)
+{
+    if (!isCharged && !(isBossHit && isDestroyed)) {
+        return;
+    }
+
+    const int flashDuration =
+        isBossHit ?
+            (isDestroyed ? 28 : 15) :
+            (isDestroyed ? 13 : kPlayerImpactFlashDuration);
+    const int slowDuration =
+        isBossHit ?
+            (isDestroyed ? 24 : 11) :
+            (isDestroyed ? 10 : kPlayerImpactSlowDuration);
+    const float slowScale =
+        isBossHit ?
+            (isDestroyed ? 0.18f : 0.32f) :
+            kPlayerImpactRailSlowScale;
+
+    if (flashDuration >= playerImpactFlashTimer_) {
+        playerImpactFlashDuration_ = flashDuration;
+    }
+    playerImpactFlashTimer_ =
+        (std::max)(playerImpactFlashTimer_, flashDuration);
+
+    if (slowDuration >= playerImpactSlowTimer_) {
+        playerImpactSlowDuration_ = slowDuration;
+    }
+    playerImpactSlowTimer_ =
+        (std::max)(playerImpactSlowTimer_, slowDuration);
+    playerImpactSlowScale_ =
+        playerImpactSlowTimer_ > 0 ?
+        (std::min)(playerImpactSlowScale_, slowScale) :
+        slowScale;
+
+    AddCameraShake(
+        isBossHit ? (isDestroyed ? 0.32f : 0.12f) : 0.070f,
+        isBossHit ? (isDestroyed ? 42 : 14) : 9);
 }
 
 void GameRuntime::AddHitEffectVisual(
@@ -2876,7 +3172,6 @@ void GameRuntime::InitializePlayerDodgeAfterimages()
 void GameRuntime::InitializePlayerFlightAura()
 {
     Model* softGlowModel = effectGlowCoreModel_;
-    Model* sparkleModel = effectSparkStarModel_ ? effectSparkStarModel_ : softGlowModel;
     if (!object3dCommon_ || !softGlowModel) {
         return;
     }
@@ -2923,58 +3218,36 @@ void GameRuntime::InitializePlayerFlightAura()
     setupAura(
         0,
         softGlowModel,
-        { 0.0f, 0.11f, -0.28f },
-        { 0.78f, 0.96f, 1.0f, 0.30f },
-        1.42f,
-        1.64f,
-        0.78f,
+        { 0.0f, -0.08f, -0.46f },
+        { 0.72f, 0.92f, 1.0f, 0.11f },
+        0.86f,
+        1.45f,
+        0.38f,
         0.0f,
         0.0f,
         0.052f);
     setupAura(
         1,
         softGlowModel,
-        { -0.88f, -0.02f, -0.28f },
-        { 0.46f, 0.86f, 1.0f, 0.22f },
-        1.24f,
-        1.96f,
-        0.42f,
+        { -0.78f, -0.10f, -0.54f },
+        { 0.42f, 0.82f, 1.0f, 0.09f },
+        0.58f,
+        1.38f,
+        0.34f,
         1.8f,
         -0.18f,
         0.061f);
     setupAura(
         2,
         softGlowModel,
-        { 0.88f, -0.02f, -0.28f },
-        { 0.46f, 0.86f, 1.0f, 0.22f },
-        1.24f,
-        1.96f,
-        0.42f,
+        { 0.78f, -0.10f, -0.54f },
+        { 0.42f, 0.82f, 1.0f, 0.09f },
+        0.58f,
+        1.38f,
+        0.34f,
         3.6f,
         0.18f,
         0.061f);
-    setupAura(
-        3,
-        sparkleModel,
-        { -0.50f, 0.34f, -0.18f },
-        { 0.92f, 1.0f, 1.0f, 0.26f },
-        0.40f,
-        1.0f,
-        1.0f,
-        5.1f,
-        -0.08f,
-        0.083f);
-    setupAura(
-        4,
-        sparkleModel,
-        { 0.50f, 0.34f, -0.18f },
-        { 0.92f, 1.0f, 1.0f, 0.26f },
-        0.40f,
-        1.0f,
-        1.0f,
-        6.4f,
-        0.08f,
-        0.083f);
 }
 
 void GameRuntime::SpawnPlayerDodgeAfterimage()
@@ -3018,6 +3291,8 @@ void GameRuntime::UpdatePlayerDodgeAfterimages()
 
     const bool isDodging =
         player_ && !player_->IsDead() && player_->IsDodging();
+    const bool isJustDodgeCinematic =
+        player_ && !player_->IsDead() && justDodgeSlowTimer_ > 0;
     if (playerDodgeAfterimageTimer_ > 0) {
         --playerDodgeAfterimageTimer_;
     }
@@ -3031,10 +3306,11 @@ void GameRuntime::UpdatePlayerDodgeAfterimages()
         });
         AddCameraShake(0.060f, 10);
     }
-    if (isDodging &&
-        (!wasPlayerDodging_ || playerDodgeAfterimageTimer_ <= 0)) {
+    if ((isDodging && (!wasPlayerDodging_ || playerDodgeAfterimageTimer_ <= 0)) ||
+        (isJustDodgeCinematic && playerDodgeAfterimageTimer_ <= 0)) {
         SpawnPlayerDodgeAfterimage();
-        playerDodgeAfterimageTimer_ = kPlayerDodgeAfterimageIntervalFrames;
+        playerDodgeAfterimageTimer_ =
+            isJustDodgeCinematic ? 1 : kPlayerDodgeAfterimageIntervalFrames;
     }
     wasPlayerDodging_ = isDodging;
 
@@ -3076,7 +3352,7 @@ void GameRuntime::DrawPlayerFlightAura()
     const BlendMode previousBlendMode = object3dCommon_->GetBlendMode();
     const DepthDrawMode previousDepthMode = object3dCommon_->GetDepthDrawMode();
 
-    object3dCommon_->SetDepthDrawMode(DepthDrawMode::Overlay);
+    object3dCommon_->SetDepthDrawMode(DepthDrawMode::ReadOnly);
     object3dCommon_->SetBlendMode(BlendMode::Add);
     object3dCommon_->CommonDrawSetting();
 
@@ -3110,16 +3386,16 @@ void GameRuntime::DrawPlayerFlightAura()
             std::sin(cameraTimer_ * aura.rollSpeed + aura.pulseOffset) * 0.045f;
         Math::Vector4 color = aura.color;
         color.w *= flicker *
-            (1.0f + speedRate * 0.38f + dodgeBoost * 0.55f + justDodgeBoost * 0.78f);
+            (0.68f + speedRate * 0.16f + dodgeBoost * 0.28f + justDodgeBoost * 0.42f);
 
         aura.object->SetModel(aura.model);
         aura.object->SetTranslate(translate);
         aura.object->SetRotate(rotate);
         aura.object->SetScale({
             aura.baseSize * aura.aspectX * pulse *
-                (1.0f + dodgeBoost * 0.24f + justDodgeBoost * 0.34f),
+                (1.0f + dodgeBoost * 0.12f + justDodgeBoost * 0.18f),
             aura.baseSize * aura.aspectY * (2.0f - pulse) *
-                (1.0f + speedRate * 0.24f + dodgeBoost * 0.42f + justDodgeBoost * 0.46f),
+                (1.0f + speedRate * 0.12f + dodgeBoost * 0.20f + justDodgeBoost * 0.24f),
             1.0f
         });
         aura.object->SetColor(color);
@@ -3170,20 +3446,20 @@ void GameRuntime::DrawPlayerDodgeAfterimages()
         const float fade = 1.0f - rate;
         const float direction = static_cast<float>(afterimage.direction);
         Math::Vector3 translate = afterimage.position;
-        translate.x -= direction * (0.18f + 1.10f * rate);
-        translate.y += std::sin(rate * kTwoPi) * 0.035f;
-        translate.z -= 0.18f * rate;
+        translate.x -= direction * (0.24f + 1.55f * rate);
+        translate.y += std::sin(rate * kTwoPi) * 0.045f;
+        translate.z -= 0.28f * rate;
 
         Math::Vector3 rotate = camera_->GetRotate();
         rotate.z += direction * (0.26f + 0.18f * rate);
 
-        const float length = 2.15f + 1.65f * rate;
-        const float thickness = 0.44f + 0.12f * rate;
+        const float length = 2.75f + 2.25f * rate;
+        const float thickness = 0.56f + 0.18f * rate;
         Math::Vector4 color{
             0.46f,
             0.96f,
             1.0f,
-            0.46f * fade * fade
+            0.74f * fade * fade
         };
 
         afterimage.object->SetModel(afterimageModel);
@@ -3673,15 +3949,15 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             } };
             railSpeed_ = 0.145f;
             targetRailSpeed_ = 0.145f;
-            playerBulletSpeed_ = 1.28f;
-            lockBulletSpeed_ = 1.48f;
-            chargedBulletSpeedMultiplier_ = 1.18f;
-            enemyBulletSpeed_ = 0.40f;
+            playerBulletSpeed_ = 1.36f;
+            lockBulletSpeed_ = 1.62f;
+            chargedBulletSpeedMultiplier_ = 1.12f;
+            enemyBulletSpeed_ = 0.36f;
             lockRadius_ = 118.0f;
             chargeShotThreshold_ = 88;
-            normalShootCooldown_ = 16;
-            chargedShootCooldown_ = 28;
-            enemyShotInterval_ = 56;
+            normalShootCooldown_ = 17;
+            chargedShootCooldown_ = 30;
+            enemyShotInterval_ = 64;
             waveStartDelay_ = 90;
             editorStatusMessage_ = "ゲーム調整をリセットしました。";
         }
@@ -3692,7 +3968,7 @@ void GameRuntime::DrawEditorOverlayGuiRich()
 
         if (ImGui::CollapsingHeader(ICON_FA_WAND_MAGIC_SPARKLES " 操作感", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.240f, "%.3f");
-            ImGui::SliderFloat("自弾速度", &playerBulletSpeed_, 0.30f, 1.20f, "%.2f");
+            ImGui::SliderFloat("自弾速度", &playerBulletSpeed_, 0.30f, 1.80f, "%.2f");
             ImGui::SliderFloat("チャージ弾速度", &lockBulletSpeed_, 0.70f, 2.20f, "%.2f");
             ImGui::SliderFloat("チャージ弾速度倍率", &chargedBulletSpeedMultiplier_, 1.00f, 2.00f, "%.2f");
             ImGui::SliderFloat("敵弾速度", &enemyBulletSpeed_, 0.12f, 0.70f, "%.2f");
@@ -4068,7 +4344,7 @@ void GameRuntime::DrawStageCueHud()
         bossIntroTimer_ <= 0 &&
         bossDefeatFlashTimer_ <= 0 &&
         justDodgeFlashTimer_ <= 0 &&
-        justDodgeTextTimer_ <= 0) {
+        playerImpactFlashTimer_ <= 0) {
         return;
     }
 
@@ -4084,53 +4360,53 @@ void GameRuntime::DrawStageCueHud()
         const float rate =
             static_cast<float>(justDodgeFlashTimer_) /
             static_cast<float>((std::max)(kJustDodgeFlashDuration, 1));
-        const int alpha = static_cast<int>(78.0f * rate * rate);
+        const float sweep = 1.0f - rate;
+        const float easedRate = rate * rate;
+        const float hudDodgeLean =
+            player_ ? static_cast<float>(player_->GetDodgeDirection() >= 0 ? 1 : -1) : 1.0f;
+        const float shear = hudDodgeLean * (28.0f + sweep * 78.0f);
+        const int lineAlpha = static_cast<int>(128.0f * easedRate);
+        const int echoAlpha = static_cast<int>(72.0f * easedRate);
+        const float topY = origin.y + drawSize.y * 0.145f;
+        const float bottomY = origin.y + drawSize.y * 0.855f;
+        const float leftX = origin.x + drawSize.x * (0.08f + sweep * 0.10f);
+        const float rightX = origin.x + drawSize.x * (0.92f - sweep * 0.10f);
+
+        drawList->AddLine(
+            ImVec2(leftX + shear, topY),
+            ImVec2(leftX + drawSize.x * 0.20f + shear * 0.15f, topY + 7.0f),
+            IM_COL32(168, 242, 255, (std::clamp)(lineAlpha, 0, 148)),
+            2.2f);
+        drawList->AddLine(
+            ImVec2(rightX + shear * 0.20f, bottomY - 7.0f),
+            ImVec2(rightX - drawSize.x * 0.20f + shear, bottomY),
+            IM_COL32(255, 154, 232, (std::clamp)(echoAlpha, 0, 92)),
+            1.8f);
+        drawList->AddLine(
+            ImVec2(origin.x + drawSize.x * 0.14f - shear * 0.30f, bottomY),
+            ImVec2(origin.x + drawSize.x * 0.34f - shear, bottomY - 8.0f),
+            IM_COL32(168, 242, 255, (std::clamp)(echoAlpha, 0, 92)),
+            1.8f);
+    }
+
+    if (playerImpactFlashTimer_ > 0) {
+        const float rate =
+            static_cast<float>(playerImpactFlashTimer_) /
+            static_cast<float>((std::max)(playerImpactFlashDuration_, 1));
+        const float pulse = rate * rate;
+        const int fillAlpha = static_cast<int>(58.0f * pulse);
+        const int lineAlpha = static_cast<int>(170.0f * pulse);
         drawList->AddRectFilled(
             origin,
             ImVec2(origin.x + drawSize.x, origin.y + drawSize.y),
-            IM_COL32(86, 255, 220, (std::clamp)(alpha, 0, 86)));
-    }
-
-    if (justDodgeTextTimer_ > 0) {
-        const float rate =
-            static_cast<float>(justDodgeTextTimer_) /
-            static_cast<float>((std::max)(kJustDodgeTextDuration, 1));
-        const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 14.0f);
-        const ImVec2 textCenter(
-            origin.x + drawSize.x * 0.5f,
-            origin.y + drawSize.y * 0.42f);
-        const char* justText = "JUST DODGE";
-        const char* bonusText = "+CHARGE";
-        const ImVec2 justSize = ImGui::CalcTextSize(justText);
-        const ImVec2 bonusSize = ImGui::CalcTextSize(bonusText);
-        const int textAlpha =
-            static_cast<int>(255.0f * (std::min)(1.0f, rate * 2.4f));
-        const int lineAlpha =
-            static_cast<int>(170.0f * rate * (0.72f + pulse * 0.28f));
-        const float lineHalf = 96.0f + pulse * 28.0f;
-
-        drawList->AddLine(
-            ImVec2(textCenter.x - lineHalf, textCenter.y - 18.0f),
-            ImVec2(textCenter.x + lineHalf, textCenter.y - 18.0f),
-            IM_COL32(112, 255, 230, (std::clamp)(lineAlpha, 0, 190)),
+            IM_COL32(38, 146, 255, (std::clamp)(fillAlpha, 0, 72)));
+        drawList->AddRect(
+            ImVec2(origin.x + 10.0f, origin.y + 10.0f),
+            ImVec2(origin.x + drawSize.x - 10.0f, origin.y + drawSize.y - 10.0f),
+            IM_COL32(148, 228, 255, (std::clamp)(lineAlpha, 0, 180)),
+            0.0f,
+            0,
             2.0f);
-        drawList->AddLine(
-            ImVec2(textCenter.x - lineHalf * 0.74f, textCenter.y + 28.0f),
-            ImVec2(textCenter.x + lineHalf * 0.74f, textCenter.y + 28.0f),
-            IM_COL32(255, 236, 154, (std::clamp)(lineAlpha, 0, 180)),
-            1.5f);
-        drawList->AddText(
-            ImVec2(textCenter.x - justSize.x * 0.5f + 2.0f, textCenter.y - 9.0f + 2.0f),
-            IM_COL32(0, 0, 0, 210),
-            justText);
-        drawList->AddText(
-            ImVec2(textCenter.x - justSize.x * 0.5f, textCenter.y - 9.0f),
-            IM_COL32(198, 255, 246, (std::clamp)(textAlpha, 0, 255)),
-            justText);
-        drawList->AddText(
-            ImVec2(textCenter.x - bonusSize.x * 0.5f, textCenter.y + 10.0f),
-            IM_COL32(255, 236, 154, (std::clamp)(static_cast<int>(textAlpha * 0.82f), 0, 230)),
-            bonusText);
     }
 
     if (bossDefeatFlashTimer_ > 0) {
@@ -4530,10 +4806,11 @@ void GameRuntime::UpdatePlayerBullets()
 
 void GameRuntime::UpdateEnemyBullets()
 {
+    const float worldTimeScale = GetCinematicWorldTimeScale();
     for (auto iterator = enemyBullets_.begin();
         iterator != enemyBullets_.end();) {
         Bullet* bullet = iterator->get();
-        bullet->Update();
+        bullet->Update(worldTimeScale);
         if (bullet->IsDead()) {
             justDodgedEnemyBullets_.erase(bullet);
             enemyBulletPool_.push_back(std::move(*iterator));
@@ -4546,8 +4823,9 @@ void GameRuntime::UpdateEnemyBullets()
 
 void GameRuntime::UpdateEnemies()
 {
+    const float worldTimeScale = GetCinematicWorldTimeScale();
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
-        (*iterator)->Update(railDistance_);
+        (*iterator)->Update(railDistance_, worldTimeScale);
         if ((*iterator)->IsDead()) {
             const Enemy* removedEnemy = iterator->get();
             for (auto targetIterator = homingBulletTargets_.begin();
@@ -4563,6 +4841,18 @@ void GameRuntime::UpdateEnemies()
             ++iterator;
         }
     }
+}
+
+float GameRuntime::GetCinematicWorldTimeScale() const
+{
+    float timeScale = 1.0f;
+    if (justDodgeSlowTimer_ > 0) {
+        timeScale = (std::min)(timeScale, kJustDodgeRailSlowScale);
+    }
+    if (playerImpactSlowTimer_ > 0) {
+        timeScale *= playerImpactSlowScale_;
+    }
+    return std::clamp(timeScale, 0.05f, 1.0f);
 }
 
 Math::Vector3 GameRuntime::CalculateAimDirection(const Math::Vector3& origin) const
@@ -4690,6 +4980,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     isDestroyed ?
                         (isBossHit ? 30 : (isChargedHit ? 11 : 8)) :
                         (isBossHit ? 6 : 4));
+                TriggerPlayerImpactMoment(isChargedHit, isBossHit, isDestroyed);
                 if (isDestroyed) {
                     AddEnemyHitEffect(
                         enemyAimPosition,
@@ -4820,6 +5111,23 @@ void GameRuntime::UpdateGameCamera()
         static_cast<float>(justDodgeFlashTimer_) /
             static_cast<float>((std::max)(kJustDodgeFlashDuration, 1)) :
         0.0f;
+    const float justDodgeImpulse =
+        justDodgeCameraRate > 0.0f ?
+        std::sin((1.0f - justDodgeCameraRate) * std::numbers::pi_v<float>) :
+        0.0f;
+    const float justDodgeWhip = justDodgeCameraRate * justDodgeCameraRate;
+    const float justDodgeRipple =
+        justDodgeCameraRate > 0.0f ?
+        std::sin((1.0f - justDodgeCameraRate) * std::numbers::pi_v<float> * 2.0f) *
+            justDodgeCameraRate :
+        0.0f;
+    const float justDodgeChromaticShift =
+        justDodgeImpulse * (0.35f + justDodgeCameraRate * 0.65f);
+    const float playerImpactCameraRate =
+        playerImpactFlashTimer_ > 0 ?
+        static_cast<float>(playerImpactFlashTimer_) /
+            static_cast<float>((std::max)(playerImpactFlashDuration_, 1)) :
+        0.0f;
     const float dodgeLean =
         isPlayerDodging ?
         static_cast<float>(player_->GetDodgeDirection() >= 0 ? 1 : -1) :
@@ -4837,19 +5145,22 @@ void GameRuntime::UpdateGameCamera()
         0.0f;
 
     const Math::Vector3 targetTranslate = {
-            playerTranslate.x * 0.08f +
+            playerTranslate.x * (0.08f + justDodgeWhip * kJustDodgeCameraPlayerFollowX) +
             playerVelocity.x * 0.55f +
             dodgeLean * 0.18f +
-            dodgeLean * justDodgeCameraRate * 0.22f +
+            dodgeLean * (justDodgeWhip * 0.78f + justDodgeRipple * 0.22f) +
+            std::sin(cameraTimer_ * 3.7f) * justDodgeChromaticShift * 0.085f +
             railWideCurve * 0.22f +
             railDrift * 0.04f +
             shakeX,
         2.65f +
-            playerTranslate.y * 0.04f +
+            playerTranslate.y * (0.04f + justDodgeWhip * kJustDodgeCameraPlayerFollowY) +
             playerVelocity.y * 0.38f +
             railLift +
             stageCameraLiftBias_ +
             std::sin(railDistance_ * 0.017f + 0.35f) * 0.16f +
+            justDodgeImpulse * 0.24f +
+            justDodgeWhip * (0.08f - kJustDodgeCameraLowAngle) +
             bob +
             shakeY,
             railDistance_ -
@@ -4857,11 +5168,18 @@ void GameRuntime::UpdateGameCamera()
                 speedPulse * 0.55f +
                 railSpeedRate * 0.46f +
                 inputSpeed * 0.22f +
-                std::abs(turnRate) * 0.18f) +
-            resultZoom,
+            std::abs(turnRate) * 0.18f) +
+            resultZoom +
+            justDodgeWhip * kJustDodgeCameraClosePushIn +
+            justDodgeImpulse * 0.36f +
+            playerImpactCameraRate * playerImpactCameraRate * 0.42f,
     };
 
-    cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, 0.065f);
+    const float cameraTranslateRate =
+        0.065f +
+        justDodgeCameraRate * 0.105f +
+        playerImpactCameraRate * 0.020f;
+    cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, cameraTranslateRate);
 
     const Math::Vector3 targetRotate = {
         0.065f +
@@ -4876,12 +5194,9 @@ void GameRuntime::UpdateGameCamera()
             stageCameraYawBias_ * 0.35f +
             playerVelocity.x * 0.006f,
         stageCameraRollBias_ * 0.55f -
-            turnRate * 0.035f -
-            playerVelocity.x * 0.030f -
-            playerTranslate.x * 0.0022f +
-            dodgeLean * 0.052f +
-            dodgeLean * justDodgeCameraRate * 0.038f +
-            shakeX * 0.008f,
+            turnRate * 0.024f +
+            playerImpactCameraRate * 0.010f +
+            shakeX * 0.006f,
     };
 
     const float targetFov =
@@ -4891,14 +5206,16 @@ void GameRuntime::UpdateGameCamera()
         std::abs(turnRate) * 0.020f +
         inputSpeed * 0.025f +
         (isPlayerDodging ? 0.024f : 0.0f) +
-        justDodgeCameraRate * 0.020f +
+        playerImpactCameraRate * 0.030f -
+        justDodgeWhip * kJustDodgeCameraFovTighten -
+        justDodgeImpulse * 0.026f +
         stageCameraFovBoost_ +
         (isGameClear_ ? -0.035f : 0.0f) +
         (isGameOver_ ? 0.025f : 0.0f) +
         cameraShakePower_ * shakeRate * 0.04f;
 
-    cameraRotate_ = Lerp(cameraRotate_, targetRotate, 0.075f);
-    cameraFovY_ = Lerp(cameraFovY_, targetFov, 0.060f);
+    cameraRotate_ = Lerp(cameraRotate_, targetRotate, 0.075f + justDodgeCameraRate * 0.082f);
+    cameraFovY_ = Lerp(cameraFovY_, targetFov, 0.060f + justDodgeCameraRate * 0.080f);
 
     camera_->SetTranslate(cameraTranslate_);
     camera_->SetRotate(cameraRotate_);

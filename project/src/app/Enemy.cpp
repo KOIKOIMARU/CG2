@@ -105,6 +105,7 @@ void Enemy::Initialize(
     entryStyle_ = entryStyle;
     lifeState_ = LifeState::Alive;
     age_ = 0;
+    ageTimer_ = 0.0f;
     hitFlashTimer_ = 0;
     moveTimer_ = 0.0f;
     visualScaleRate_ = 0.42f;
@@ -172,13 +173,17 @@ void Enemy::Initialize(
     object_->SetScale(baseScale_);
     object_->SetColor(baseColor_);
     if (behavior_ == Behavior::Boss) {
-        object_->SetEnvironmentCoefficient(0.08f);
-        object_->SetShininess(30.0f);
-        object_->SetSpecularColor({ 0.38f, 0.34f, 0.46f });
+        object_->SetEnvironmentCoefficient(0.09f);
+        object_->SetShininess(46.0f);
+        object_->SetSpecularColor({ 0.50f, 0.46f, 0.62f });
+        object_->SetRoughness(0.40f);
+        object_->SetMetallic(0.46f);
     } else {
-        object_->SetEnvironmentCoefficient(0.05f);
-        object_->SetShininess(34.0f);
-        object_->SetSpecularColor({ 0.36f, 0.28f, 0.32f });
+        object_->SetEnvironmentCoefficient(0.06f);
+        object_->SetShininess(42.0f);
+        object_->SetSpecularColor({ 0.42f, 0.32f, 0.38f });
+        object_->SetRoughness(0.46f);
+        object_->SetMetallic(0.34f);
     }
     if (textureOverride && textureOverride[0] != '\0') {
         object_->SetTextureFilePath(textureOverride);
@@ -188,14 +193,16 @@ void Enemy::Initialize(
     object_->Update();
 }
 
-void Enemy::Update(float railDistance)
+void Enemy::Update(float railDistance, float timeScale)
 {
     if (IsDead() || !object_) {
         return;
     }
 
-    ++age_;
-    moveTimer_ += 1.0f;
+    const float motionScale = std::clamp(timeScale, 0.05f, 1.0f);
+    ageTimer_ += motionScale;
+    age_ = static_cast<int>(std::floor(ageTimer_));
+    moveTimer_ += motionScale;
     if (hitFlashTimer_ > 0) {
         --hitFlashTimer_;
     }
@@ -412,6 +419,15 @@ void Enemy::Draw()
         lifeState_ != LifeState::Escaped &&
         object_) {
         object_->Draw();
+    }
+}
+
+void Enemy::DrawShadow(const Math::Matrix4x4& lightViewProjection)
+{
+    if (lifeState_ != LifeState::Destroyed &&
+        lifeState_ != LifeState::Escaped &&
+        object_) {
+        object_->DrawShadow(lightViewProjection);
     }
 }
 

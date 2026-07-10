@@ -22,7 +22,11 @@ struct DirectionalLight {
     Vector4 color;
     Vector3 direction;
     float intensity;
-    Vector3 padding;
+    Matrix4x4 lightViewProjection;
+    float shadowStrength;
+    float shadowBias;
+    float shadowNormalBias;
+    float shadowMapEnabled;
 };
 
 struct CameraForGPU {
@@ -85,6 +89,7 @@ public:
     void Initialize(Object3dCommon* object3dCommon);
     void Update();
     void Draw();
+    void DrawShadow(const Matrix4x4& lightViewProjection);
     void UpdateAnimation(float deltaTime);
 
     void SetModel(Model* model);
@@ -105,7 +110,10 @@ public:
     void SetColor(const Vector4& color);
     void SetShininess(float shininess);
     void SetSpecularColor(const Vector3& color);
+    void SetRoughness(float roughness);
+    void SetMetallic(float metallic);
     void SetAlphaReference(float alphaReference);
+    void SetShadowReceiveStrength(float strength);
     void SetUVTransform(const Matrix4x4& uvTransform);
     void SetLightingMode(int32_t lightingMode);
     void SetTextureFilePath(const std::string& textureFilePath);
@@ -121,7 +129,10 @@ public:
     Vector4 GetColor() const;
     float GetShininess() const;
     Vector3 GetSpecularColor() const;
+    float GetRoughness() const;
+    float GetMetallic() const;
     float GetAlphaReference() const;
+    float GetShadowReceiveStrength() const { return shadowReceiveStrength_; }
     int32_t GetLightingMode() const;
     const std::string& GetTextureFilePath() const;
 
@@ -160,6 +171,7 @@ private:
 
     ComPtr<ID3D12Resource> directionalLightResource_;
     DirectionalLight* directionalLightData_ = nullptr;
+    float shadowReceiveStrength_ = 1.0f;
 
     ComPtr<ID3D12Resource> cameraResource_;
     CameraForGPU* cameraData_ = nullptr;

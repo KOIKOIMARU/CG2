@@ -7,7 +7,10 @@ cbuffer MaterialCB : register(b0)
 
 Texture2D<float4> gTexture : register(t0);
 TextureCube<float4> gEnvironmentTexture : register(t1);
+Texture2D<float> gShadowMap : register(t2);
+Texture2D<float4> gNormalTexture : register(t3);
 SamplerState gSampler : register(s0);
+SamplerState gShadowSampler : register(s1);
 
 cbuffer CameraCB : register(b2)
 {
@@ -34,13 +37,146 @@ struct PixelShaderOutput
     float4 color : SV_TARGET0;
 };
 
+float CalculateDirectionalShadow(float3 worldPosition, float3 normal, float3 lightToSurface)
+{
+    if (gDirectionalLight.shadowMapEnabled < 0.5f ||
+        gDirectionalLight.shadowStrength <= 0.001f)
+    {
+        return 1.0f;
+    }
+
+    float4 lightClip =
+        mul(float4(worldPosition, 1.0f), gDirectionalLight.lightViewProjection);
+    if (lightClip.w <= 0.0001f)
+    {
+        return 1.0f;
+    }
+
+    float3 lightNdc = lightClip.xyz / lightClip.w;
+    if (lightNdc.z < 0.0f || lightNdc.z > 1.0f)
+    {
+        return 1.0f;
+    }
+
+    float2 shadowUv = lightNdc.xy * float2(0.5f, -0.5f) + 0.5f;
+    if (any(shadowUv < 0.002f) || any(shadowUv > 0.998f))
+    {
+        return 1.0f;
+    }
+
+    uint shadowWidth = 0;
+    uint shadowHeight = 0;
+    gShadowMap.GetDimensions(shadowWidth, shadowHeight);
+    float2 texelSize = 1.0f / float2(shadowWidth, shadowHeight);
+
+    float normalBias =
+        (1.0f - saturate(dot(normal, lightToSurface))) *
+        gDirectionalLight.shadowNormalBias;
+    float receiverDepth = lightNdc.z - gDirectionalLight.shadowBias - normalBias;
+
+    float visibility = 0.0f;
+    float2 sampleOffset = texelSize * 0.75f;
+    float sampledDepth =
+        gShadowMap.Sample(gShadowSampler, shadowUv + float2(-sampleOffset.x, -sampleOffset.y));
+    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
+    sampledDepth =
+        gShadowMap.Sample(gShadowSampler, shadowUv + float2(sampleOffset.x, -sampleOffset.y));
+    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
+    sampledDepth =
+        gShadowMap.Sample(gShadowSampler, shadowUv + float2(-sampleOffset.x, sampleOffset.y));
+    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
+    sampledDepth =
+        gShadowMap.Sample(gShadowSampler, shadowUv + float2(sampleOffset.x, sampleOffset.y));
+    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
+    visibility *= 0.25f;
+
+    return lerp(1.0f - gDirectionalLight.shadowStrength, 1.0f, visibility);
+}
+
+float3 SampleEnvironment(float3 direction)
+{
+    return gEnvironmentTexture.Sample(gSampler, normalize(direction)).rgb;
+}
+
+float3 CalculateDiffuseEnvironment(float3 normal, float roughness, float metallic)
+{
+    float upFactor = saturate(normal.y * 0.5f + 0.5f);
+    float3 skyDirection = normalize(normal + float3(0.0f, 0.55f, 0.0f));
+    float3 horizonDirection =
+        normalize(float3(normal.x, 0.18f, normal.z) + float3(0.0f, 0.0f, 0.001f));
+
+    float3 skyColor = SampleEnvironment(skyDirection);
+    float3 horizonColor = SampleEnvironment(horizonDirection);
+    float3 groundBounce = float3(0.36f, 0.36f, 0.34f);
+    float3 upperHemisphere = lerp(horizonColor, skyColor, upFactor);
+    float3 hemisphereColor = lerp(groundBounce, upperHemisphere, upFactor);
+
+    float surfaceWrap = lerp(0.72f, 1.08f, upFactor);
+    float diffuseStrength =
+        lerp(0.075f, 0.125f, roughness) *
+        lerp(1.0f, 0.58f, metallic);
+    return hemisphereColor * surfaceWrap * diffuseStrength;
+}
+
+float3 ApplyNormalMap(
+    float3 geometryNormal,
+    float3 worldPosition,
+    float2 uv,
+    float normalStrength)
+{
+    float strength = saturate(normalStrength);
+    if (strength <= 0.001f)
+    {
+        return geometryNormal;
+    }
+
+    float3 dp1 = ddx(worldPosition);
+    float3 dp2 = ddy(worldPosition);
+    float2 duv1 = ddx(uv);
+    float2 duv2 = ddy(uv);
+
+    float3 dp2Perpendicular = cross(dp2, geometryNormal);
+    float3 dp1Perpendicular = cross(geometryNormal, dp1);
+    float3 tangent = dp2Perpendicular * duv1.x + dp1Perpendicular * duv2.x;
+    float3 bitangent = dp2Perpendicular * duv1.y + dp1Perpendicular * duv2.y;
+
+    float tangentLength = dot(tangent, tangent);
+    float bitangentLength = dot(bitangent, bitangent);
+    float inverseLength = rsqrt(max(max(tangentLength, bitangentLength), 0.000001f));
+    tangent *= inverseLength;
+    bitangent *= inverseLength;
+
+    float3 tangentNormal = gNormalTexture.Sample(gSampler, uv).xyz * 2.0f - 1.0f;
+    tangentNormal.xy *= strength;
+    tangentNormal = normalize(tangentNormal);
+
+    return normalize(
+        tangent * tangentNormal.x +
+        bitangent * tangentNormal.y +
+        geometryNormal * tangentNormal.z);
+}
+
 PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
 
     float2 uv = mul(float4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform).xy;
     float4 tex = gTexture.Sample(gSampler, uv);
-    float3 normal = normalize(input.normal);
+    float3 geometryNormal = normalize(input.normal);
+    float3 normal = ApplyNormalMap(
+        geometryNormal,
+        input.worldPosition,
+        uv,
+        gMaterial.normalStrength);
+    float3 baseColor = gMaterial.color.rgb * tex.rgb;
+    float roughness = max(saturate(gMaterial.roughness), 0.04f);
+    float metallic = saturate(gMaterial.metallic);
+    float3 diffuseAlbedo = baseColor * (1.0f - metallic * 0.65f);
+    float3 specularTint = lerp(gMaterial.specularColor, baseColor, metallic);
+    float specularPower = lerp(max(gMaterial.shininess, 1.0f), 12.0f, roughness);
+    float specularEnergy =
+        lerp(0.95f, 0.24f, roughness) *
+        lerp(1.0f, 1.45f, metallic);
 
     if (tex.a <= gMaterial.alphaReference)
     {
@@ -59,20 +195,26 @@ PixelShaderOutput main(VertexShaderOutput input)
             diffuseFactorDir = halfLambert * halfLambert;
         }
 
+        float directionalShadow =
+            CalculateDirectionalShadow(input.worldPosition, normal, Ld);
+
         float3 diffuseDir =
-            gMaterial.color.rgb * tex.rgb *
+            diffuseAlbedo *
             gDirectionalLight.color.rgb *
             diffuseFactorDir *
-            gDirectionalLight.intensity;
+            gDirectionalLight.intensity *
+            directionalShadow;
 
         float3 Hd = normalize(Ld + toEye);
         float specularPowDir =
-            pow(saturate(dot(normal, Hd)), gMaterial.shininess);
+            pow(saturate(dot(normal, Hd)), specularPower);
         float3 specularDir =
             gDirectionalLight.color.rgb *
             gDirectionalLight.intensity *
             specularPowDir *
-            gMaterial.specularColor;
+            specularTint *
+            specularEnergy *
+            directionalShadow;
 
         float3 LpVec = gPointLight.position - input.worldPosition;
         float distP = length(LpVec);
@@ -88,7 +230,7 @@ PixelShaderOutput main(VertexShaderOutput input)
         }
 
         float3 diffusePoint =
-            gMaterial.color.rgb * tex.rgb *
+            diffuseAlbedo *
             gPointLight.color.rgb *
             diffuseFactorPoint *
             gPointLight.intensity *
@@ -96,13 +238,14 @@ PixelShaderOutput main(VertexShaderOutput input)
 
         float3 Hp = normalize(Lp + toEye);
         float specularPowPoint =
-            pow(saturate(dot(normal, Hp)), gMaterial.shininess);
+            pow(saturate(dot(normal, Hp)), specularPower);
         float3 specularPoint =
             gPointLight.color.rgb *
             gPointLight.intensity *
             attenP *
             specularPowPoint *
-            gMaterial.specularColor;
+            specularTint *
+            specularEnergy;
 
         float3 LsFromLight = input.worldPosition - gSpotLight.position;
         float distS = length(LsFromLight);
@@ -129,31 +272,46 @@ PixelShaderOutput main(VertexShaderOutput input)
         }
 
         float3 diffuseSpot =
-            gMaterial.color.rgb * tex.rgb *
+            diffuseAlbedo *
             gSpotLight.color.rgb *
             diffuseFactorSpot *
             spotFactor;
 
         float3 Hs = normalize(lightToSurface + toEye);
         float specularPowSpot =
-            pow(saturate(dot(normal, Hs)), gMaterial.shininess);
+            pow(saturate(dot(normal, Hs)), specularPower);
         float3 specularSpot =
             gSpotLight.color.rgb *
             spotFactor *
             specularPowSpot *
-            gMaterial.specularColor;
+            specularTint *
+            specularEnergy;
 
         float3 cameraToPosition =
             normalize(input.worldPosition - gCamera.worldPosition);
         float3 reflectedVector = reflect(cameraToPosition, normal);
+        float viewFresnel =
+            pow(1.0f - saturate(dot(normal, toEye)), 4.0f);
+        float environmentScale =
+            lerp(1.10f, 0.38f, roughness) *
+            lerp(1.0f, 1.55f, metallic) *
+            lerp(0.82f, 1.28f, viewFresnel);
         float3 environmentColor =
-            gEnvironmentTexture.Sample(gSampler, reflectedVector).rgb *
-            gMaterial.environmentCoefficient;
+            lerp(
+                SampleEnvironment(reflectedVector),
+                SampleEnvironment(normal + float3(0.0f, 0.35f, 0.0f)),
+                saturate(roughness * 0.70f)) *
+            gMaterial.environmentCoefficient *
+            environmentScale;
+        float3 diffuseEnvironment =
+            diffuseAlbedo *
+            CalculateDiffuseEnvironment(normal, roughness, metallic);
 
         output.color.rgb =
             diffuseDir + specularDir +
             diffusePoint + specularPoint +
             diffuseSpot + specularSpot +
+            diffuseEnvironment +
             environmentColor;
         output.color.a = gMaterial.color.a * tex.a;
     }

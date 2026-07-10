@@ -109,6 +109,10 @@ private:
         float rollSpeed = 0.0f;
     };
 
+    struct ContactShadow {
+        std::unique_ptr<Object3d> object;
+    };
+
     struct RewardHeart {
         std::unique_ptr<Object3d> object;
         Math::Vector3 position{};
@@ -177,7 +181,17 @@ private:
     void DrawDepthCueEffects();
     void InitializeRailScenery();
     void UpdateRailScenery();
+    void RenderShadowMap();
     void DrawRailScenery();
+    void InitializeContactShadows();
+    void DrawContactShadows();
+    void DrawContactShadowObject(
+        Object3d& object,
+        const Math::Vector3& position,
+        float scaleX,
+        float scaleZ,
+        float alpha,
+        float yaw);
     void UpdateStageDirector();
     void SpawnStageEnemy(
         float x,
@@ -211,6 +225,10 @@ private:
     void AddPlayerDamageEffect(const Math::Vector3& worldPosition);
     void AddPlayerDodgeGrazeEffect(const Math::Vector3& worldPosition);
     void TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPosition);
+    void TriggerPlayerImpactMoment(
+        bool isCharged,
+        bool isBossHit,
+        bool isDestroyed);
     void AddHitEffectVisual(
         HitEffect& effect,
         Model* model,
@@ -258,6 +276,7 @@ private:
     void UpdatePlayerBullets();
     void UpdateEnemyBullets();
     void UpdateEnemies();
+    float GetCinematicWorldTimeScale() const;
     Math::Vector3 CalculateAimDirection(const Math::Vector3& origin) const;
     const Enemy* FindHomingTargetForBullet(const Bullet& bullet) const;
     int GetTotalEnemyTargetCount() const;
@@ -301,8 +320,9 @@ private:
     std::vector<RailSceneryObject> railSceneryObjects_;
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
-    std::array<PlayerDodgeAfterimage, 9> playerDodgeAfterimages_;
+    std::array<PlayerDodgeAfterimage, 16> playerDodgeAfterimages_;
     std::array<PlayerFlightAura, 5> playerFlightAuras_;
+    std::array<ContactShadow, 32> contactShadows_;
     std::array<bool, 5> stageRailEventTriggered_{};
     std::array<bool, 24> stageEnemyEventTriggered_{};
     std::array<WaveTuning, 3> waveTuning_{ {
@@ -335,6 +355,7 @@ private:
     Model* effectExplosionFireballModel_ = nullptr;
     Model* effectExplosionSmokeModel_ = nullptr;
     Model* effectExplosionSparksModel_ = nullptr;
+    Model* effectContactShadowModel_ = nullptr;
 
     int shootCooldown_ = 0;
     int shootBufferTimer_ = 0;
@@ -354,8 +375,11 @@ private:
     int chargeFlashTimer_ = 0;
     int playerDodgeAfterimageTimer_ = 0;
     int justDodgeFlashTimer_ = 0;
-    int justDodgeTextTimer_ = 0;
     int justDodgeSlowTimer_ = 0;
+    int playerImpactFlashTimer_ = 0;
+    int playerImpactFlashDuration_ = 1;
+    int playerImpactSlowTimer_ = 0;
+    int playerImpactSlowDuration_ = 1;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
     int bulletPoolWarmupTimer_ = 0;
@@ -367,9 +391,9 @@ private:
     size_t maxActivePlayerBullets_ = 0;
     size_t maxActiveEnemyBullets_ = 0;
     int chargeShotThreshold_ = 88;
-    int normalShootCooldown_ = 16;
-    int chargedShootCooldown_ = 28;
-    int enemyShotInterval_ = 56;
+    int normalShootCooldown_ = 17;
+    int chargedShootCooldown_ = 30;
+    int enemyShotInterval_ = 64;
     int waveStartDelay_ = 90;
     float cameraTimer_ = 0.0f;
     float cameraShakePower_ = 0.0f;
@@ -380,10 +404,11 @@ private:
     float stageCameraRollBias_ = 0.0f;
     float stageCameraLiftBias_ = 0.0f;
     float stageCameraFovBoost_ = 0.0f;
-    float playerBulletSpeed_ = 1.28f;
-    float lockBulletSpeed_ = 1.48f;
-    float chargedBulletSpeedMultiplier_ = 1.10f;
-    float enemyBulletSpeed_ = 0.40f;
+    float playerImpactSlowScale_ = 1.0f;
+    float playerBulletSpeed_ = 1.36f;
+    float lockBulletSpeed_ = 1.62f;
+    float chargedBulletSpeedMultiplier_ = 1.12f;
+    float enemyBulletSpeed_ = 0.36f;
     float lockRadius_ = 118.0f;
     float cameraFovY_ = 0.590f;
     Math::Vector2 hudViewportMin_{ 0.0f, 0.0f };

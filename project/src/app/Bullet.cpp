@@ -89,6 +89,7 @@ void Bullet::Initialize(
     trailDistance_ = trailOffset;
     age_ = 0;
     initialLifeTimer_ = lifeTimer;
+    lifeTimerFloat_ = static_cast<float>(lifeTimer);
     object_->SetScale(bodyBaseScale_);
     object_->SetColor(bodyBaseColor_);
     object_->SetLightingMode(0);
@@ -192,13 +193,14 @@ void Bullet::Initialize(
     }
 }
 
-void Bullet::Update()
+void Bullet::Update(float timeScale)
 {
     if (isDead_ || !object_) {
         return;
     }
 
     ++age_;
+    const float motionScale = std::clamp(timeScale, 0.05f, 1.0f);
     if (homingEnabled_ && hasHomingTarget_) {
         const float speed =
             std::sqrt(
@@ -221,9 +223,9 @@ void Bullet::Update()
             velocity_ = steeredDirection * speed;
         }
     }
-    translate_.x += velocity_.x;
-    translate_.y += velocity_.y;
-    translate_.z += velocity_.z;
+    translate_.x += velocity_.x * motionScale;
+    translate_.y += velocity_.y * motionScale;
+    translate_.z += velocity_.z * motionScale;
     const float currentVelocityLength =
         std::sqrt(
             velocity_.x * velocity_.x +
@@ -261,7 +263,8 @@ void Bullet::Update()
         trailObject_->Update();
     }
 
-    --lifeTimer_;
+    lifeTimerFloat_ -= motionScale;
+    lifeTimer_ = (std::max)(0, static_cast<int>(std::ceil(lifeTimerFloat_)));
     const float dx = translate_.x - startTranslate_.x;
     const float dy = translate_.y - startTranslate_.y;
     const float dz = translate_.z - startTranslate_.z;

@@ -28,6 +28,10 @@ struct VertexData {
 
 struct MaterialData {
     std::string textureFilePath;
+    std::string normalTextureFilePath;
+    float roughness = 0.66f;
+    float metallic = 0.0f;
+    float normalStrength = 0.0f;
 };
 
 struct ModelDrawRange {
@@ -104,7 +108,10 @@ struct Material {
     float environmentCoefficient;
     float alphaReference;
     Vector3 specularColor;
-    float padding1;
+    float roughness;
+    float metallic;
+    float normalStrength;
+    float padding1[2];
     Matrix4x4 uvTransform;
 };
 

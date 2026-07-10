@@ -174,35 +174,51 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         randomParameterData_->time = randomTime_;
     }
     if (useGameTone) {
-        gameToneParameterData_->vignetteStrength = 0.62f;
-        gameToneParameterData_->saturation = 1.12f;
-        gameToneParameterData_->contrast = 1.15f;
+        gameToneParameterData_->vignetteStrength = 0.54f;
+        gameToneParameterData_->saturation = 1.08f;
+        gameToneParameterData_->contrast = 1.18f;
         gameToneParameterData_->damageTint = 0.0f;
         gameToneParameterData_->fogStart = 78.0f;
-        gameToneParameterData_->fogEnd = 235.0f;
-        gameToneParameterData_->fogStrength = 0.12f;
-        gameToneParameterData_->horizonFogStrength = 0.10f;
+        gameToneParameterData_->fogEnd = 280.0f;
+        gameToneParameterData_->fogStrength = 0.075f;
+        gameToneParameterData_->horizonFogStrength = 0.055f;
+        gameToneParameterData_->exposure = 1.06f;
+        gameToneParameterData_->blackPoint = 0.018f;
+        gameToneParameterData_->highlightCompression = 0.36f;
+        gameToneParameterData_->colorTemperature = 0.06f;
         if (postEffectMode == 13) {
             gameToneParameterData_->vignetteStrength = 0.92f;
             gameToneParameterData_->saturation = 0.86f;
             gameToneParameterData_->contrast = 1.22f;
             gameToneParameterData_->damageTint = 0.24f;
-            gameToneParameterData_->fogStrength = 0.16f;
-            gameToneParameterData_->horizonFogStrength = 0.13f;
+            gameToneParameterData_->fogStrength = 0.11f;
+            gameToneParameterData_->horizonFogStrength = 0.08f;
+            gameToneParameterData_->exposure = 1.02f;
+            gameToneParameterData_->blackPoint = 0.028f;
+            gameToneParameterData_->highlightCompression = 0.42f;
+            gameToneParameterData_->colorTemperature = -0.04f;
         } else if (postEffectMode == 14) {
             gameToneParameterData_->vignetteStrength = 0.36f;
-            gameToneParameterData_->saturation = 1.18f;
-            gameToneParameterData_->contrast = 1.12f;
+            gameToneParameterData_->saturation = 1.13f;
+            gameToneParameterData_->contrast = 1.15f;
             gameToneParameterData_->damageTint = 0.0f;
-            gameToneParameterData_->fogStrength = 0.10f;
-            gameToneParameterData_->horizonFogStrength = 0.08f;
+            gameToneParameterData_->fogStrength = 0.065f;
+            gameToneParameterData_->horizonFogStrength = 0.045f;
+            gameToneParameterData_->exposure = 1.09f;
+            gameToneParameterData_->blackPoint = 0.012f;
+            gameToneParameterData_->highlightCompression = 0.32f;
+            gameToneParameterData_->colorTemperature = 0.09f;
         } else if (postEffectMode == 15) {
             gameToneParameterData_->vignetteStrength = 1.12f;
             gameToneParameterData_->saturation = 0.28f;
             gameToneParameterData_->contrast = 1.22f;
             gameToneParameterData_->damageTint = 0.18f;
-            gameToneParameterData_->fogStrength = 0.20f;
-            gameToneParameterData_->horizonFogStrength = 0.16f;
+            gameToneParameterData_->fogStrength = 0.14f;
+            gameToneParameterData_->horizonFogStrength = 0.10f;
+            gameToneParameterData_->exposure = 0.92f;
+            gameToneParameterData_->blackPoint = 0.050f;
+            gameToneParameterData_->highlightCompression = 0.56f;
+            gameToneParameterData_->colorTemperature = -0.10f;
         }
     }
 
@@ -217,8 +233,13 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     renderTextureState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
     if (postEffectMode == 16) {
-        DrawBloomPasses();
-        DrawBloomCompositeToBackBuffer();
+        DrawBloomPasses(
+            renderTextureSrvIndex_,
+            WinApp::kClientWidth,
+            WinApp::kClientHeight,
+            0.58f,
+            0.76f);
+        DrawBloomCompositeToBackBuffer(renderTextureSrvIndex_, 0.86f);
         return;
     }
 
@@ -1179,7 +1200,12 @@ void DirectXCommon::DrawFullscreenPass(
     commandList_->DrawInstanced(3, 1, 0, 0);
 }
 
-void DirectXCommon::DrawBloomPasses()
+void DirectXCommon::DrawBloomPasses(
+    uint32_t sourceSrvIndex,
+    uint32_t sourceWidth,
+    uint32_t sourceHeight,
+    float threshold,
+    float scatter)
 {
     assert(bloomParameterData_);
     assert(bloomParameterResource_);
@@ -1215,8 +1241,8 @@ void DirectXCommon::DrawBloomPasses()
         };
 
     TransitionResource(halfA.resource.Get(), halfA.state, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    setupParameter(WinApp::kClientWidth, WinApp::kClientHeight, { 0.0f, 0.0f }, 0.62f, 1.0f, 0.0f);
-    DrawFullscreenPass(getRtvHandle(halfA.rtvIndex), halfA.width, halfA.height, bloomExtractPipelineState_.Get(), renderTextureSrvIndex_, renderTextureSrvIndex_, bloomParameterAddress);
+    setupParameter(sourceWidth, sourceHeight, { 0.0f, 0.0f }, threshold, 1.0f, 0.0f);
+    DrawFullscreenPass(getRtvHandle(halfA.rtvIndex), halfA.width, halfA.height, bloomExtractPipelineState_.Get(), sourceSrvIndex, sourceSrvIndex, bloomParameterAddress);
     TransitionResource(halfA.resource.Get(), halfA.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     TransitionResource(halfB.resource.Get(), halfB.state, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -1245,12 +1271,14 @@ void DirectXCommon::DrawBloomPasses()
     TransitionResource(quarterA.resource.Get(), quarterA.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     TransitionResource(halfB.resource.Get(), halfB.state, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    setupParameter(halfA.width, halfA.height, { 0.0f, 0.0f }, 0.0f, 1.0f, 0.72f);
+    setupParameter(halfA.width, halfA.height, { 0.0f, 0.0f }, 0.0f, 1.0f, scatter);
     DrawFullscreenPass(getRtvHandle(halfB.rtvIndex), halfB.width, halfB.height, bloomUpsamplePipelineState_.Get(), halfA.srvIndex, quarterA.srvIndex, bloomParameterAddress);
     TransitionResource(halfB.resource.Get(), halfB.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
-void DirectXCommon::DrawBloomCompositeToBackBuffer()
+void DirectXCommon::DrawBloomCompositeToBackBuffer(
+    uint32_t sourceSrvIndex,
+    float intensity)
 {
     assert(bloomParameterData_);
     assert(bloomParameterResource_);
@@ -1268,7 +1296,7 @@ void DirectXCommon::DrawBloomCompositeToBackBuffer()
     };
     bloomParameterData_->direction = { 0.0f, 0.0f };
     bloomParameterData_->threshold = 0.0f;
-    bloomParameterData_->intensity = 0.86f;
+    bloomParameterData_->intensity = intensity;
     bloomParameterData_->scatter = 0.0f;
     bloomParameterData_->padding = 0.0f;
 
@@ -1281,7 +1309,7 @@ void DirectXCommon::DrawBloomCompositeToBackBuffer()
         WinApp::kClientWidth,
         WinApp::kClientHeight,
         bloomCompositePipelineState_.Get(),
-        renderTextureSrvIndex_,
+        sourceSrvIndex,
         halfB.srvIndex,
         bloomParameterResource_->GetGPUVirtualAddress());
 }
@@ -1527,14 +1555,18 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     );
     gameToneParameterData_->projectionInverse =
         Math::Transpose(Math::MakeIdentity4x4());
-    gameToneParameterData_->vignetteStrength = 0.52f;
-    gameToneParameterData_->saturation = 1.10f;
-    gameToneParameterData_->contrast = 1.08f;
+    gameToneParameterData_->vignetteStrength = 0.54f;
+    gameToneParameterData_->saturation = 1.08f;
+    gameToneParameterData_->contrast = 1.18f;
     gameToneParameterData_->damageTint = 0.0f;
     gameToneParameterData_->fogStart = 78.0f;
-    gameToneParameterData_->fogEnd = 235.0f;
-    gameToneParameterData_->fogStrength = 0.12f;
-    gameToneParameterData_->horizonFogStrength = 0.10f;
+    gameToneParameterData_->fogEnd = 280.0f;
+    gameToneParameterData_->fogStrength = 0.075f;
+    gameToneParameterData_->horizonFogStrength = 0.055f;
+    gameToneParameterData_->exposure = 1.06f;
+    gameToneParameterData_->blackPoint = 0.018f;
+    gameToneParameterData_->highlightCompression = 0.36f;
+    gameToneParameterData_->colorTemperature = 0.06f;
 
     depthOutlineParameterResource_ =
         CreateBufferResource(sizeof(DepthOutlineParameter));
@@ -1774,7 +1806,9 @@ void DirectXCommon::UploadTextureData(
 }
 
 // すでにある UploadTextureData の下あたりに追加
-DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
+DirectX::ScratchImage DirectXCommon::LoadTexture(
+    const std::string& filePath,
+    bool forceSrgb)
 {
     // std::string → std::wstring に変換
     std::wstring filePathW(filePath.begin(), filePath.end());
@@ -1799,7 +1833,7 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
     // PNG / JPG など WIC 対応画像を読み込む
     hr = DirectX::LoadFromWICFile(
         filePathW.c_str(),
-        DirectX::WIC_FLAGS_FORCE_SRGB, // sRGB を想定
+        forceSrgb ? DirectX::WIC_FLAGS_FORCE_SRGB : DirectX::WIC_FLAGS_NONE,
         &metadata,
         image);
     assert(SUCCEEDED(hr));
@@ -1810,7 +1844,7 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(const std::string& filePath)
         image.GetImages(),
         image.GetImageCount(),
         metadata,
-        DirectX::TEX_FILTER_SRGB,
+        forceSrgb ? DirectX::TEX_FILTER_SRGB : DirectX::TEX_FILTER_DEFAULT,
         0,
         mipImages);
     assert(SUCCEEDED(hr));

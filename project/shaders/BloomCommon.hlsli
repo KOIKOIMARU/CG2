@@ -32,7 +32,23 @@ float32_t3 ApplySaturation(float32_t3 color, float32_t amount)
 
 float32_t3 ExtractBloom(float32_t3 color, float32_t threshold)
 {
-    float32_t luminance = Luminance(color);
-    float32_t mask = smoothstep(threshold, threshold + 0.55f, luminance);
-    return color * mask;
+    float32_t brightness = max(max(color.r, color.g), color.b);
+    float32_t knee = max(threshold * 0.42f, 0.0001f);
+    float32_t soft = brightness - threshold + knee;
+    soft = clamp(soft, 0.0f, knee * 2.0f);
+    soft = soft * soft / (knee * 4.0f + 0.0001f);
+    float32_t contribution =
+        max(brightness - threshold, soft) /
+        max(brightness, 0.0001f);
+    float32_t luminanceMask =
+        smoothstep(threshold * 0.72f, threshold + knee, Luminance(color));
+    return color * saturate(contribution * luminanceMask);
+}
+
+float32_t3 ApplyFilmicCurve(float32_t3 color)
+{
+    color = max(color, float32_t3(0.0f, 0.0f, 0.0f));
+    return saturate(
+        (color * (2.51f * color + 0.03f)) /
+        (color * (2.43f * color + 0.59f) + 0.14f));
 }

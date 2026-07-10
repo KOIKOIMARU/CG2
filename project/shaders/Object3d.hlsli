@@ -14,7 +14,10 @@ struct Material
     float environmentCoefficient;
     float alphaReference;
     float3 specularColor;
-    float padding1;
+    float roughness;
+    float metallic;
+    float normalStrength;
+    float2 padding1;
     float4x4 uvTransform;
 };
 
@@ -23,7 +26,11 @@ struct DirectionalLight
     float4 color;
     float3 direction;
     float intensity;
-    float3 padding;
+    float4x4 lightViewProjection;
+    float shadowStrength;
+    float shadowBias;
+    float shadowNormalBias;
+    float shadowMapEnabled;
 };
 
 struct Camera

@@ -16,7 +16,13 @@ public:
     // ★ SRVマネージャを受け取る
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
 
-    void LoadTexture(const std::string& filePath);
+    void LoadTexture(const std::string& filePath, bool forceSrgb = true);
+    void CreateSolidTexture2D(
+        const std::string& name,
+        uint8_t red,
+        uint8_t green,
+        uint8_t blue,
+        uint8_t alpha = 255);
     void CreateSolidCubeTexture(
         const std::string& name,
         uint8_t red,

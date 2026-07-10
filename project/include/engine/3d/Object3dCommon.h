@@ -5,6 +5,8 @@
 #include <wrl.h>
 #include <d3d12.h>
 
+#include "engine/base/Math.h"
+
 class DirectXCommon;
 class Camera;
 class SrvManager;
@@ -21,6 +23,7 @@ enum class BlendMode : uint32_t {
 
 enum class DepthDrawMode : uint32_t {
     Normal,
+    ReadOnly,
     Overlay,
     Count,
 };
@@ -42,6 +45,17 @@ public:
     SrvManager* GetSrvManager() const { return srvManager_; }
 
     void CommonDrawSetting();
+    void CommonShadowDrawSetting();
+    bool BeginShadowPass(const Math::Vector3& focusCenter);
+    void EndShadowPass();
+    const Math::Matrix4x4& GetShadowLightViewProjection() const {
+        return shadowLightViewProjection_;
+    }
+    uint32_t GetShadowMapSrvIndex() const { return shadowMapSrvIndex_; }
+    bool IsShadowMapReady() const { return shadowMapReady_; }
+    float GetShadowStrength() const { return shadowStrength_; }
+    float GetShadowBias() const { return shadowBias_; }
+    float GetShadowNormalBias() const { return shadowNormalBias_; }
     void SetBlendMode(BlendMode blendMode) { blendMode_ = blendMode; }
     BlendMode GetBlendMode() const { return blendMode_; }
     void SetDepthDrawMode(DepthDrawMode depthDrawMode) {
@@ -68,8 +82,13 @@ public:
 private:
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
+    void CreateShadowMap();
+    void TransitionShadowMap(D3D12_RESOURCE_STATES nextState);
+    void RestoreMainRenderTarget();
 
 private:
+    static constexpr uint32_t kShadowMapSize = 1024;
+
     DirectXCommon* dxCommon_ = nullptr;
     SrvManager* srvManager_ = nullptr;
 
@@ -79,9 +98,24 @@ private:
             Microsoft::WRL::ComPtr<ID3D12PipelineState>,
             static_cast<size_t>(BlendMode::Count)>,
         static_cast<size_t>(DepthDrawMode::Count)> pipelineStates_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPipelineState_;
     BlendMode blendMode_ = BlendMode::Normal;
     DepthDrawMode depthDrawMode_ = DepthDrawMode::Normal;
 
     Camera* defaultCamera_ = nullptr;
     std::string environmentTexturePath_;
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> shadowMapResource_;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowMapDsvHeap_;
+    D3D12_RESOURCE_STATES shadowMapState_ =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    D3D12_VIEWPORT shadowViewport_{};
+    D3D12_RECT shadowScissorRect_{};
+    Math::Matrix4x4 shadowLightViewProjection_ = Math::MakeIdentity4x4();
+    Math::Vector3 shadowLightDirection_{ 0.34f, -0.82f, 0.46f };
+    uint32_t shadowMapSrvIndex_ = UINT32_MAX;
+    float shadowStrength_ = 0.34f;
+    float shadowBias_ = 0.0018f;
+    float shadowNormalBias_ = 0.0035f;
+    bool shadowMapReady_ = false;
 };

@@ -3,12 +3,110 @@
 #include "engine/base/Logger.h"
 #include "engine/base/SrvManager.h"
 #include <cassert>
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 using Microsoft::WRL::ComPtr;
 using Logger::Log;
 
 namespace {
+
+constexpr float kShadowLightDistance = 170.0f;
+constexpr float kShadowViewHalfWidth = 145.0f;
+constexpr float kShadowViewHalfHeight = 105.0f;
+constexpr float kShadowNearClip = 1.0f;
+constexpr float kShadowFarClip = 430.0f;
+
+Math::Vector3 Subtract(const Math::Vector3& a, const Math::Vector3& b)
+{
+	return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
+
+Math::Vector3 Scale(const Math::Vector3& v, float scale)
+{
+	return { v.x * scale, v.y * scale, v.z * scale };
+}
+
+float Dot(const Math::Vector3& a, const Math::Vector3& b)
+{
+	return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Math::Vector3 Cross(const Math::Vector3& a, const Math::Vector3& b)
+{
+	return {
+		a.y * b.z - a.z * b.y,
+		a.z * b.x - a.x * b.z,
+		a.x * b.y - a.y * b.x
+	};
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE GetCpuDescriptorHandle(
+	ID3D12DescriptorHeap* descriptorHeap,
+	UINT descriptorSize,
+	UINT index)
+{
+	assert(descriptorHeap);
+	D3D12_CPU_DESCRIPTOR_HANDLE handle =
+		descriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	handle.ptr += static_cast<SIZE_T>(descriptorSize) * index;
+	return handle;
+}
+
+Math::Matrix4x4 MakeLookAtMatrix(
+	const Math::Vector3& eye,
+	const Math::Vector3& target,
+	const Math::Vector3& up)
+{
+	const Math::Vector3 zAxis = Math::Normalize(Subtract(target, eye));
+	Math::Vector3 xAxis = Math::Normalize(Cross(up, zAxis));
+	if (std::abs(xAxis.x) + std::abs(xAxis.y) + std::abs(xAxis.z) <= 0.0001f) {
+		xAxis = { 1.0f, 0.0f, 0.0f };
+	}
+	const Math::Vector3 yAxis = Cross(zAxis, xAxis);
+
+	Math::Matrix4x4 result{};
+	result.m[0][0] = xAxis.x;
+	result.m[0][1] = yAxis.x;
+	result.m[0][2] = zAxis.x;
+	result.m[0][3] = 0.0f;
+	result.m[1][0] = xAxis.y;
+	result.m[1][1] = yAxis.y;
+	result.m[1][2] = zAxis.y;
+	result.m[1][3] = 0.0f;
+	result.m[2][0] = xAxis.z;
+	result.m[2][1] = yAxis.z;
+	result.m[2][2] = zAxis.z;
+	result.m[2][3] = 0.0f;
+	result.m[3][0] = -Dot(xAxis, eye);
+	result.m[3][1] = -Dot(yAxis, eye);
+	result.m[3][2] = -Dot(zAxis, eye);
+	result.m[3][3] = 1.0f;
+	return result;
+}
+
+Math::Matrix4x4 MakeDirectionalLightViewProjection(
+	const Math::Vector3& focusCenter,
+	const Math::Vector3& lightDirection)
+{
+	const Math::Vector3 direction = Math::Normalize(lightDirection);
+	const Math::Vector3 eye =
+		Subtract(focusCenter, Scale(direction, kShadowLightDistance));
+	const Math::Vector3 up =
+		std::abs(direction.y) > 0.92f ?
+		Math::Vector3{ 0.0f, 0.0f, 1.0f } :
+		Math::Vector3{ 0.0f, 1.0f, 0.0f };
+	const Math::Matrix4x4 view = MakeLookAtMatrix(eye, focusCenter, up);
+	const Math::Matrix4x4 projection = Math::MakeOrthographicMatrix(
+		-kShadowViewHalfWidth,
+		kShadowViewHalfHeight,
+		kShadowViewHalfWidth,
+		-kShadowViewHalfHeight,
+		kShadowNearClip,
+		kShadowFarClip);
+	return Math::Multiply(view, projection);
+}
 
 D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode)
 {
@@ -78,9 +176,11 @@ void Object3dCommon::Initialize(
 
 	dxCommon_ = dxCommon;
 	srvManager_ = srvManager;
+	shadowLightDirection_ = Math::Normalize(shadowLightDirection_);
 
 	CreateRootSignature();
 	CreateGraphicsPipelineState();
+	CreateShadowMap();
 }
 
 void Object3dCommon::CreateRootSignature() {
@@ -92,7 +192,7 @@ void Object3dCommon::CreateRootSignature() {
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	// RootParameter作成
-	D3D12_ROOT_PARAMETER rootParameters[9] = {};
+	D3D12_ROOT_PARAMETER rootParameters[11] = {};
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -110,7 +210,7 @@ void Object3dCommon::CreateRootSignature() {
 	rootParameters[2].Descriptor.ShaderRegister = 2;
 
 	// t0: SRVテクスチャ (PixelShader)
-	D3D12_DESCRIPTOR_RANGE descriptorRange[2] = {};
+	D3D12_DESCRIPTOR_RANGE descriptorRange[4] = {};
 	descriptorRange[0].BaseShaderRegister = 0;
 	descriptorRange[0].NumDescriptors = 1;
 	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -119,6 +219,14 @@ void Object3dCommon::CreateRootSignature() {
 	descriptorRange[1].NumDescriptors = 1;
 	descriptorRange[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 	descriptorRange[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+	descriptorRange[2].BaseShaderRegister = 2;
+	descriptorRange[2].NumDescriptors = 1;
+	descriptorRange[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descriptorRange[2].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+	descriptorRange[3].BaseShaderRegister = 3;
+	descriptorRange[3].NumDescriptors = 1;
+	descriptorRange[3].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+	descriptorRange[3].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
 	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -150,12 +258,22 @@ void Object3dCommon::CreateRootSignature() {
 	rootParameters[8].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 	rootParameters[8].Descriptor.ShaderRegister = 6;
 
+	rootParameters[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParameters[9].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[9].DescriptorTable.pDescriptorRanges = &descriptorRange[2];
+	rootParameters[9].DescriptorTable.NumDescriptorRanges = 1;
+
+	rootParameters[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	rootParameters[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[10].DescriptorTable.pDescriptorRanges = &descriptorRange[3];
+	rootParameters[10].DescriptorTable.NumDescriptorRanges = 1;
+
 	// ルートシグネチャのセットアップ
 	descriptionRootSignature.pParameters = rootParameters;
 	descriptionRootSignature.NumParameters = _countof(rootParameters);
 
 	// Samplerの設定
-	D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
+	D3D12_STATIC_SAMPLER_DESC staticSamplers[2] = {};
 	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR; // バイリニアフィルタ
 	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;   // 0~1の範囲外をリピート
 	staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -164,6 +282,14 @@ void Object3dCommon::CreateRootSignature() {
 	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;   // ありったけのMipmapを使う
 	staticSamplers[0].ShaderRegister = 0;   // レジスタ番号0を使う
 	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
+	staticSamplers[1].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	staticSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	staticSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	staticSamplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	staticSamplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	staticSamplers[1].MaxLOD = D3D12_FLOAT32_MAX;
+	staticSamplers[1].ShaderRegister = 1;
+	staticSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	descriptionRootSignature.pStaticSamplers = staticSamplers;
 	descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
 
@@ -240,6 +366,9 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 	auto pixelShaderBlob =
 		dxCommon_->CompileShader(L"shaders/Object3D.PS.hlsl", L"ps_6_0");
 
+	auto shadowVertexShaderBlob =
+		dxCommon_->CompileShader(L"shaders/Object3DShadow.VS.hlsl", L"vs_6_0");
+
 
 	// PSOを生成する
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
@@ -275,11 +404,18 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 	for (uint32_t depthModeIndex = 0;
 		depthModeIndex < static_cast<uint32_t>(DepthDrawMode::Count);
 		++depthModeIndex) {
-		if (static_cast<DepthDrawMode>(depthModeIndex) == DepthDrawMode::Overlay) {
+		const DepthDrawMode depthDrawMode =
+			static_cast<DepthDrawMode>(depthModeIndex);
+		if (depthDrawMode == DepthDrawMode::Overlay) {
 			graphicsPipelineStateDesc.DepthStencilState.DepthWriteMask =
 				D3D12_DEPTH_WRITE_MASK_ZERO;
 			graphicsPipelineStateDesc.DepthStencilState.DepthFunc =
 				D3D12_COMPARISON_FUNC_ALWAYS;
+		} else if (depthDrawMode == DepthDrawMode::ReadOnly) {
+			graphicsPipelineStateDesc.DepthStencilState.DepthWriteMask =
+				D3D12_DEPTH_WRITE_MASK_ZERO;
+			graphicsPipelineStateDesc.DepthStencilState.DepthFunc =
+				D3D12_COMPARISON_FUNC_LESS_EQUAL;
 		} else {
 			graphicsPipelineStateDesc.DepthStencilState.DepthWriteMask =
 				D3D12_DEPTH_WRITE_MASK_ALL;
@@ -301,6 +437,33 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 		}
 	}
 
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPipelineStateDesc =
+		graphicsPipelineStateDesc;
+	shadowPipelineStateDesc.VS = {
+		shadowVertexShaderBlob->GetBufferPointer(),
+		shadowVertexShaderBlob->GetBufferSize()
+	};
+	shadowPipelineStateDesc.PS = {};
+	shadowPipelineStateDesc.BlendState = MakeBlendDesc(BlendMode::None);
+	shadowPipelineStateDesc.NumRenderTargets = 0;
+	for (DXGI_FORMAT& format : shadowPipelineStateDesc.RTVFormats) {
+		format = DXGI_FORMAT_UNKNOWN;
+	}
+	shadowPipelineStateDesc.DepthStencilState.DepthEnable = true;
+	shadowPipelineStateDesc.DepthStencilState.DepthWriteMask =
+		D3D12_DEPTH_WRITE_MASK_ALL;
+	shadowPipelineStateDesc.DepthStencilState.DepthFunc =
+		D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	shadowPipelineStateDesc.RasterizerState.DepthBias = 1600;
+	shadowPipelineStateDesc.RasterizerState.SlopeScaledDepthBias = 1.35f;
+	shadowPipelineStateDesc.RasterizerState.DepthBiasClamp = 0.0f;
+	shadowPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	hr = device->CreateGraphicsPipelineState(
+		&shadowPipelineStateDesc,
+		IID_PPV_ARGS(&shadowPipelineState_)
+	);
+	assert(SUCCEEDED(hr));
+
 }
 
 void Object3dCommon::CommonDrawSetting() {
@@ -316,4 +479,151 @@ void Object3dCommon::CommonDrawSetting() {
 			[static_cast<size_t>(blendMode_)].Get());
 	commandList->IASetPrimitiveTopology(
 		D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void Object3dCommon::CommonShadowDrawSetting()
+{
+	auto* commandList = dxCommon_->GetCommandList();
+	commandList->SetGraphicsRootSignature(rootSignature_.Get());
+	commandList->SetPipelineState(shadowPipelineState_.Get());
+	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+}
+
+void Object3dCommon::CreateShadowMap()
+{
+	auto* device = dxCommon_->GetDevice();
+	assert(device);
+	assert(srvManager_);
+
+	D3D12_RESOURCE_DESC resourceDesc{};
+	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resourceDesc.Width = kShadowMapSize;
+	resourceDesc.Height = kShadowMapSize;
+	resourceDesc.DepthOrArraySize = 1;
+	resourceDesc.MipLevels = 1;
+	resourceDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+	resourceDesc.SampleDesc.Count = 1;
+	resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+	D3D12_HEAP_PROPERTIES heapProperties{};
+	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+	D3D12_CLEAR_VALUE clearValue{};
+	clearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	clearValue.DepthStencil.Depth = 1.0f;
+	clearValue.DepthStencil.Stencil = 0;
+
+	HRESULT hr = device->CreateCommittedResource(
+		&heapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&resourceDesc,
+		shadowMapState_,
+		&clearValue,
+		IID_PPV_ARGS(&shadowMapResource_));
+	assert(SUCCEEDED(hr));
+
+	shadowMapDsvHeap_ = dxCommon_->CreateDescriptorHeap(
+		D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+		1,
+		false);
+
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};
+	dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	device->CreateDepthStencilView(
+		shadowMapResource_.Get(),
+		&dsvDesc,
+		shadowMapDsvHeap_->GetCPUDescriptorHandleForHeapStart());
+
+	shadowMapSrvIndex_ = srvManager_->Allocate();
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+	srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+	srvDesc.Shader4ComponentMapping =
+		D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = 1;
+	device->CreateShaderResourceView(
+		shadowMapResource_.Get(),
+		&srvDesc,
+		srvManager_->GetCPUDescriptorHandle(shadowMapSrvIndex_));
+
+	shadowViewport_.Width = static_cast<float>(kShadowMapSize);
+	shadowViewport_.Height = static_cast<float>(kShadowMapSize);
+	shadowViewport_.MinDepth = 0.0f;
+	shadowViewport_.MaxDepth = 1.0f;
+	shadowScissorRect_.left = 0;
+	shadowScissorRect_.top = 0;
+	shadowScissorRect_.right = static_cast<LONG>(kShadowMapSize);
+	shadowScissorRect_.bottom = static_cast<LONG>(kShadowMapSize);
+}
+
+void Object3dCommon::TransitionShadowMap(D3D12_RESOURCE_STATES nextState)
+{
+	if (!shadowMapResource_ || shadowMapState_ == nextState) {
+		return;
+	}
+
+	D3D12_RESOURCE_BARRIER barrier{};
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+	barrier.Transition.pResource = shadowMapResource_.Get();
+	barrier.Transition.StateBefore = shadowMapState_;
+	barrier.Transition.StateAfter = nextState;
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	dxCommon_->GetCommandList()->ResourceBarrier(1, &barrier);
+	shadowMapState_ = nextState;
+}
+
+bool Object3dCommon::BeginShadowPass(const Math::Vector3& focusCenter)
+{
+	if (!shadowMapResource_ || !shadowMapDsvHeap_ || !shadowPipelineState_) {
+		return false;
+	}
+
+	shadowMapReady_ = false;
+	shadowLightViewProjection_ =
+		MakeDirectionalLightViewProjection(focusCenter, shadowLightDirection_);
+
+	TransitionShadowMap(D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	auto* commandList = dxCommon_->GetCommandList();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+		shadowMapDsvHeap_->GetCPUDescriptorHandleForHeapStart();
+	commandList->OMSetRenderTargets(0, nullptr, FALSE, &dsvHandle);
+	commandList->ClearDepthStencilView(
+		dsvHandle,
+		D3D12_CLEAR_FLAG_DEPTH,
+		1.0f,
+		0,
+		0,
+		nullptr);
+	commandList->RSSetViewports(1, &shadowViewport_);
+	commandList->RSSetScissorRects(1, &shadowScissorRect_);
+	CommonShadowDrawSetting();
+	return true;
+}
+
+void Object3dCommon::EndShadowPass()
+{
+	TransitionShadowMap(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	shadowMapReady_ = shadowMapResource_ && shadowMapSrvIndex_ != UINT32_MAX;
+	RestoreMainRenderTarget();
+}
+
+void Object3dCommon::RestoreMainRenderTarget()
+{
+	auto* commandList = dxCommon_->GetCommandList();
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = GetCpuDescriptorHandle(
+		dxCommon_->GetRTVHeap(),
+		dxCommon_->GetRTVDescriptorSize(),
+		DirectXCommon::kRenderTextureRTVIndex);
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+		dxCommon_->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
+
+	commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+
+	const D3D12_VIEWPORT& viewport = dxCommon_->GetViewport();
+	const D3D12_RECT& scissorRect = dxCommon_->GetScissorRect();
+	commandList->RSSetViewports(1, &viewport);
+	commandList->RSSetScissorRects(1, &scissorRect);
 }

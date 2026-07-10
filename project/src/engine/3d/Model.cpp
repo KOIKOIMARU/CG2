@@ -20,6 +20,8 @@
 namespace {
 
 constexpr const char* kDefaultTextureFilePath = "resources/uvChecker.png";
+constexpr const char* kDefaultNormalTextureFilePath =
+    "resources/default_normal.png";
 
 Matrix4x4 ConvertAiMatrixToMatrix4x4(aiMatrix4x4 matrix)
 {
@@ -361,10 +363,94 @@ std::string GetAssimpMaterialTexturePath(
     return kDefaultTextureFilePath;
 }
 
+std::string GetAssimpNormalTexturePath(
+    const aiMaterial* material,
+    const std::string& directoryPath)
+{
+    if (!material) {
+        return kDefaultNormalTextureFilePath;
+    }
+
+    aiString texturePath;
+    if (material->GetTexture(aiTextureType_NORMALS, 0, &texturePath) ==
+            AI_SUCCESS ||
+        material->GetTexture(aiTextureType_HEIGHT, 0, &texturePath) ==
+            AI_SUCCESS) {
+        const std::string resolvedPath =
+            ResolveAssimpTexturePath(texturePath, directoryPath);
+        return resolvedPath == kDefaultTextureFilePath ?
+            kDefaultNormalTextureFilePath :
+            resolvedPath;
+    }
+
+    return kDefaultNormalTextureFilePath;
+}
+
+bool TryGetAssimpMaterialFloat(
+    const aiMaterial* material,
+    const char* key,
+    unsigned int type,
+    unsigned int index,
+    float& value)
+{
+    if (!material) {
+        return false;
+    }
+
+    return material->Get(key, type, index, value) == AI_SUCCESS;
+}
+
+MaterialData GetAssimpMaterialData(
+    const aiMaterial* material,
+    const std::string& directoryPath)
+{
+    MaterialData materialData;
+    materialData.textureFilePath =
+        GetAssimpMaterialTexturePath(material, directoryPath);
+    materialData.normalTextureFilePath =
+        GetAssimpNormalTexturePath(material, directoryPath);
+    materialData.normalStrength =
+        materialData.normalTextureFilePath == kDefaultNormalTextureFilePath ?
+        0.0f :
+        0.50f;
+
+    float roughness = materialData.roughness;
+    if (TryGetAssimpMaterialFloat(
+            material,
+            AI_MATKEY_ROUGHNESS_FACTOR,
+            roughness)) {
+        materialData.roughness = std::clamp(roughness, 0.04f, 1.0f);
+    } else {
+        float shininess = 0.0f;
+        if (TryGetAssimpMaterialFloat(
+                material,
+                AI_MATKEY_SHININESS,
+                shininess)) {
+            const float convertedRoughness =
+                std::sqrt(2.0f / ((std::max)(shininess, 1.0f) + 2.0f));
+            materialData.roughness =
+                std::clamp(convertedRoughness, 0.08f, 0.95f);
+        }
+    }
+
+    float metallic = materialData.metallic;
+    if (TryGetAssimpMaterialFloat(
+            material,
+            AI_MATKEY_METALLIC_FACTOR,
+            metallic)) {
+        materialData.metallic = std::clamp(metallic, 0.0f, 1.0f);
+    }
+
+    return materialData;
+}
+
 void EnsureModelDrawData(ModelData& modelData)
 {
     if (modelData.material.textureFilePath.empty()) {
         modelData.material.textureFilePath = kDefaultTextureFilePath;
+    }
+    if (modelData.material.normalTextureFilePath.empty()) {
+        modelData.material.normalTextureFilePath = kDefaultNormalTextureFilePath;
     }
 
     if (modelData.materials.empty()) {
@@ -374,6 +460,15 @@ void EnsureModelDrawData(ModelData& modelData)
         if (material.textureFilePath.empty()) {
             material.textureFilePath = kDefaultTextureFilePath;
         }
+        if (material.normalTextureFilePath.empty()) {
+            material.normalTextureFilePath = kDefaultNormalTextureFilePath;
+        }
+        material.roughness = std::clamp(material.roughness, 0.04f, 1.0f);
+        material.metallic = std::clamp(material.metallic, 0.0f, 1.0f);
+        material.normalStrength =
+            material.normalTextureFilePath == kDefaultNormalTextureFilePath ?
+            0.0f :
+            std::clamp(material.normalStrength, 0.0f, 1.0f);
     }
 
     modelData.material = modelData.materials.front();
@@ -571,6 +666,9 @@ void Model::Initialize(ModelCommon* modelCommon,
 
     for (const MaterialData& material : modelData_.materials) {
         TextureManager::GetInstance()->LoadTexture(material.textureFilePath);
+        TextureManager::GetInstance()->LoadTexture(
+            material.normalTextureFilePath,
+            false);
     }
 }
 
@@ -594,6 +692,9 @@ void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
 
     for (const MaterialData& material : modelData_.materials) {
         TextureManager::GetInstance()->LoadTexture(material.textureFilePath);
+        TextureManager::GetInstance()->LoadTexture(
+            material.normalTextureFilePath,
+            false);
     }
 }
 
@@ -639,10 +740,16 @@ void Model::Draw(
         const std::string& textureFilePath =
             overrideTextureFilePath ? *overrideTextureFilePath :
             modelData_.materials[materialIndex].textureFilePath;
+        const std::string& normalTextureFilePath =
+            modelData_.materials[materialIndex].normalTextureFilePath;
 
         srvManager->SetGraphicsRootDescriptorTable(
             3,
             TextureManager::GetInstance()->GetSrvIndex(textureFilePath)
+        );
+        srvManager->SetGraphicsRootDescriptorTable(
+            10,
+            TextureManager::GetInstance()->GetSrvIndex(normalTextureFilePath)
         );
 
         commandList->DrawIndexedInstanced(
@@ -701,6 +808,12 @@ void Model::CreateMaterial()
     materialData_->environmentCoefficient = 0.2f;
     materialData_->alphaReference = 0.0f;
     materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
+    materialData_->roughness =
+        std::clamp(modelData_.material.roughness, 0.04f, 1.0f);
+    materialData_->metallic =
+        std::clamp(modelData_.material.metallic, 0.0f, 1.0f);
+    materialData_->normalStrength =
+        std::clamp(modelData_.material.normalStrength, 0.0f, 1.0f);
     materialData_->uvTransform = MakeIdentity4x4();
 }
 
@@ -922,10 +1035,8 @@ ModelData Model::LoadAssimpFile(
 
     modelData.materials.reserve(scene->mNumMaterials);
     for (uint32_t materialIndex = 0; materialIndex < scene->mNumMaterials; ++materialIndex) {
-        MaterialData materialData;
-        materialData.textureFilePath =
-            GetAssimpMaterialTexturePath(scene->mMaterials[materialIndex], directoryPath);
-        modelData.materials.push_back(materialData);
+        modelData.materials.push_back(
+            GetAssimpMaterialData(scene->mMaterials[materialIndex], directoryPath));
     }
     if (modelData.materials.empty()) {
         modelData.materials.push_back({ kDefaultTextureFilePath });

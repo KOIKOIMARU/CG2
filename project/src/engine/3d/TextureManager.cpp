@@ -22,6 +22,7 @@ void TextureManager::Initialize(
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
     textureDatas_.clear();
+    CreateSolidTexture2D("resources/default_normal.png", 128, 128, 255, 255);
 }
 
 void TextureManager::Destroy() {
@@ -29,7 +30,7 @@ void TextureManager::Destroy() {
     instance_ = nullptr;
 }
 
-void TextureManager::LoadTexture(const std::string& filePath) {
+void TextureManager::LoadTexture(const std::string& filePath, bool forceSrgb) {
 
     // ★ 読み込み済みチェック（unordered_map）
     if (textureDatas_.contains(filePath)) {
@@ -43,7 +44,7 @@ void TextureManager::LoadTexture(const std::string& filePath) {
 
     // 読み込み
     DirectX::ScratchImage mipImages =
-        DirectXCommon::LoadTexture(filePath);
+        DirectXCommon::LoadTexture(filePath, forceSrgb);
     textureData.metadata = mipImages.GetMetadata();
 
     // GPUリソース作成
@@ -72,6 +73,46 @@ void TextureManager::LoadTexture(const std::string& filePath) {
         );
     }
 
+}
+
+void TextureManager::CreateSolidTexture2D(
+    const std::string& name,
+    uint8_t red,
+    uint8_t green,
+    uint8_t blue,
+    uint8_t alpha)
+{
+    if (textureDatas_.contains(name)) {
+        return;
+    }
+
+    DirectX::ScratchImage image;
+    HRESULT hr = image.Initialize2D(
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        1,
+        1,
+        1,
+        1);
+    assert(SUCCEEDED(hr));
+
+    uint8_t* pixel = image.GetPixels();
+    pixel[0] = red;
+    pixel[1] = green;
+    pixel[2] = blue;
+    pixel[3] = alpha;
+
+    TextureData& textureData = textureDatas_[name];
+    textureData.metadata = image.GetMetadata();
+    textureData.resource =
+        dxCommon_->CreateTextureResource(textureData.metadata);
+    dxCommon_->UploadTextureData(textureData.resource, image);
+
+    textureData.srvIndex = srvManager_->Allocate();
+    srvManager_->CreateSRVforTexture2D(
+        textureData.srvIndex,
+        textureData.resource.Get(),
+        textureData.metadata.format,
+        UINT(textureData.metadata.mipLevels));
 }
 
 void TextureManager::CreateSolidCubeTexture(

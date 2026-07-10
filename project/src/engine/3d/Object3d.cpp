@@ -114,11 +114,26 @@ void Object3d::UpdateAnimation(float deltaTime)
 void Object3d::Draw()
 {
     auto commandList = object3dCommon_->GetDxCommon()->GetCommandList();
+    auto* srvManager = object3dCommon_->GetSrvManager();
 
     // Model 描画
     if (enableComputeSkinning_) {
         DispatchComputeSkinning();
         object3dCommon_->CommonDrawSetting();
+    }
+
+    if (directionalLightData_) {
+        directionalLightData_->lightViewProjection =
+            Transpose(object3dCommon_->GetShadowLightViewProjection());
+        directionalLightData_->shadowStrength =
+            object3dCommon_->IsShadowMapReady() ?
+            object3dCommon_->GetShadowStrength() * shadowReceiveStrength_ :
+            0.0f;
+        directionalLightData_->shadowBias = object3dCommon_->GetShadowBias();
+        directionalLightData_->shadowNormalBias =
+            object3dCommon_->GetShadowNormalBias();
+        directionalLightData_->shadowMapEnabled =
+            object3dCommon_->IsShadowMapReady() ? 1.0f : 0.0f;
     }
 
     commandList->SetGraphicsRootConstantBufferView(
@@ -133,6 +148,12 @@ void Object3d::Draw()
         7, spotLightResource_->GetGPUVirtualAddress());
     commandList->SetGraphicsRootConstantBufferView(
         8, skinningPaletteResource_->GetGPUVirtualAddress());
+    if (srvManager &&
+        object3dCommon_->GetShadowMapSrvIndex() != UINT32_MAX) {
+        srvManager->SetGraphicsRootDescriptorTable(
+            9,
+            object3dCommon_->GetShadowMapSrvIndex());
+    }
 
     if (model_) {
         const std::string* textureOverride =
@@ -149,6 +170,50 @@ void Object3d::Draw()
                 textureOverride);
         }
     }
+}
+
+void Object3d::DrawShadow(const Matrix4x4& lightViewProjection)
+{
+    if (!object3dCommon_ || !model_ || !transformationMatrixData_) {
+        return;
+    }
+
+    auto commandList = object3dCommon_->GetDxCommon()->GetCommandList();
+
+    if (enableComputeSkinning_) {
+        DispatchComputeSkinning();
+        object3dCommon_->CommonShadowDrawSetting();
+    }
+
+    const Matrix4x4 previousWvp = transformationMatrixData_->WVP;
+    const Matrix4x4 shadowWvp = Multiply(worldMatrix_, lightViewProjection);
+    transformationMatrixData_->WVP = Transpose(shadowWvp);
+    transformationMatrixData_->World = Transpose(worldMatrix_);
+    transformationMatrixData_->WorldInverseTranspose =
+        Transpose(Inverse(worldMatrix_));
+
+    commandList->SetGraphicsRootConstantBufferView(
+        1,
+        transformationMatrixResource_->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(
+        8,
+        skinningPaletteResource_->GetGPUVirtualAddress());
+
+    const std::string* textureOverride =
+        hasTextureOverride_ ? &textureFilePath_ : nullptr;
+    if (enableComputeSkinning_) {
+        model_->Draw(
+            &computeOutputVertexBufferView_,
+            materialResource_.Get(),
+            textureOverride);
+    } else {
+        model_->Draw(
+            nullptr,
+            materialResource_.Get(),
+            textureOverride);
+    }
+
+    transformationMatrixData_->WVP = previousWvp;
 }
 
 void Object3d::CreateTransformationMatrix() {
@@ -182,9 +247,14 @@ void Object3d::CreateDirectionalLight() {
         reinterpret_cast<void**>(&directionalLightData_));
 
     // 初期化（資料準拠）
-    directionalLightData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
-    directionalLightData_->direction = { 0.0f, -1.0f, 0.0f };
-    directionalLightData_->intensity = 1.0f;
+    directionalLightData_->color = { 1.0f, 0.96f, 0.90f, 1.0f };
+    directionalLightData_->direction = Normalize({ 0.34f, -0.82f, 0.46f });
+    directionalLightData_->intensity = 1.12f;
+    directionalLightData_->lightViewProjection = MakeIdentity4x4();
+    directionalLightData_->shadowStrength = 0.0f;
+    directionalLightData_->shadowBias = 0.0018f;
+    directionalLightData_->shadowNormalBias = 0.0035f;
+    directionalLightData_->shadowMapEnabled = 0.0f;
 }
 
 void Object3d::CreateCameraResource() {
@@ -213,7 +283,7 @@ void Object3d::CreatePointLight() {
 
     pointLightData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
     pointLightData_->position = { 0.0f, 2.0f, 0.0f };
-    pointLightData_->intensity = 1.0f;
+    pointLightData_->intensity = 0.0f;
     pointLightData_->radius = 6.0f;
     pointLightData_->decay = 2.0f;
 }
@@ -231,7 +301,7 @@ void Object3d::CreateSpotLight() {
     spotLightData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
     spotLightData_->position = { 2.0f, 1.25f, 0.0f };
     spotLightData_->direction = Normalize({ -1.0f, 1.0f, 0.0f });
-    spotLightData_->intensity = 4.0f;
+    spotLightData_->intensity = 0.0f;
     spotLightData_->distance = 7.0f;
     spotLightData_->decay = 2.0f;
     spotLightData_->cosAngle = std::cos(3.14159265f / 3.0f);
@@ -251,10 +321,13 @@ void Object3d::CreateMaterialOverride()
 
     materialData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
     materialData_->lightingMode = 2;
-    materialData_->shininess = 64.0f;
-    materialData_->environmentCoefficient = 0.2f;
+    materialData_->shininess = 36.0f;
+    materialData_->environmentCoefficient = 0.04f;
     materialData_->alphaReference = 0.0f;
-    materialData_->specularColor = { 1.0f, 1.0f, 1.0f };
+    materialData_->specularColor = { 0.18f, 0.18f, 0.18f };
+    materialData_->roughness = 0.66f;
+    materialData_->metallic = 0.0f;
+    materialData_->normalStrength = 0.0f;
     materialData_->uvTransform = MakeIdentity4x4();
     textureFilePath_ = "resources/uvChecker.png";
     hasTextureOverride_ = false;
@@ -760,11 +833,30 @@ void Object3d::SetSpecularColor(const Vector3& color)
     }
 }
 
+void Object3d::SetRoughness(float roughness)
+{
+    if (materialData_) {
+        materialData_->roughness = std::clamp(roughness, 0.04f, 1.0f);
+    }
+}
+
+void Object3d::SetMetallic(float metallic)
+{
+    if (materialData_) {
+        materialData_->metallic = std::clamp(metallic, 0.0f, 1.0f);
+    }
+}
+
 void Object3d::SetAlphaReference(float alphaReference)
 {
     if (materialData_) {
         materialData_->alphaReference = alphaReference;
     }
+}
+
+void Object3d::SetShadowReceiveStrength(float strength)
+{
+    shadowReceiveStrength_ = std::clamp(strength, 0.0f, 1.0f);
 }
 
 void Object3d::SetUVTransform(const Matrix4x4& uvTransform)
@@ -833,6 +925,22 @@ Vector3 Object3d::GetSpecularColor() const
         return materialData_->specularColor;
     }
     return { 0.0f, 0.0f, 0.0f };
+}
+
+float Object3d::GetRoughness() const
+{
+    if (materialData_) {
+        return materialData_->roughness;
+    }
+    return 1.0f;
+}
+
+float Object3d::GetMetallic() const
+{
+    if (materialData_) {
+        return materialData_->metallic;
+    }
+    return 0.0f;
 }
 
 float Object3d::GetAlphaReference() const

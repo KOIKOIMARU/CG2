@@ -10,13 +10,14 @@
 
 namespace {
 constexpr int kDodgeDuration = 18;
-constexpr int kDodgeCooldown = 42;
-constexpr int kDodgeInvincibleDuration = 16;
-constexpr float kDodgeBaseSpeed = 0.14f;
-constexpr float kDodgePeakSpeed = 0.08f;
-constexpr float kPlayerHorizontalLimit = 8.2f;
-constexpr float kPlayerLowerLimitY = -1.05f;
-constexpr float kPlayerUpperLimitY = 5.10f;
+constexpr int kDodgeCooldown = 34;
+constexpr int kDodgeInvincibleDuration = 17;
+constexpr float kDodgeBaseSpeed = 0.24f;
+constexpr float kDodgePeakSpeed = 0.18f;
+constexpr float kDodgeSlowMinScale = 0.18f;
+constexpr float kPlayerHorizontalLimit = 8.9f;
+constexpr float kPlayerLowerLimitY = -0.80f;
+constexpr float kPlayerUpperLimitY = 5.55f;
 
 Math::Vector3 CalculateModelLocalCenterOffset(const Model* model)
 {
@@ -76,18 +77,23 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     object_->SetModel(model);
     object_->SetScale(objectScale_);
     object_->SetColor({ 0.75f, 0.95f, 1.0f, 1.0f });
-    object_->SetEnvironmentCoefficient(0.10f);
-    object_->SetShininess(42.0f);
-    object_->SetSpecularColor({ 0.58f, 0.70f, 0.78f });
+    object_->SetEnvironmentCoefficient(0.13f);
+    object_->SetShininess(56.0f);
+    object_->SetSpecularColor({ 0.66f, 0.78f, 0.88f });
+    object_->SetRoughness(0.34f);
+    object_->SetMetallic(0.28f);
     modelLocalCenterOffset_ = CalculateModelLocalCenterOffset(model);
     UpdateObjectTransform();
 }
 
-void Player::Update(Input* input)
+void Player::Update(Input* input, float timeScale)
 {
     if (!input || !object_ || IsDead()) {
         return;
     }
+
+    const float motionScale = std::clamp(timeScale, 0.10f, 1.0f);
+    const float dodgeTimeStep = std::clamp(timeScale, kDodgeSlowMinScale, 1.0f);
 
     if (dodgeCooldownTimer_ > 0) {
         --dodgeCooldownTimer_;
@@ -96,20 +102,21 @@ void Player::Update(Input* input)
         --invincibleTimer_;
     }
 
-    Math::Vector3 move{ 0.0f, 0.0f, 0.0f };
+    Math::Vector3 inputMove{ 0.0f, 0.0f, 0.0f };
+    Math::Vector3 dodgeMove{ 0.0f, 0.0f, 0.0f };
     int horizontalInput = 0;
     if (input->PushKey(DIK_W) || input->PushKey(DIK_UP)) {
-        move.y += moveSpeed_;
+        inputMove.y += moveSpeed_;
     }
     if (input->PushKey(DIK_S) || input->PushKey(DIK_DOWN)) {
-        move.y -= moveSpeed_;
+        inputMove.y -= moveSpeed_;
     }
     if (input->PushKey(DIK_D) || input->PushKey(DIK_RIGHT)) {
-        move.x += moveSpeed_;
+        inputMove.x += moveSpeed_;
         horizontalInput += 1;
     }
     if (input->PushKey(DIK_A) || input->PushKey(DIK_LEFT)) {
-        move.x -= moveSpeed_;
+        inputMove.x -= moveSpeed_;
         horizontalInput -= 1;
     }
     if (horizontalInput != 0) {
@@ -118,38 +125,44 @@ void Player::Update(Input* input)
 
     const bool dodgeTriggered =
         input->TriggerKey(DIK_LSHIFT) || input->TriggerKey(DIK_RSHIFT);
-    if (dodgeTriggered && dodgeCooldownTimer_ <= 0 && dodgeTimer_ <= 0) {
+    if (dodgeTriggered && dodgeCooldownTimer_ <= 0 && dodgeTimer_ <= 0.0f) {
         dodgeDirection_ =
             horizontalInput != 0 ?
             (horizontalInput > 0 ? 1 : -1) :
             lastHorizontalDirection_;
-        dodgeTimer_ = kDodgeDuration;
+        dodgeTimer_ = static_cast<float>(kDodgeDuration);
         dodgeCooldownTimer_ = kDodgeCooldown;
         invincibleTimer_ = kDodgeInvincibleDuration;
     }
 
     Math::Vector3 rotate{ 0.0f, 0.0f, 0.0f };
-    if (dodgeTimer_ > 0) {
+    if (dodgeTimer_ > 0.0f) {
         const float progress =
-            static_cast<float>(kDodgeDuration - dodgeTimer_) /
+            (static_cast<float>(kDodgeDuration) - dodgeTimer_) /
             static_cast<float>(kDodgeDuration);
         const float ease = std::sin(progress * std::numbers::pi_v<float>);
-        move.x = 0.0f;
-        move.x +=
+        inputMove.x = 0.0f;
+        dodgeMove.x +=
             static_cast<float>(dodgeDirection_) *
-            (kDodgeBaseSpeed + kDodgePeakSpeed * ease);
+            (kDodgeBaseSpeed + kDodgePeakSpeed * ease) * dodgeTimeStep;
         rotate.z =
             static_cast<float>(dodgeDirection_) *
             progress *
             2.0f *
             std::numbers::pi_v<float>;
-        --dodgeTimer_;
+        dodgeTimer_ = (std::max)(dodgeTimer_ - dodgeTimeStep, 0.0f);
     }
 
     translate_.x =
-        std::clamp(translate_.x + move.x, -kPlayerHorizontalLimit, kPlayerHorizontalLimit);
+        std::clamp(
+            translate_.x + inputMove.x * motionScale + dodgeMove.x,
+            -kPlayerHorizontalLimit,
+            kPlayerHorizontalLimit);
     translate_.y =
-        std::clamp(translate_.y + move.y, kPlayerLowerLimitY, kPlayerUpperLimitY);
+        std::clamp(
+            translate_.y + inputMove.y * motionScale + dodgeMove.y,
+            kPlayerLowerLimitY,
+            kPlayerUpperLimitY);
 
     objectRotate_ = rotate;
     object_->SetColor(
@@ -163,6 +176,13 @@ void Player::Draw()
 {
     if (object_) {
         object_->Draw();
+    }
+}
+
+void Player::DrawShadow(const Math::Matrix4x4& lightViewProjection)
+{
+    if (object_ && !IsDead()) {
+        object_->DrawShadow(lightViewProjection);
     }
 }
 
