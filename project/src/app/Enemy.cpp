@@ -136,6 +136,14 @@ void Enemy::Initialize(
         verticalAmplitude_ = 0.25f;
         collisionRadius_ = 1.65f;
         break;
+    case Behavior::DiveBomber:
+        baseScale_ = { 0.64f, 0.64f, 0.64f };
+        baseColor_ = { 0.94f, 0.98f, 1.0f, 1.0f };
+        maxHp_ = 5;
+        horizontalAmplitude_ = 2.4f;
+        verticalAmplitude_ = 1.25f;
+        collisionRadius_ = 1.55f;
+        break;
     case Behavior::Formation:
     default:
         baseScale_ = { 0.42f, 0.42f, 0.42f };
@@ -338,6 +346,58 @@ void Enemy::Update(float railDistance, float timeScale)
         }
         break;
     }
+    case Behavior::DiveBomber: {
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 66.0f);
+        const float attackRate = SmoothStep(static_cast<float>(age_ - 28) / 168.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 224) / 92.0f);
+        const float exitRunRate = SmoothStep(static_cast<float>(age_ - 300) / 70.0f);
+        const float side =
+            entryStyle_ == EntryStyle::RightSweep ? -1.0f :
+            entryStyle_ == EntryStyle::LeftSweep ? 1.0f :
+            SignNonZero(baseTranslate_.x);
+        const float attackArc = std::sin(attackRate * kPi);
+        const float weave =
+            std::sin(moveTimer_ * 0.060f + phase_) *
+            Lerp(0.35f, horizontalAmplitude_, entryRate);
+
+        translate_.x =
+            Lerp(side * 7.8f, baseTranslate_.x, entryRate) +
+            weave -
+            side * attackArc * 2.9f -
+            side * exitRate * 11.0f -
+            side * exitRunRate * 20.0f;
+        translate_.y =
+            Lerp(baseTranslate_.y + 6.2f, baseTranslate_.y, entryRate) -
+            attackArc * 1.55f +
+            std::cos(moveTimer_ * 0.044f + phase_) * 0.36f +
+            exitRate * 4.4f +
+            exitRunRate * 6.4f;
+        translate_.z =
+            railDistance +
+            Lerp(78.0f, 32.0f, entryRate) -
+            attackArc * 6.0f +
+            std::sin(moveTimer_ * 0.026f + phase_) * 1.1f +
+            exitRate * 13.0f +
+            exitRunRate * 22.0f;
+        visualScaleTarget =
+            Lerp(0.38f, 1.0f, entryRate) +
+            attackArc * 0.055f;
+        colorAlphaRate = Lerp(0.20f, 1.0f, entryRate);
+        objectRotate.x =
+            -attackArc * 0.32f +
+            std::sin(moveTimer_ * 0.035f + phase_) * 0.06f;
+        objectRotate.y =
+            kPi +
+            side * Lerp(0.42f, -0.24f, attackRate) -
+            side * exitRate * 0.44f;
+        objectRotate.z =
+            -side * (0.18f + attackArc * 0.46f + exitRunRate * 0.34f);
+        if (exitRunRate >= 1.0f) {
+            Escape();
+            return;
+        }
+        break;
+    }
     case Behavior::Formation:
     default:
     {
@@ -486,6 +546,8 @@ bool Enemy::CanShoot() const
         return age_ >= 106;
     case Behavior::StrafeShooter:
         return 48 <= age_ && age_ <= 250;
+    case Behavior::DiveBomber:
+        return 58 <= age_ && age_ <= 218;
     case Behavior::Swoop:
         return 46 <= age_ && age_ <= 160;
     case Behavior::Formation:

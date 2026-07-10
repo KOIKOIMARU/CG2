@@ -109,6 +109,8 @@ constexpr int kBossWarningDuration = 150;
 constexpr int kBossIntroDuration = 120;
 constexpr int kBossDefeatFlashDuration = 44;
 constexpr int kBossMaxHp = 52;
+constexpr int kMaxActiveStageEnemiesBeforeBoss = 7;
+constexpr int kMaxStageEnemyEventsPerFrame = 2;
 constexpr float kJustDodgeGrazePadding = 1.25f;
 constexpr float kJustDodgeRailSlowScale = 0.08f;
 constexpr int kJustDodgeChargeBonus = 24;
@@ -184,19 +186,26 @@ constexpr StageRailEvent kStageRailEvents[] = {
 constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     {  10.0f, -2.7f, -0.5f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  4, 1.08f, "Opening pair" },
     {  16.0f,  2.7f,  0.2f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  4, 1.08f, "Opening pair" },
+    {  28.0f,  0.0f,  1.4f, 50.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::Direct,     0.030f,  7,  5, 1.08f, "Center dive" },
     {  38.0f,  5.1f,  1.2f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.032f,  6,  5, 1.08f, "Right sweep" },
     {  58.0f, -5.1f,  0.7f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.032f,  6,  5, 1.08f, "Cross sweep" },
+    {  68.0f, -4.0f, -0.6f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.022f,  5,  4, 1.04f, "Low gate" },
     {  78.0f, -3.2f,  1.3f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Dodge target" },
     {  98.0f,  3.2f,  0.9f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Dodge target" },
+    { 112.0f,  4.6f,  1.6f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::RightSweep, 0.036f,  8,  5, 1.12f, "High dive" },
     { 124.0f, -2.9f, -0.4f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
     { 134.0f,  2.9f, -0.2f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
+    { 148.0f, -4.6f,  1.5f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::LeftSweep,  0.036f,  8,  5, 1.12f, "High dive" },
     { 160.0f,  0.0f,  1.45f, 52.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.070f, 14, 12, 1.48f, "Heavy drone" },
     { 188.0f, -4.9f,  1.0f, 52.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.038f,  7,  5, 1.14f, "High-speed pass" },
     { 202.0f,  4.9f,  1.0f, 52.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.038f,  7,  5, 1.14f, "High-speed pass" },
+    { 214.0f,  0.0f,  1.0f, 50.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.18f, "Break formation" },
     { 228.0f, -3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
     { 248.0f,  3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
     { 258.0f, -2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Last gate" },
-    { 274.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Last gate" }
+    { 274.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Last gate" },
+    { 286.0f, -5.2f,  1.2f, 54.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.034f,  7,  5, 1.12f, "Boss screen" },
+    { 296.0f,  5.2f,  1.2f, 54.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.034f,  7,  5, 1.12f, "Boss screen" }
 };
 
 constexpr size_t kStageEnemyEventCapacity = 24;
@@ -2549,6 +2558,8 @@ void GameRuntime::SpawnStageEnemy(
 Model* GameRuntime::GetEnemyModelForBehavior(Enemy::Behavior behavior) const
 {
     switch (behavior) {
+    case Enemy::Behavior::DiveBomber:
+        return enemySwoopModel_ ? enemySwoopModel_ : enemyModel_;
     case Enemy::Behavior::Swoop:
         return enemySwoopModel_ ? enemySwoopModel_ : enemyModel_;
     case Enemy::Behavior::StrafeShooter:
@@ -2562,6 +2573,8 @@ Model* GameRuntime::GetEnemyModelForBehavior(Enemy::Behavior behavior) const
 const char* GameRuntime::GetEnemyTextureOverrideForBehavior(Enemy::Behavior behavior) const
 {
     switch (behavior) {
+    case Enemy::Behavior::DiveBomber:
+        return enemySwoopModel_ ? kEnemySwoopTexturePath : nullptr;
     case Enemy::Behavior::Swoop:
         return enemySwoopModel_ ? kEnemySwoopTexturePath : nullptr;
     case Enemy::Behavior::StrafeShooter:
@@ -2611,14 +2624,29 @@ void GameRuntime::UpdateStageEnemyEvents()
     if (isGameOver_ || isGameClear_) {
         return;
     }
+    if (bossSpawned_) {
+        return;
+    }
 
     const size_t eventCount =
         (std::min)(stageEnemyEventTriggered_.size(), kStageEnemyEventCount);
+    int activeStageEnemyCount = 0;
+    for (const auto& enemy : enemies_) {
+        if (enemy && !enemy->IsDead() && !enemy->IsBoss()) {
+            ++activeStageEnemyCount;
+        }
+    }
+    int spawnedEventCountThisFrame = 0;
+
     for (size_t index = 0; index < eventCount; ++index) {
         const StageEnemySpawnEvent& event = kStageEnemySpawnEvents[index];
         if (stageEnemyEventTriggered_[index] ||
             railDistance_ < event.distance) {
             continue;
+        }
+        if (activeStageEnemyCount >= kMaxActiveStageEnemiesBeforeBoss ||
+            spawnedEventCountThisFrame >= kMaxStageEnemyEventsPerFrame) {
+            break;
         }
 
         stageEnemyEventTriggered_[index] = true;
@@ -2631,6 +2659,8 @@ void GameRuntime::UpdateStageEnemyEvents()
             event.entryStyle,
             event.maxHpOverride,
             event.scaleMultiplier);
+        ++activeStageEnemyCount;
+        ++spawnedEventCountThisFrame;
         AddCameraShake(event.shakePower, event.shakeDuration);
     }
 }

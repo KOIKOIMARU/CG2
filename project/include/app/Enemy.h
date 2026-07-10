@@ -14,6 +14,7 @@ public:
         Formation,
         Swoop,
         StrafeShooter,
+        DiveBomber,
         Boss
     };
 
