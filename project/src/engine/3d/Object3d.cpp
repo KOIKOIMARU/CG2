@@ -247,9 +247,9 @@ void Object3d::CreateDirectionalLight() {
         reinterpret_cast<void**>(&directionalLightData_));
 
     // 初期化（資料準拠）
-    directionalLightData_->color = { 1.0f, 0.96f, 0.90f, 1.0f };
-    directionalLightData_->direction = Normalize({ 0.34f, -0.82f, 0.46f });
-    directionalLightData_->intensity = 1.12f;
+    directionalLightData_->color = { 1.0f, 0.985f, 0.955f, 1.0f };
+    directionalLightData_->direction = Normalize({ 0.30f, -0.86f, 0.41f });
+    directionalLightData_->intensity = 0.94f;
     directionalLightData_->lightViewProjection = MakeIdentity4x4();
     directionalLightData_->shadowStrength = 0.0f;
     directionalLightData_->shadowBias = 0.0018f;

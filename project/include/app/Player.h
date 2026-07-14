@@ -18,6 +18,7 @@ public:
     void SetRailZ(float z);
 
     const Math::Vector3& GetTranslate() const { return translate_; }
+    const Math::Vector3& GetVisualRotate() const { return objectRotate_; }
     int GetHp() const { return hp_; }
     float GetRadius() const { return collisionRadius_; }
     bool IsDead() const { return hp_ <= 0; }
@@ -34,6 +35,7 @@ private:
     Math::Vector3 translate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 objectScale_{ 1.26f, 1.26f, 1.26f };
     Math::Vector3 objectRotate_{ 0.0f, 0.0f, 0.0f };
+    Math::Vector3 movementRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 modelLocalCenterOffset_{ 0.0f, 0.0f, 0.0f };
     float moveSpeed_ = 0.205f;
     float collisionRadius_ = 0.86f;

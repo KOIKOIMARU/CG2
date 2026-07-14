@@ -8,6 +8,8 @@ struct Particle
     float3 velocity;
     float currentTime;
     float4 color;
+    float3 initialScale;
+    float endScale;
 };
 
 RWStructuredBuffer<Particle> gParticles : register(u0);

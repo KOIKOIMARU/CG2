@@ -5,6 +5,7 @@
 #include <array>
 #include <dxcapi.h>
 #include <string>
+#include <unordered_map>
 #include "engine/base/WinApp.h"
 #include "engine/base/Math.h"
 #include "DirectXTex.h"
@@ -289,6 +290,9 @@ private:
     Microsoft::WRL::ComPtr<IDxcUtils>          dxcUtils_;
     Microsoft::WRL::ComPtr<IDxcCompiler3>      dxcCompiler_;
     Microsoft::WRL::ComPtr<IDxcIncludeHandler> dxcIncludeHandler_;
+    std::unordered_map<
+        std::wstring,
+        Microsoft::WRL::ComPtr<IDxcBlob>> shaderCache_;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> fullscreenRootSignature_;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> copyImagePipelineState_;

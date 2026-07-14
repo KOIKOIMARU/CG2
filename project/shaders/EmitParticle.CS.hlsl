@@ -8,16 +8,28 @@ struct Particle
     float3 velocity;
     float currentTime;
     float4 color;
+    float3 initialScale;
+    float endScale;
 };
 
 struct EmitterSphere
 {
     float3 translate;
     float radius;
+    float3 direction;
+    float spread;
+    float4 colorMin;
+    float4 colorMax;
+    float2 scaleMin;
+    float2 scaleMax;
+    float lifeTimeMin;
+    float lifeTimeMax;
+    float speedMin;
+    float speedMax;
+    float endScale;
     uint count;
-    float frequency;
-    float frequencyTime;
     uint emit;
+    float padding;
 };
 
 struct PerFrame
@@ -87,19 +99,23 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         {
             uint particleIndex = gFreeList[freeListIndex];
             float3 randomPosition = generator.Generate3d() * 2.0f - 1.0f;
-            float randomScale = 0.12f + generator.Generate1d() * 0.18f;
-            float3 randomVelocity = normalize(randomPosition + float3(0.0f, 0.8f, 0.0f));
+            float2 randomScale = lerp(gEmitter.scaleMin, gEmitter.scaleMax, generator.Generate3d().xy);
+            float3 randomDirection = generator.Generate3d() * 2.0f - 1.0f;
+            float3 emissionDirection = normalize(gEmitter.direction + randomDirection * gEmitter.spread);
+            float speed = lerp(gEmitter.speedMin, gEmitter.speedMax, generator.Generate1d());
+            float colorRate = generator.Generate1d();
 
             gParticles[particleIndex] = (Particle)0;
             gParticles[particleIndex].translate =
                 gEmitter.translate + randomPosition * gEmitter.radius;
-            gParticles[particleIndex].scale = float3(randomScale, randomScale, randomScale);
-            gParticles[particleIndex].lifeTime = 1.0f + generator.Generate1d();
-            gParticles[particleIndex].velocity =
-                randomVelocity * (0.4f + generator.Generate1d() * 1.2f);
+            gParticles[particleIndex].scale = float3(randomScale, 1.0f);
+            gParticles[particleIndex].initialScale = float3(randomScale, 1.0f);
+            gParticles[particleIndex].endScale = gEmitter.endScale;
+            gParticles[particleIndex].lifeTime =
+                lerp(gEmitter.lifeTimeMin, gEmitter.lifeTimeMax, generator.Generate1d());
+            gParticles[particleIndex].velocity = emissionDirection * speed;
             gParticles[particleIndex].currentTime = 0.0f;
-            gParticles[particleIndex].color =
-                float4(generator.Generate3d(), 1.0f);
+            gParticles[particleIndex].color = lerp(gEmitter.colorMin, gEmitter.colorMax, colorRate);
         }
         else
         {

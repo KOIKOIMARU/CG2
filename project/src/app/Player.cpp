@@ -18,6 +18,10 @@ constexpr float kDodgeSlowMinScale = 0.18f;
 constexpr float kPlayerHorizontalLimit = 8.9f;
 constexpr float kPlayerLowerLimitY = -0.80f;
 constexpr float kPlayerUpperLimitY = 5.55f;
+constexpr float kPlayerMoveBankAngle = 0.34f;
+constexpr float kPlayerMoveYawAngle = 0.055f;
+constexpr float kPlayerMovePitchAngle = 0.075f;
+constexpr float kPlayerPoseResponse = 0.17f;
 
 Math::Vector3 CalculateModelLocalCenterOffset(const Model* model)
 {
@@ -72,6 +76,8 @@ Math::Vector3 TransformDirection(
 
 void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
 {
+    objectRotate_ = {};
+    movementRotate_ = {};
     object_ = std::make_unique<Object3d>();
     object_->Initialize(object3dCommon);
     object_->SetModel(model);
@@ -105,11 +111,14 @@ void Player::Update(Input* input, float timeScale)
     Math::Vector3 inputMove{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 dodgeMove{ 0.0f, 0.0f, 0.0f };
     int horizontalInput = 0;
+    int verticalInput = 0;
     if (input->PushKey(DIK_W) || input->PushKey(DIK_UP)) {
         inputMove.y += moveSpeed_;
+        verticalInput += 1;
     }
     if (input->PushKey(DIK_S) || input->PushKey(DIK_DOWN)) {
         inputMove.y -= moveSpeed_;
+        verticalInput -= 1;
     }
     if (input->PushKey(DIK_D) || input->PushKey(DIK_RIGHT)) {
         inputMove.x += moveSpeed_;
@@ -135,7 +144,23 @@ void Player::Update(Input* input, float timeScale)
         invincibleTimer_ = kDodgeInvincibleDuration;
     }
 
-    Math::Vector3 rotate{ 0.0f, 0.0f, 0.0f };
+    const bool hasDodgePose = dodgeTimer_ > 0.0f;
+    const int poseDirection = hasDodgePose ? dodgeDirection_ : horizontalInput;
+    const Math::Vector3 targetMovementRotate{
+        -static_cast<float>(verticalInput) * kPlayerMovePitchAngle,
+        static_cast<float>(poseDirection) * kPlayerMoveYawAngle,
+        -static_cast<float>(poseDirection) * kPlayerMoveBankAngle,
+    };
+    const float poseBlend =
+        1.0f - std::pow(1.0f - kPlayerPoseResponse, motionScale);
+    movementRotate_.x +=
+        (targetMovementRotate.x - movementRotate_.x) * poseBlend;
+    movementRotate_.y +=
+        (targetMovementRotate.y - movementRotate_.y) * poseBlend;
+    movementRotate_.z +=
+        (targetMovementRotate.z - movementRotate_.z) * poseBlend;
+
+    Math::Vector3 rotate = movementRotate_;
     if (dodgeTimer_ > 0.0f) {
         const float progress =
             (static_cast<float>(kDodgeDuration) - dodgeTimer_) /
@@ -145,7 +170,7 @@ void Player::Update(Input* input, float timeScale)
         dodgeMove.x +=
             static_cast<float>(dodgeDirection_) *
             (kDodgeBaseSpeed + kDodgePeakSpeed * ease) * dodgeTimeStep;
-        rotate.z =
+        rotate.z +=
             static_cast<float>(dodgeDirection_) *
             progress *
             2.0f *

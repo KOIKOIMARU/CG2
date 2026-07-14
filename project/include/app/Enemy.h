@@ -15,6 +15,7 @@ public:
         Swoop,
         StrafeShooter,
         DiveBomber,
+        Crossfire,
         Boss
     };
 
@@ -52,6 +53,7 @@ public:
     bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
     bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
     bool IsBoss() const { return behavior_ == Behavior::Boss; }
+    bool IsCrossfire() const { return behavior_ == Behavior::Crossfire; }
     bool IsTargetable() const;
     int GetHp() const { return hp_; }
     int GetMaxHp() const { return maxHp_; }

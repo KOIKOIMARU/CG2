@@ -20,11 +20,17 @@ void TitleScene::Update()
 {
     const bool resourcesReady =
         GameScene::PreloadResourcesStep(dxCommon_, srvManager_);
+    if (resourcesReady && sceneManager_ &&
+        !sceneManager_->IsScenePrepared(SceneType::Game)) {
+        sceneManager_->PrepareScene(SceneType::Game);
+    }
+    const bool gameReady =
+        sceneManager_ && sceneManager_->IsScenePrepared(SceneType::Game);
 
     if (input_ && input_->TriggerKey(DIK_RETURN)) {
         startRequested_ = true;
     }
-    if (startRequested_ && resourcesReady && sceneManager_) {
+    if (startRequested_ && gameReady && sceneManager_) {
         sceneManager_->SetNextScene(SceneType::Game);
     }
 
@@ -48,9 +54,9 @@ void TitleScene::Update()
             "last %.1f ms / total %.1f ms",
             GameScene::GetResourcePreloadLastStepMs(),
             GameScene::GetResourcePreloadTotalMs());
-    } else if (startRequested_) {
+    } else if (!gameReady || startRequested_) {
         ImGui::Separator();
-        ImGui::TextUnformatted("Starting...");
+        ImGui::TextUnformatted("Preparing game...");
     }
     ImGui::End();
 

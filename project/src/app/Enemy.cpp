@@ -144,6 +144,14 @@ void Enemy::Initialize(
         verticalAmplitude_ = 1.25f;
         collisionRadius_ = 1.55f;
         break;
+    case Behavior::Crossfire:
+        baseScale_ = { 0.52f, 0.52f, 0.52f };
+        baseColor_ = { 1.0f, 0.94f, 0.98f, 1.0f };
+        maxHp_ = 6;
+        horizontalAmplitude_ = 1.2f;
+        verticalAmplitude_ = 0.45f;
+        collisionRadius_ = 1.55f;
+        break;
     case Behavior::Formation:
     default:
         baseScale_ = { 0.42f, 0.42f, 0.42f };
@@ -398,6 +406,43 @@ void Enemy::Update(float railDistance, float timeScale)
         }
         break;
     }
+    case Behavior::Crossfire: {
+        const float side = SignNonZero(baseTranslate_.x);
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 62.0f);
+        const float crossRate = SmoothStep(static_cast<float>(age_ - 94) / 118.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 204) / 78.0f);
+        const float crossArc = std::sin(crossRate * kPi);
+
+        translate_.x =
+            Lerp(side * 13.5f, side * 4.25f, entryRate) -
+            side * crossRate * 13.8f -
+            side * exitRate * 8.5f;
+        translate_.y =
+            Lerp(baseTranslate_.y + 3.8f, baseTranslate_.y, entryRate) +
+            crossArc * 1.35f +
+            std::sin(moveTimer_ * 0.070f + phase_) * 0.22f +
+            exitRate * 4.8f;
+        translate_.z =
+            railDistance +
+            Lerp(72.0f, 32.0f, entryRate) -
+            crossArc * 3.8f +
+            exitRate * 18.0f;
+        visualScaleTarget =
+            Lerp(0.40f, 1.0f, entryRate) +
+            std::sin(entryRate * kPi) * 0.05f;
+        colorAlphaRate = Lerp(0.22f, 1.0f, entryRate);
+        objectRotate.x = -crossArc * 0.12f;
+        objectRotate.y =
+            kPi - side * Lerp(0.34f, 0.62f, crossRate) -
+            side * exitRate * 0.36f;
+        objectRotate.z =
+            -side * (0.24f + crossArc * 0.44f + exitRate * 0.28f);
+        if (exitRate >= 1.0f) {
+            Escape();
+            return;
+        }
+        break;
+    }
     case Behavior::Formation:
     default:
     {
@@ -452,6 +497,13 @@ void Enemy::Update(float railDistance, float timeScale)
     visualScaleRate_ = std::clamp(visualScaleTarget, 0.34f, 1.12f);
     Math::Vector4 color = baseColor_;
     color.w *= std::clamp(colorAlphaRate, 0.18f, 1.0f);
+    if (behavior_ == Behavior::Crossfire && 62 <= age_ && age_ < 94) {
+        const float telegraphPulse =
+            0.24f + 0.18f * (std::sin(moveTimer_ * 0.42f) * 0.5f + 0.5f);
+        color.x = Lerp(color.x, 1.65f, telegraphPulse);
+        color.y = Lerp(color.y, 0.18f, telegraphPulse);
+        color.z = Lerp(color.z, 0.72f, telegraphPulse);
+    }
     if (hitReacting) {
         const float flash = std::clamp(hitRate * hitRate, 0.0f, 1.0f);
         const Math::Vector4 flashColor =
@@ -548,6 +600,8 @@ bool Enemy::CanShoot() const
         return 48 <= age_ && age_ <= 250;
     case Behavior::DiveBomber:
         return 58 <= age_ && age_ <= 218;
+    case Behavior::Crossfire:
+        return 82 <= age_ && age_ <= 182;
     case Behavior::Swoop:
         return 46 <= age_ && age_ <= 160;
     case Behavior::Formation:

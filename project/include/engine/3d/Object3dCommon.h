@@ -112,7 +112,7 @@ private:
     D3D12_VIEWPORT shadowViewport_{};
     D3D12_RECT shadowScissorRect_{};
     Math::Matrix4x4 shadowLightViewProjection_ = Math::MakeIdentity4x4();
-    Math::Vector3 shadowLightDirection_{ 0.34f, -0.82f, 0.46f };
+    Math::Vector3 shadowLightDirection_{ 0.30f, -0.86f, 0.41f };
     uint32_t shadowMapSrvIndex_ = UINT32_MAX;
     float shadowStrength_ = 0.34f;
     float shadowBias_ = 0.0018f;

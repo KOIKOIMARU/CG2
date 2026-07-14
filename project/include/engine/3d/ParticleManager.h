@@ -24,6 +24,22 @@ class SrvManager;
 class ParticleManager
 {
 public:
+    struct EmitSettings
+    {
+        float radius = 1.0f;
+        Math::Vector3 direction{ 0.0f, 1.0f, 0.0f };
+        float spread = 1.0f;
+        Math::Vector4 colorMin{ 1.0f, 1.0f, 1.0f, 1.0f };
+        Math::Vector4 colorMax{ 1.0f, 1.0f, 1.0f, 1.0f };
+        Math::Vector2 scaleMin{ 0.12f, 0.12f };
+        Math::Vector2 scaleMax{ 0.30f, 0.30f };
+        float lifeTimeMin = 1.0f;
+        float lifeTimeMax = 2.0f;
+        float speedMin = 0.4f;
+        float speedMax = 1.6f;
+        float endScale = 1.0f;
+    };
+
     // ===== シングルトン =====
     static ParticleManager* GetInstance();
 
@@ -43,10 +59,15 @@ public:
 
     // ===== パーティクル発生 =====
     void CreateParticleGroup(const std::string& name,
-        const std::string& textureFilePath);
+        const std::string& textureFilePath,
+        const EmitSettings& settings = {});
 
     void Emit(const std::string& name,
         const Math::Vector3& position,
+        uint32_t count);
+    void Emit(const std::string& name,
+        const Math::Vector3& position,
+        const Math::Vector3& direction,
         uint32_t count);
 
     float RandomFloat(float min, float max);
@@ -66,6 +87,8 @@ private:
         Math::Vector3 velocity;
         float currentTime;
         Math::Vector4 color;
+        Math::Vector3 initialScale;
+        float endScale;
     };
 
     struct PerView
@@ -78,10 +101,20 @@ private:
     {
         Math::Vector3 translate;
         float radius;
+        Math::Vector3 direction;
+        float spread;
+        Math::Vector4 colorMin;
+        Math::Vector4 colorMax;
+        Math::Vector2 scaleMin;
+        Math::Vector2 scaleMax;
+        float lifeTimeMin;
+        float lifeTimeMax;
+        float speedMin;
+        float speedMax;
+        float endScale;
         uint32_t count;
-        float frequency;
-        float frequencyTime;
         uint32_t emit;
+        float padding;
     };
 
     struct PerFrame

@@ -140,7 +140,11 @@ float32_t3 ApplyCinematicGrade(
     color = lerp(
         color,
         color * float32_t3(0.88f, 0.95f, 1.06f),
-        shadowMask * 0.12f * (1.0f - skyMask * 0.55f));
+        shadowMask * 0.085f * (1.0f - skyMask * 0.55f));
+    color +=
+        float32_t3(0.010f, 0.012f, 0.015f) *
+        shadowMask *
+        (1.0f - skyMask * 0.60f);
     color = lerp(
         color,
         color * float32_t3(1.035f, 1.018f, 0.970f),
@@ -152,7 +156,7 @@ float32_t3 ApplyCinematicGrade(
 
     float32_t distanceWash =
         smoothstep(125.0f, 320.0f, viewDepth) * (1.0f - skyMask);
-    color = lerp(color, ApplySaturation(color, 0.84f), distanceWash * 0.22f);
+    color = lerp(color, ApplySaturation(color, 0.90f), distanceWash * 0.14f);
 
     float32_t shoulder = saturate(highlightCompression);
     float32_t3 compressed =

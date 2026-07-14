@@ -107,14 +107,14 @@ float3 CalculateDiffuseEnvironment(float3 normal, float roughness, float metalli
 
     float3 skyColor = SampleEnvironment(skyDirection);
     float3 horizonColor = SampleEnvironment(horizonDirection);
-    float3 groundBounce = float3(0.36f, 0.36f, 0.34f);
+    float3 groundBounce = float3(0.32f, 0.34f, 0.37f);
     float3 upperHemisphere = lerp(horizonColor, skyColor, upFactor);
     float3 hemisphereColor = lerp(groundBounce, upperHemisphere, upFactor);
 
-    float surfaceWrap = lerp(0.72f, 1.08f, upFactor);
+    float surfaceWrap = lerp(0.78f, 1.04f, upFactor);
     float diffuseStrength =
-        lerp(0.075f, 0.125f, roughness) *
-        lerp(1.0f, 0.58f, metallic);
+        lerp(0.095f, 0.150f, roughness) *
+        lerp(1.0f, 0.52f, metallic);
     return hemisphereColor * surfaceWrap * diffuseStrength;
 }
 

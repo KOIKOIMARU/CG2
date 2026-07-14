@@ -10,6 +10,10 @@ SceneManager* SceneManager::GetInstance() {
 
 SceneManager::~SceneManager() {
     FinalizeCurrentScene();
+    if (preparedScene_) {
+        preparedScene_->Finalize();
+        preparedScene_.reset();
+    }
 }
 
 void SceneManager::SetSceneFactory(AbstractSceneFactory* sceneFactory) {
@@ -35,6 +39,35 @@ void SceneManager::SetNextScene(SceneType sceneType) {
     hasNextScene_ = true;
 }
 
+void SceneManager::PrepareScene(SceneType sceneType) {
+    if (hasPreparedScene_ && preparedSceneType_ == sceneType) {
+        return;
+    }
+
+    if (preparedScene_) {
+        preparedScene_->Finalize();
+        preparedScene_.reset();
+    }
+
+    assert(sceneFactory_ != nullptr);
+    preparedScene_ = sceneFactory_->CreateScene(sceneType);
+    assert(preparedScene_ != nullptr);
+    preparedScene_->SetSceneManager(this);
+    preparedScene_->SetSystems(
+        dxCommon_,
+        srvManager_,
+        spriteCommon_,
+        imguiManager_,
+        input_);
+    preparedScene_->Initialize();
+    preparedSceneType_ = sceneType;
+    hasPreparedScene_ = true;
+}
+
+bool SceneManager::IsScenePrepared(SceneType sceneType) const {
+    return hasPreparedScene_ && preparedSceneType_ == sceneType;
+}
+
 void SceneManager::FinalizeCurrentScene()
 {
     if (scene_) {
@@ -48,20 +81,25 @@ void SceneManager::Update() {
     if (hasNextScene_) {
         FinalizeCurrentScene();
 
-        assert(sceneFactory_ != nullptr);
+        if (hasPreparedScene_ && preparedSceneType_ == nextSceneType_) {
+            scene_ = std::move(preparedScene_);
+            hasPreparedScene_ = false;
+        } else {
+            assert(sceneFactory_ != nullptr);
 
-        scene_ = sceneFactory_->CreateScene(nextSceneType_);
-        assert(scene_ != nullptr);
+            scene_ = sceneFactory_->CreateScene(nextSceneType_);
+            assert(scene_ != nullptr);
 
-        scene_->SetSceneManager(this);
-        scene_->SetSystems(
-            dxCommon_,
-            srvManager_,
-            spriteCommon_,
-            imguiManager_,
-            input_
-        );
-        scene_->Initialize();
+            scene_->SetSceneManager(this);
+            scene_->SetSystems(
+                dxCommon_,
+                srvManager_,
+                spriteCommon_,
+                imguiManager_,
+                input_
+            );
+            scene_->Initialize();
+        }
 
         hasNextScene_ = false;
     }

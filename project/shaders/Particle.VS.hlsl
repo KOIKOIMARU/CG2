@@ -19,6 +19,8 @@ struct Particle
     float3 velocity;
     float currentTime;
     float4 color;
+    float3 initialScale;
+    float endScale;
 };
 
 struct PerView

@@ -72,12 +72,12 @@ constexpr int kInitialPlayerBulletPoolCount = 24;
 constexpr int kInitialEnemyBulletPoolCount = 24;
 constexpr int kTargetPlayerBulletPoolCount = 24;
 constexpr int kTargetEnemyBulletPoolCount = 24;
-constexpr int kBulletPoolWarmupStartDelayFrames = 45;
-constexpr int kBulletPoolWarmupIntervalFrames = 6;
-constexpr int kInitialHitEffectObjectPoolCount = 96;
+constexpr int kBulletPoolWarmupStartDelayFrames = 6;
+constexpr int kBulletPoolWarmupIntervalFrames = 1;
+constexpr int kInitialHitEffectObjectPoolCount = 120;
 constexpr int kTargetHitEffectObjectPoolCount = 120;
-constexpr int kHitEffectPoolWarmupStartDelayFrames = 45;
-constexpr int kHitEffectPoolWarmupIntervalFrames = 4;
+constexpr int kHitEffectPoolWarmupStartDelayFrames = 6;
+constexpr int kHitEffectPoolWarmupIntervalFrames = 1;
 constexpr int kRewardHeartPoolCount = 40;
 constexpr int kRewardHeartScoreValue = 25;
 constexpr int kDepthCueEffectCount = 12;
@@ -92,6 +92,12 @@ constexpr float kRailCameraDriftFrequency = 0.027f;
 constexpr float kGameplayCameraBaseFovY = 0.590f;
 constexpr float kGameplayCameraInitialDistance = 15.8f;
 constexpr float kGameplayCameraBaseDistance = 16.10f;
+constexpr float kGameplayCameraEdgeRollStart = 5.25f;
+constexpr float kGameplayCameraEdgeRollRange = 3.65f;
+constexpr float kGameplayCameraEdgeRollMax = 0.055f;
+constexpr float kPlayerExhaustRiseResponse = 0.24f;
+constexpr float kPlayerExhaustFallResponse = 0.075f;
+constexpr float kPlayerExhaustParticleInterval = 1.0f / 38.0f;
 constexpr float kJustDodgeCameraClosePushIn = 3.35f;
 constexpr float kJustDodgeCameraPlayerFollowX = 0.115f;
 constexpr float kJustDodgeCameraPlayerFollowY = 0.105f;
@@ -99,7 +105,7 @@ constexpr float kJustDodgeCameraLowAngle = 0.18f;
 constexpr float kJustDodgeCameraFovTighten = 0.140f;
 constexpr int kPlayerDodgeAfterimageIntervalFrames = 2;
 constexpr float kPlayerDodgeAfterimageDuration = 34.0f;
-constexpr int kSharedResourcePreloadStepCount = 13;
+constexpr int kSharedResourcePreloadStepCount = 15;
 constexpr float kSceneryNearLocalZ = -24.0f;
 constexpr float kSceneryFarLocalZ = 300.0f;
 constexpr float kStageClearDistance = 365.0f;
@@ -125,6 +131,29 @@ bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
 float gSharedResourceLastStepMs = 0.0f;
 float gSharedResourceTotalMs = 0.0f;
+
+Math::Vector3 RotateLocalOffset(
+    const Math::Vector3& offset,
+    const Math::Vector3& rotate)
+{
+    const Math::Matrix4x4 rotateMatrix =
+        Math::Multiply(
+            Math::MakeRotateXMatrix(rotate.x),
+            Math::Multiply(
+                Math::MakeRotateYMatrix(rotate.y),
+                Math::MakeRotateZMatrix(rotate.z)));
+    return {
+        offset.x * rotateMatrix.m[0][0] +
+            offset.y * rotateMatrix.m[1][0] +
+            offset.z * rotateMatrix.m[2][0],
+        offset.x * rotateMatrix.m[0][1] +
+            offset.y * rotateMatrix.m[1][1] +
+            offset.z * rotateMatrix.m[2][1],
+        offset.x * rotateMatrix.m[0][2] +
+            offset.y * rotateMatrix.m[1][2] +
+            offset.z * rotateMatrix.m[2][2],
+    };
+}
 
 struct EnemySpawnPattern {
     float x;
@@ -197,6 +226,8 @@ constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     { 134.0f,  2.9f, -0.2f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
     { 148.0f, -4.6f,  1.5f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::LeftSweep,  0.036f,  8,  5, 1.12f, "High dive" },
     { 160.0f,  0.0f,  1.45f, 52.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.070f, 14, 12, 1.48f, "Heavy drone" },
+    { 174.0f, -5.4f,  0.55f, 52.0f, Enemy::Behavior::Crossfire,     Enemy::EntryStyle::LeftSweep,  0.048f,  9,  6, 1.12f, "Crossfire pair" },
+    { 174.0f,  5.4f,  1.15f, 52.0f, Enemy::Behavior::Crossfire,     Enemy::EntryStyle::RightSweep, 0.048f,  9,  6, 1.12f, "Crossfire pair" },
     { 188.0f, -4.9f,  1.0f, 52.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.038f,  7,  5, 1.14f, "High-speed pass" },
     { 202.0f,  4.9f,  1.0f, 52.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.038f,  7,  5, 1.14f, "High-speed pass" },
     { 214.0f,  0.0f,  1.0f, 50.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.18f, "Break formation" },
@@ -422,10 +453,22 @@ bool GameRuntime::PreloadSharedResourceStep(
         modelManager->CreateBox("primitive_box", 1.5f, 1.5f, 1.5f, "resources/uvChecker.png");
         break;
     case 5:
+        gSharedResourcePreloadLabel = "Environment texture";
+        TextureManager::GetInstance()->LoadTexture(kGameEnvironmentTexturePath);
+        break;
+    case 6:
+        gSharedResourcePreloadLabel = "Gameplay shaders";
+        dxCommon->CompileShader(L"shaders/Object3D.VS.hlsl", L"vs_6_0");
+        dxCommon->CompileShader(L"shaders/Object3D.PS.hlsl", L"ps_6_0");
+        dxCommon->CompileShader(L"shaders/Object3DShadow.VS.hlsl", L"vs_6_0");
+        dxCommon->CompileShader(L"shaders/Skybox.VS.hlsl", L"vs_6_0");
+        dxCommon->CompileShader(L"shaders/Skybox.PS.hlsl", L"ps_6_0");
+        break;
+    case 7:
         gSharedResourcePreloadLabel = "Player ship model";
         modelManager->LoadModel(kFreePlayerModelPath);
         break;
-    case 6:
+    case 8:
         gSharedResourcePreloadLabel = "Enemy ship models";
         modelManager->LoadModel(kEnemyFormationModelPath);
         modelManager->LoadModel(kEnemySwoopModelPath);
@@ -438,28 +481,28 @@ bool GameRuntime::PreloadSharedResourceStep(
         TextureManager::GetInstance()->LoadTexture(kEnemyHeavyTexturePath);
         TextureManager::GetInstance()->LoadTexture(kBossTexturePath);
         break;
-    case 7:
+    case 9:
         gSharedResourcePreloadLabel = "City road model";
         modelManager->LoadModel(kCityStreet4LaneModelPath);
         break;
-    case 8:
+    case 10:
         gSharedResourcePreloadLabel = "City street detail models";
         modelManager->LoadModel(kCityManholeCoverModelPath);
         modelManager->LoadModel(kCityDrainModelPath);
         break;
-    case 9:
+    case 11:
         gSharedResourcePreloadLabel = "City building small model";
         modelManager->LoadModel(kCityBuildingSmallModelPath);
         break;
-    case 10:
+    case 12:
         gSharedResourcePreloadLabel = "City building medium model";
         modelManager->LoadModel(kCityBuildingMediumModelPath);
         break;
-    case 11:
+    case 13:
         gSharedResourcePreloadLabel = "City building large model";
         modelManager->LoadModel(kCityBuildingLargeModelPath);
         break;
-    case 12:
+    case 14:
         gSharedResourcePreloadLabel = "Boss spaceship model";
         modelManager->LoadModel(kBossModelPath);
         break;
@@ -544,6 +587,9 @@ void GameRuntime::Initialize()
     stageCameraRollBias_ = 0.0f;
     stageCameraLiftBias_ = 0.0f;
     stageCameraFovBoost_ = 0.0f;
+    playerExhaustThrust_ = 0.0f;
+    playerExhaustParticleTimer_ = 0.0f;
+    nextPlayerExhaustParticleIndex_ = 0;
     stageSectionName_ = "Opening";
     stageCombatBeatName_ = "Intro";
     stageRailEventTriggered_.fill(false);
@@ -662,6 +708,7 @@ void GameRuntime::Initialize()
     InitializeRewardHearts();
     InitializePlayerDodgeAfterimages();
     InitializePlayerFlightAura();
+    InitializePlayerExhaustParticles();
     InitializeContactShadows();
 }
 
@@ -675,6 +722,10 @@ void GameRuntime::Finalize()
     }
     for (PlayerFlightAura& aura : playerFlightAuras_) {
         aura.object.reset();
+    }
+    for (PlayerExhaustParticle& particle : playerExhaustParticles_) {
+        particle.object.reset();
+        particle.isActive = false;
     }
     for (ContactShadow& shadow : contactShadows_) {
         shadow.object.reset();
@@ -904,6 +955,13 @@ void GameRuntime::UpdateEnemyActions()
         int normalEnemyShotsThisVolley = 0;
         constexpr int kMaxNormalEnemyShotsThisVolley = 2;
         for (const auto& enemy : enemies_) {
+            if (enemy->IsCrossfire() && enemy->CanShoot() &&
+                normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
+                FireEnemyBullet(enemy->GetAimPosition());
+                ++normalEnemyShotsThisVolley;
+            }
+        }
+        for (const auto& enemy : enemies_) {
             if (enemy->CanShoot()) {
                 const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
                 if (enemy->IsBoss()) {
@@ -924,7 +982,8 @@ void GameRuntime::UpdateEnemyActions()
                             enemyAimPosition.z
                         });
                     }
-                } else if (normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
+                } else if (!enemy->IsCrossfire() &&
+                    normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
                     FireEnemyBullet(enemyAimPosition);
                     ++normalEnemyShotsThisVolley;
                 }
@@ -2564,6 +2623,8 @@ Model* GameRuntime::GetEnemyModelForBehavior(Enemy::Behavior behavior) const
         return enemySwoopModel_ ? enemySwoopModel_ : enemyModel_;
     case Enemy::Behavior::StrafeShooter:
         return enemyShooterModel_ ? enemyShooterModel_ : enemyModel_;
+    case Enemy::Behavior::Crossfire:
+        return enemyShooterModel_ ? enemyShooterModel_ : enemyModel_;
     case Enemy::Behavior::Formation:
     default:
         return enemyFormationModel_ ? enemyFormationModel_ : enemyModel_;
@@ -2578,6 +2639,8 @@ const char* GameRuntime::GetEnemyTextureOverrideForBehavior(Enemy::Behavior beha
     case Enemy::Behavior::Swoop:
         return enemySwoopModel_ ? kEnemySwoopTexturePath : nullptr;
     case Enemy::Behavior::StrafeShooter:
+        return enemyShooterModel_ ? kEnemyShooterTexturePath : nullptr;
+    case Enemy::Behavior::Crossfire:
         return enemyShooterModel_ ? kEnemyShooterTexturePath : nullptr;
     case Enemy::Behavior::Formation:
     default:
@@ -2644,7 +2707,20 @@ void GameRuntime::UpdateStageEnemyEvents()
             railDistance_ < event.distance) {
             continue;
         }
-        if (activeStageEnemyCount >= kMaxActiveStageEnemiesBeforeBoss ||
+        const bool isCrossfirePairStart =
+            event.behavior == Enemy::Behavior::Crossfire &&
+            (index == 0 ||
+                kStageEnemySpawnEvents[index - 1].behavior != Enemy::Behavior::Crossfire ||
+                kStageEnemySpawnEvents[index - 1].distance != event.distance);
+        const bool isCrossfirePairEnd =
+            event.behavior == Enemy::Behavior::Crossfire &&
+            index > 0 &&
+            kStageEnemySpawnEvents[index - 1].behavior == Enemy::Behavior::Crossfire &&
+            kStageEnemySpawnEvents[index - 1].distance == event.distance &&
+            stageEnemyEventTriggered_[index - 1];
+        const int requiredSlots = isCrossfirePairStart ? 2 : 1;
+        if ((!isCrossfirePairEnd &&
+                activeStageEnemyCount + requiredSlots > kMaxActiveStageEnemiesBeforeBoss) ||
             spawnedEventCountThisFrame >= kMaxStageEnemyEventsPerFrame) {
             break;
         }
@@ -3202,6 +3278,12 @@ void GameRuntime::InitializePlayerDodgeAfterimages()
 void GameRuntime::InitializePlayerFlightAura()
 {
     Model* softGlowModel = effectGlowCoreModel_;
+    Model* exhaustTrailModel =
+        effectPlayerBulletTrailModel_ ? effectPlayerBulletTrailModel_ : softGlowModel;
+    Model* exhaustOuterModel =
+        effectPlayerChargeTrailModel_ ? effectPlayerChargeTrailModel_ : exhaustTrailModel;
+    Model* exhaustCoreModel =
+        effectPlayerBulletCoreModel_ ? effectPlayerBulletCoreModel_ : softGlowModel;
     if (!object3dCommon_ || !softGlowModel) {
         return;
     }
@@ -3247,37 +3329,257 @@ void GameRuntime::InitializePlayerFlightAura()
 
     setupAura(
         0,
-        softGlowModel,
-        { 0.0f, -0.08f, -0.46f },
-        { 0.72f, 0.92f, 1.0f, 0.11f },
-        0.86f,
-        1.45f,
-        0.38f,
+        exhaustOuterModel,
+        { -0.72f, -0.11f, -1.35f },
+        { 0.10f, 0.55f, 1.0f, 0.68f },
+        0.58f,
+        1.05f,
+        1.12f,
         0.0f,
         0.0f,
         0.052f);
     setupAura(
         1,
-        softGlowModel,
-        { -0.78f, -0.10f, -0.54f },
-        { 0.42f, 0.82f, 1.0f, 0.09f },
+        exhaustOuterModel,
+        { 0.72f, -0.11f, -1.35f },
+        { 0.10f, 0.55f, 1.0f, 0.68f },
         0.58f,
-        1.38f,
-        0.34f,
+        1.05f,
+        1.12f,
         1.8f,
-        -0.18f,
+        0.0f,
         0.061f);
     setupAura(
         2,
-        softGlowModel,
-        { 0.78f, -0.10f, -0.54f },
-        { 0.42f, 0.82f, 1.0f, 0.09f },
-        0.58f,
-        1.38f,
-        0.34f,
+        exhaustTrailModel,
+        { -0.72f, -0.10f, -1.39f },
+        { 0.80f, 0.97f, 1.0f, 0.95f },
+        0.40f,
+        0.82f,
+        1.02f,
         3.6f,
-        0.18f,
-        0.061f);
+        0.0f,
+        0.074f);
+    setupAura(
+        3,
+        exhaustTrailModel,
+        { 0.72f, -0.10f, -1.39f },
+        { 0.80f, 0.97f, 1.0f, 0.95f },
+        0.40f,
+        0.82f,
+        1.02f,
+        5.4f,
+        0.0f,
+        0.079f);
+    setupAura(
+        4,
+        exhaustCoreModel,
+        { -0.72f, -0.11f, -1.32f },
+        { 1.0f, 1.0f, 1.0f, 0.96f },
+        0.36f,
+        0.90f,
+        0.90f,
+        2.7f,
+        0.0f,
+        0.068f);
+    setupAura(
+        5,
+        exhaustCoreModel,
+        { 0.72f, -0.11f, -1.32f },
+        { 1.0f, 1.0f, 1.0f, 0.96f },
+        0.36f,
+        0.90f,
+        0.90f,
+        4.5f,
+        0.0f,
+        0.083f);
+}
+
+void GameRuntime::InitializePlayerExhaustParticles()
+{
+    Model* particleModel =
+        effectGlowCoreModel_ ? effectGlowCoreModel_ : effectPlayerBulletCoreModel_;
+    if (!object3dCommon_ || !particleModel) {
+        return;
+    }
+
+    for (PlayerExhaustParticle& particle : playerExhaustParticles_) {
+        particle = PlayerExhaustParticle{};
+        particle.object = std::make_unique<Object3d>();
+        particle.object->Initialize(object3dCommon_.get());
+        particle.object->SetModel(particleModel);
+        particle.object->SetLightingMode(0);
+        particle.object->SetEnvironmentCoefficient(0.0f);
+        particle.object->SetAlphaReference(0.01f);
+        particle.object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+        particle.object->SetScale({ 0.01f, 0.01f, 1.0f });
+        particle.object->SetColor({ 0.35f, 0.82f, 1.0f, 0.0f });
+        particle.object->Update();
+        particle.model = particleModel;
+    }
+
+    nextPlayerExhaustParticleIndex_ = 0;
+}
+
+void GameRuntime::EmitPlayerExhaustParticles(
+    const Math::Vector3& playerPosition,
+    const Math::Vector3& playerRotate)
+{
+    if (!dxCommon_) {
+        return;
+    }
+
+    playerExhaustParticleTimer_ += dxCommon_->GetDeltaTime();
+    if (playerExhaustParticleTimer_ < kPlayerExhaustParticleInterval) {
+        return;
+    }
+    playerExhaustParticleTimer_ = std::fmod(
+        playerExhaustParticleTimer_,
+        kPlayerExhaustParticleInterval);
+
+    const Math::Vector3 leftOffset =
+        RotateLocalOffset({ -0.72f, -0.10f, -1.38f }, playerRotate);
+    const Math::Vector3 rightOffset =
+        RotateLocalOffset({ 0.72f, -0.10f, -1.38f }, playerRotate);
+    const Math::Vector3 exhaustDirection = Math::Normalize(
+        RotateLocalOffset({ 0.0f, -0.06f, -1.0f }, playerRotate));
+    const Math::Vector3 leftPosition{
+        playerPosition.x + leftOffset.x,
+        playerPosition.y + leftOffset.y,
+        playerPosition.z + leftOffset.z
+    };
+    const Math::Vector3 rightPosition{
+        playerPosition.x + rightOffset.x,
+        playerPosition.y + rightOffset.y,
+        playerPosition.z + rightOffset.z
+    };
+    const auto spawnParticle =
+        [this, &playerRotate, &exhaustDirection](
+            const Math::Vector3& nozzlePosition,
+            bool isCore,
+            float phase) {
+            PlayerExhaustParticle& particle =
+                playerExhaustParticles_[nextPlayerExhaustParticleIndex_];
+            nextPlayerExhaustParticleIndex_ =
+                (nextPlayerExhaustParticleIndex_ + 1) % playerExhaustParticles_.size();
+
+            if (!particle.object) {
+                return;
+            }
+
+            Model* model = isCore ?
+                (effectPlayerBulletCoreModel_ ?
+                    effectPlayerBulletCoreModel_ : effectGlowCoreModel_) :
+                (effectGlowCoreModel_ ?
+                    effectGlowCoreModel_ : effectPlayerBulletCoreModel_);
+            if (!model) {
+                return;
+            }
+
+            const float wobbleX = std::sin(phase * 1.73f) * 0.10f;
+            const float wobbleY = std::cos(phase * 2.11f) * 0.07f;
+            const Math::Vector3 positionJitter = RotateLocalOffset(
+                { wobbleX, wobbleY, -0.03f },
+                playerRotate);
+            const Math::Vector3 velocityJitter = RotateLocalOffset(
+                { wobbleX * 2.6f, wobbleY * 2.0f, 0.0f },
+                playerRotate);
+            const float speed =
+                (isCore ? 6.6f : 4.8f) + playerExhaustThrust_ * 2.1f;
+
+            particle.model = model;
+            particle.position = {
+                nozzlePosition.x + positionJitter.x,
+                nozzlePosition.y + positionJitter.y,
+                nozzlePosition.z + positionJitter.z
+            };
+            particle.velocity = {
+                exhaustDirection.x * speed + velocityJitter.x,
+                exhaustDirection.y * speed + velocityJitter.y,
+                exhaustDirection.z * speed + velocityJitter.z
+            };
+            particle.color = isCore ?
+                Math::Vector4{ 0.78f, 0.97f, 1.0f, 0.92f } :
+                Math::Vector4{ 0.06f, 0.48f, 1.0f, 0.66f };
+            particle.age = 0.0f;
+            particle.lifetime = isCore ? 0.15f : 0.28f;
+            particle.startSize =
+                (isCore ? 0.16f : 0.27f) * (0.92f + playerExhaustThrust_ * 0.22f);
+            particle.endSize = isCore ? 0.025f : 0.075f;
+            particle.aspectX = isCore ? 0.74f : 1.08f;
+            particle.aspectY = isCore ? 1.24f : 1.16f;
+            particle.roll = phase * 0.37f;
+            particle.rollSpeed = (isCore ? 2.8f : 1.6f) *
+                (std::sin(phase) >= 0.0f ? 1.0f : -1.0f);
+            particle.isActive = true;
+        };
+
+    const float phase = cameraTimer_ * 0.173f +
+        static_cast<float>(nextPlayerExhaustParticleIndex_) * 0.61f;
+    spawnParticle(leftPosition, false, phase);
+    spawnParticle(rightPosition, false, phase + 1.7f);
+    spawnParticle(leftPosition, true, phase + 3.1f);
+    spawnParticle(rightPosition, true, phase + 4.8f);
+}
+
+void GameRuntime::UpdateAndDrawPlayerExhaustParticles()
+{
+    if (!camera_ || !dxCommon_) {
+        return;
+    }
+
+    const float deltaTime = std::clamp(dxCommon_->GetDeltaTime(), 0.0f, 1.0f / 20.0f);
+    const Math::Vector3 cameraRotate = camera_->GetRotate();
+    for (PlayerExhaustParticle& particle : playerExhaustParticles_) {
+        if (!particle.isActive || !particle.object || !particle.model) {
+            continue;
+        }
+
+        particle.age += deltaTime;
+        if (particle.age >= particle.lifetime) {
+            particle.isActive = false;
+            particle.object->SetTranslate({ 0.0f, -1000.0f, -1000.0f });
+            particle.object->SetScale({ 0.01f, 0.01f, 1.0f });
+            particle.object->SetColor({ particle.color.x, particle.color.y, particle.color.z, 0.0f });
+            particle.object->Update();
+            continue;
+        }
+
+        const float lifeRate = std::clamp(
+            particle.age / (std::max)(particle.lifetime, 0.001f),
+            0.0f,
+            1.0f);
+        particle.position.x += particle.velocity.x * deltaTime;
+        particle.position.y += particle.velocity.y * deltaTime;
+        particle.position.z += particle.velocity.z * deltaTime;
+        const float damping = std::pow(0.94f, deltaTime * 60.0f);
+        particle.velocity.x *= damping;
+        particle.velocity.y *= damping;
+        particle.velocity.z *= damping;
+        particle.roll += particle.rollSpeed * deltaTime;
+
+        const float fade = (1.0f - lifeRate) * (1.0f - lifeRate);
+        const float size =
+            particle.startSize + (particle.endSize - particle.startSize) * lifeRate;
+        const float pulse = 1.0f +
+            std::sin(cameraTimer_ * 0.29f + particle.roll * 2.0f) * 0.06f;
+        Math::Vector4 color = particle.color;
+        color.w *= fade;
+        Math::Vector3 rotate = cameraRotate;
+        rotate.z += particle.roll;
+
+        particle.object->SetModel(particle.model);
+        particle.object->SetTranslate(particle.position);
+        particle.object->SetRotate(rotate);
+        particle.object->SetScale({
+            size * particle.aspectX * pulse,
+            size * particle.aspectY * (2.0f - pulse),
+            1.0f
+        });
+        particle.object->SetColor(color);
+        particle.object->Update();
+        particle.object->Draw();
+    }
 }
 
 void GameRuntime::SpawnPlayerDodgeAfterimage()
@@ -3387,51 +3689,103 @@ void GameRuntime::DrawPlayerFlightAura()
     object3dCommon_->CommonDrawSetting();
 
     const Math::Vector3 playerPosition = player_->GetTranslate();
+    const Math::Vector3 playerRotate = player_->GetVisualRotate();
     const Math::Vector3 cameraRotate = camera_->GetRotate();
     const float speedRate = std::clamp((railSpeed_ - 0.13f) / 0.10f, 0.0f, 1.0f);
+    const float accelerationRate = std::clamp(
+        (targetRailSpeed_ - railSpeed_) / 0.045f,
+        0.0f,
+        1.0f);
     const float dodgeBoost = player_->IsDodging() ? 1.0f : 0.0f;
     const float justDodgeBoost =
         justDodgeFlashTimer_ > 0 ?
         static_cast<float>(justDodgeFlashTimer_) /
             static_cast<float>((std::max)(kJustDodgeFlashDuration, 1)) :
         0.0f;
-    for (PlayerFlightAura& aura : playerFlightAuras_) {
+    const float targetThrust = std::clamp(
+        0.10f +
+            speedRate * 0.42f +
+            accelerationRate * 0.20f +
+            dodgeBoost * 0.82f +
+            justDodgeBoost * 0.34f,
+        0.0f,
+        1.55f);
+    float effectFrameStep = 1.0f;
+    if (dxCommon_) {
+        effectFrameStep = std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.25f, 3.0f);
+    }
+    const float thrustResponse =
+        targetThrust > playerExhaustThrust_ ?
+        kPlayerExhaustRiseResponse :
+        kPlayerExhaustFallResponse;
+    const float thrustBlend =
+        1.0f - std::pow(1.0f - thrustResponse, effectFrameStep);
+    playerExhaustThrust_ +=
+        (targetThrust - playerExhaustThrust_) * thrustBlend;
+    EmitPlayerExhaustParticles(playerPosition, playerRotate);
+    const float exhaustAxisWobble =
+        std::sin(cameraTimer_ * 0.071f) * 0.012f;
+
+    for (size_t auraIndex = 0; auraIndex < playerFlightAuras_.size(); ++auraIndex) {
+        PlayerFlightAura& aura = playerFlightAuras_[auraIndex];
         if (!aura.object || !aura.model) {
             continue;
         }
 
         const float pulse =
-            1.0f + std::sin(cameraTimer_ * 0.074f + aura.pulseOffset) * 0.075f;
-        const float flicker =
-            0.88f + std::sin(cameraTimer_ * 0.137f + aura.pulseOffset) * 0.12f;
+            1.0f + std::sin(cameraTimer_ * 0.074f + aura.pulseOffset) * 0.055f;
+        const float flicker = std::clamp(
+            0.90f +
+                std::sin(cameraTimer_ * 0.137f + aura.pulseOffset) * 0.075f +
+                std::sin(cameraTimer_ * 0.311f + aura.pulseOffset * 1.7f) * 0.035f,
+            0.78f,
+            1.08f);
+        const bool isOuterFlame = auraIndex < 2;
+        const bool isInnerFlame = auraIndex >= 2 && auraIndex < 4;
+        const float lengthResponse =
+            isOuterFlame ? 0.92f :
+            isInnerFlame ? 0.66f :
+            0.22f;
+        const float widthResponse =
+            isOuterFlame ? 0.18f :
+            isInnerFlame ? 0.12f :
+            0.20f;
+        const float alphaResponse =
+            isOuterFlame ? 0.26f :
+            isInnerFlame ? 0.20f :
+            0.14f;
+        Math::Vector3 localOffset = aura.offset;
+        localOffset.z -=
+            playerExhaustThrust_ * aura.baseSize * lengthResponse * 0.05f;
+        const Math::Vector3 rotatedOffset = RotateLocalOffset(localOffset, playerRotate);
         const Math::Vector3 translate{
-            playerPosition.x + aura.offset.x,
-            playerPosition.y + aura.offset.y +
-                std::sin(cameraTimer_ * 0.052f + aura.pulseOffset) * 0.025f,
-            playerPosition.z + aura.offset.z
+            playerPosition.x + rotatedOffset.x,
+            playerPosition.y + rotatedOffset.y,
+            playerPosition.z + rotatedOffset.z
         };
         Math::Vector3 rotate = cameraRotate;
-        rotate.z +=
-            aura.roll +
-            std::sin(cameraTimer_ * aura.rollSpeed + aura.pulseOffset) * 0.045f;
+        rotate.z += playerRotate.z + aura.roll + exhaustAxisWobble;
         Math::Vector4 color = aura.color;
         color.w *= flicker *
-            (0.68f + speedRate * 0.16f + dodgeBoost * 0.28f + justDodgeBoost * 0.42f);
+            (0.76f + speedRate * 0.10f + playerExhaustThrust_ * alphaResponse);
+        color.w = std::clamp(color.w, 0.0f, 1.0f);
 
         aura.object->SetModel(aura.model);
         aura.object->SetTranslate(translate);
         aura.object->SetRotate(rotate);
         aura.object->SetScale({
             aura.baseSize * aura.aspectX * pulse *
-                (1.0f + dodgeBoost * 0.12f + justDodgeBoost * 0.18f),
+                (1.0f + playerExhaustThrust_ * widthResponse),
             aura.baseSize * aura.aspectY * (2.0f - pulse) *
-                (1.0f + speedRate * 0.12f + dodgeBoost * 0.20f + justDodgeBoost * 0.24f),
+                (1.0f + playerExhaustThrust_ * lengthResponse),
             1.0f
         });
         aura.object->SetColor(color);
         aura.object->Update();
         aura.object->Draw();
     }
+
+    UpdateAndDrawPlayerExhaustParticles();
 
     object3dCommon_->SetBlendMode(previousBlendMode);
     object3dCommon_->SetDepthDrawMode(previousDepthMode);
@@ -5158,6 +5512,20 @@ void GameRuntime::UpdateGameCamera()
         static_cast<float>(playerImpactFlashTimer_) /
             static_cast<float>((std::max)(playerImpactFlashDuration_, 1)) :
         0.0f;
+    const float edgeRollRate = std::clamp(
+        (std::abs(playerTranslate.x) - kGameplayCameraEdgeRollStart) /
+            kGameplayCameraEdgeRollRange,
+        0.0f,
+        1.0f);
+    const float smoothEdgeRollRate =
+        edgeRollRate * edgeRollRate * (3.0f - 2.0f * edgeRollRate);
+    const float edgeDirection =
+        playerTranslate.x > 0.0f ? 1.0f :
+        playerTranslate.x < 0.0f ? -1.0f :
+        0.0f;
+    const float playerEdgeRoll =
+        edgeDirection * smoothEdgeRollRate * kGameplayCameraEdgeRollMax *
+        (1.0f - justDodgeWhip * 0.92f);
     const float dodgeLean =
         isPlayerDodging ?
         static_cast<float>(player_->GetDodgeDirection() >= 0 ? 1 : -1) :
@@ -5225,6 +5593,7 @@ void GameRuntime::UpdateGameCamera()
             playerVelocity.x * 0.006f,
         stageCameraRollBias_ * 0.55f -
             turnRate * 0.024f +
+            playerEdgeRoll +
             playerImpactCameraRate * 0.010f +
             shakeX * 0.006f,
     };

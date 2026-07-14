@@ -171,7 +171,7 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
         psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // dxCommonと合わせる
+        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         psoDesc.SampleDesc.Count = 1;
         psoDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
 
@@ -633,7 +633,8 @@ void ParticleManager::Finalize()
 
 void ParticleManager::CreateParticleGroup(
     const std::string& name,
-    const std::string& textureFilePath
+    const std::string& textureFilePath,
+    const EmitSettings& settings
 ) {
     // ① 既に存在していないかチェック
     if (particleGroups_.find(name) != particleGroups_.end()) {
@@ -690,11 +691,21 @@ void ParticleManager::CreateParticleGroup(
         reinterpret_cast<void**>(&group.emitterData)
     );
     group.emitterData->translate = { 0.0f, 0.0f, 0.0f };
-    group.emitterData->radius = 1.0f;
+    group.emitterData->radius = settings.radius;
+    group.emitterData->direction = settings.direction;
+    group.emitterData->spread = settings.spread;
+    group.emitterData->colorMin = settings.colorMin;
+    group.emitterData->colorMax = settings.colorMax;
+    group.emitterData->scaleMin = settings.scaleMin;
+    group.emitterData->scaleMax = settings.scaleMax;
+    group.emitterData->lifeTimeMin = settings.lifeTimeMin;
+    group.emitterData->lifeTimeMax = settings.lifeTimeMax;
+    group.emitterData->speedMin = settings.speedMin;
+    group.emitterData->speedMax = settings.speedMax;
+    group.emitterData->endScale = settings.endScale;
     group.emitterData->count = 10;
-    group.emitterData->frequency = 0.5f;
-    group.emitterData->frequencyTime = 0.0f;
     group.emitterData->emit = 0;
+    group.emitterData->padding = 0.0f;
 
     // ⑦ SRV/UAV 確保
     group.particleSrvIndex = srvManager_->Allocate();
@@ -737,6 +748,17 @@ void ParticleManager::Emit(
     const Vector3& position,
     uint32_t count
 ) {
+    auto it = particleGroups_.find(name);
+    assert(it != particleGroups_.end());
+    Emit(name, position, it->second.emitterData->direction, count);
+}
+
+void ParticleManager::Emit(
+    const std::string& name,
+    const Vector3& position,
+    const Vector3& direction,
+    uint32_t count
+) {
     // ① グループ存在チェック
     auto it = particleGroups_.find(name);
     assert(it != particleGroups_.end());
@@ -745,7 +767,7 @@ void ParticleManager::Emit(
     ParticleGroup& group = it->second;
     if (group.emitterData) {
         group.emitterData->translate = position;
-        group.emitterData->radius = 1.0f;
+        group.emitterData->direction = direction;
         group.emitterData->count = count;
         group.emitterData->emit = 1;
         group.needsEmit = true;

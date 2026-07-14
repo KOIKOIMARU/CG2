@@ -109,6 +109,23 @@ private:
         float rollSpeed = 0.0f;
     };
 
+    struct PlayerExhaustParticle {
+        std::unique_ptr<Object3d> object;
+        Model* model = nullptr;
+        Math::Vector3 position{};
+        Math::Vector3 velocity{};
+        Math::Vector4 color{ 0.35f, 0.82f, 1.0f, 0.0f };
+        float age = 0.0f;
+        float lifetime = 0.24f;
+        float startSize = 0.24f;
+        float endSize = 0.04f;
+        float aspectX = 1.0f;
+        float aspectY = 1.0f;
+        float roll = 0.0f;
+        float rollSpeed = 0.0f;
+        bool isActive = false;
+    };
+
     struct ContactShadow {
         std::unique_ptr<Object3d> object;
     };
@@ -262,6 +279,10 @@ private:
     void UpdatePlayerDodgeAfterimages();
     void DrawPlayerDodgeAfterimages();
     void InitializePlayerFlightAura();
+    void InitializePlayerExhaustParticles();
+    void EmitPlayerExhaustParticles(const Math::Vector3& playerPosition,
+        const Math::Vector3& playerRotate);
+    void UpdateAndDrawPlayerExhaustParticles();
     void DrawPlayerFlightAura();
     void DrawEditorOverlayGuiRich();
     void DrawHud();
@@ -321,7 +342,8 @@ private:
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
     std::array<PlayerDodgeAfterimage, 16> playerDodgeAfterimages_;
-    std::array<PlayerFlightAura, 5> playerFlightAuras_;
+    std::array<PlayerFlightAura, 6> playerFlightAuras_;
+    std::array<PlayerExhaustParticle, 64> playerExhaustParticles_;
     std::array<ContactShadow, 32> contactShadows_;
     std::array<bool, 5> stageRailEventTriggered_{};
     std::array<bool, 24> stageEnemyEventTriggered_{};
@@ -404,6 +426,8 @@ private:
     float stageCameraRollBias_ = 0.0f;
     float stageCameraLiftBias_ = 0.0f;
     float stageCameraFovBoost_ = 0.0f;
+    float playerExhaustThrust_ = 0.0f;
+    float playerExhaustParticleTimer_ = 0.0f;
     float playerImpactSlowScale_ = 1.0f;
     float playerBulletSpeed_ = 1.36f;
     float lockBulletSpeed_ = 1.62f;
@@ -416,6 +440,7 @@ private:
     Math::Vector2 editorOverlayViewportMin_{ 0.0f, 0.0f };
     Math::Vector2 editorOverlayViewportSize_{ 0.0f, 0.0f };
     size_t nextPlayerDodgeAfterimageIndex_ = 0;
+    size_t nextPlayerExhaustParticleIndex_ = 0;
     Math::Vector3 cameraTranslate_{ 0.0f, 2.65f, -15.8f };
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };

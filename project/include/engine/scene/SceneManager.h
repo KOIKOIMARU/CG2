@@ -25,6 +25,8 @@ public:
     void FinalizeCurrentScene();
 
     void SetNextScene(SceneType sceneType);
+    void PrepareScene(SceneType sceneType);
+    bool IsScenePrepared(SceneType sceneType) const;
     void SetSceneFactory(AbstractSceneFactory* sceneFactory);
 
     void SetSystems(
@@ -40,6 +42,9 @@ private:
 
 private:
     std::unique_ptr<BaseScene> scene_;
+    std::unique_ptr<BaseScene> preparedScene_;
+    SceneType preparedSceneType_{};
+    bool hasPreparedScene_ = false;
     SceneType nextSceneType_{};
     bool hasNextScene_ = false;
 

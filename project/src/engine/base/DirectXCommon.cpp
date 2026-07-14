@@ -174,18 +174,18 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         randomParameterData_->time = randomTime_;
     }
     if (useGameTone) {
-        gameToneParameterData_->vignetteStrength = 0.54f;
-        gameToneParameterData_->saturation = 1.08f;
-        gameToneParameterData_->contrast = 1.18f;
+        gameToneParameterData_->vignetteStrength = 0.46f;
+        gameToneParameterData_->saturation = 1.07f;
+        gameToneParameterData_->contrast = 1.15f;
         gameToneParameterData_->damageTint = 0.0f;
         gameToneParameterData_->fogStart = 78.0f;
         gameToneParameterData_->fogEnd = 280.0f;
-        gameToneParameterData_->fogStrength = 0.075f;
-        gameToneParameterData_->horizonFogStrength = 0.055f;
-        gameToneParameterData_->exposure = 1.06f;
-        gameToneParameterData_->blackPoint = 0.018f;
-        gameToneParameterData_->highlightCompression = 0.36f;
-        gameToneParameterData_->colorTemperature = 0.06f;
+        gameToneParameterData_->fogStrength = 0.060f;
+        gameToneParameterData_->horizonFogStrength = 0.040f;
+        gameToneParameterData_->exposure = 1.00f;
+        gameToneParameterData_->blackPoint = 0.010f;
+        gameToneParameterData_->highlightCompression = 0.46f;
+        gameToneParameterData_->colorTemperature = 0.035f;
         if (postEffectMode == 13) {
             gameToneParameterData_->vignetteStrength = 0.92f;
             gameToneParameterData_->saturation = 0.86f;
@@ -906,6 +906,13 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
         return nullptr;
     }
 
+    const std::wstring cacheKey =
+        absPath.lexically_normal().wstring() + L"|" + profile;
+    const auto cachedShader = shaderCache_.find(cacheKey);
+    if (cachedShader != shaderCache_.end()) {
+        return cachedShader->second;
+    }
+
     // ============================
     // 2) ファイル読み込み
     // ============================
@@ -974,6 +981,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
         return nullptr;
     }
 
+    shaderCache_.emplace(cacheKey, shaderBlob);
     return shaderBlob;
 }
 
@@ -1555,18 +1563,18 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     );
     gameToneParameterData_->projectionInverse =
         Math::Transpose(Math::MakeIdentity4x4());
-    gameToneParameterData_->vignetteStrength = 0.54f;
-    gameToneParameterData_->saturation = 1.08f;
-    gameToneParameterData_->contrast = 1.18f;
+    gameToneParameterData_->vignetteStrength = 0.46f;
+    gameToneParameterData_->saturation = 1.07f;
+    gameToneParameterData_->contrast = 1.15f;
     gameToneParameterData_->damageTint = 0.0f;
     gameToneParameterData_->fogStart = 78.0f;
     gameToneParameterData_->fogEnd = 280.0f;
-    gameToneParameterData_->fogStrength = 0.075f;
-    gameToneParameterData_->horizonFogStrength = 0.055f;
-    gameToneParameterData_->exposure = 1.06f;
-    gameToneParameterData_->blackPoint = 0.018f;
-    gameToneParameterData_->highlightCompression = 0.36f;
-    gameToneParameterData_->colorTemperature = 0.06f;
+    gameToneParameterData_->fogStrength = 0.060f;
+    gameToneParameterData_->horizonFogStrength = 0.040f;
+    gameToneParameterData_->exposure = 1.00f;
+    gameToneParameterData_->blackPoint = 0.010f;
+    gameToneParameterData_->highlightCompression = 0.46f;
+    gameToneParameterData_->colorTemperature = 0.035f;
 
     depthOutlineParameterResource_ =
         CreateBufferResource(sizeof(DepthOutlineParameter));
