@@ -249,6 +249,9 @@
     <ClCompile Include="src\engine\scene\EditorScene.cpp">
       <Filter>src\engine\scene</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\scene\LevelDataLoader.cpp">
+      <Filter>src\engine\scene</Filter>
+    </ClCompile>
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp">
       <Filter>src\engine\scene</Filter>
     </ClCompile>
@@ -522,6 +525,9 @@
       <Filter>include\engine\scene</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\EditorScene.h">
+      <Filter>include\engine\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\LevelDataLoader.h">
       <Filter>include\engine\scene</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\SceneSerializer.h">

@@ -314,6 +314,7 @@ private:
     std::unique_ptr<Bullet> AcquireBullet(std::vector<std::unique_ptr<Bullet>>& pool);
     std::vector<SceneSerializer::ObjectRecord> BuildRuntimeSceneRecords() const;
     SceneSerializer::SceneSettings BuildRuntimeSceneSettings() const;
+    bool LoadBlenderLevelObjects(const char* path);
     bool LoadSceneObjects(const char* path);
     bool SaveSceneObjects(const char* path);
 

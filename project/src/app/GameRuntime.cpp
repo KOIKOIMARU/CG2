@@ -5,6 +5,7 @@
 #include "engine/3d/TextureManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/io/Input.h"
+#include "engine/scene/LevelDataLoader.h"
 #include "engine/scene/SceneSerializer.h"
 
 #include <imgui.h>
@@ -19,6 +20,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <functional>
 #include <numbers>
 #include <string>
 
@@ -2075,13 +2078,113 @@ bool GameRuntime::SaveSceneObjects(const char* path)
     return true;
 }
 
+bool GameRuntime::LoadBlenderLevelObjects(const char* path)
+{
+    LevelDataLoader::LevelData levelData{};
+    std::string errorMessage;
+    if (!LevelDataLoader::LoadFile(path, levelData, &errorMessage)) {
+        editorStatusMessage_ = "Blenderレベル読み込み失敗: " + errorMessage;
+        return false;
+    }
+
+    std::vector<std::unique_ptr<Object3d>> loadedObjects;
+    std::vector<SceneSerializer::ObjectRecord> loadedRecords;
+    size_t skippedMeshCount = 0;
+    size_t colliderCount = 0;
+
+    ModelManager* modelManager = ModelManager::GetInstance();
+    std::function<void(const LevelDataLoader::ObjectData&)> loadObject;
+    loadObject = [&](const LevelDataLoader::ObjectData& objectData) {
+        if (objectData.collider.enabled) {
+            ++colliderCount;
+        }
+
+        if (objectData.type == "MESH") {
+            std::string modelPath = objectData.fileName;
+            constexpr const char* kResourcesPrefix = "resources/";
+            if (modelPath.starts_with(kResourcesPrefix)) {
+                modelPath.erase(0, std::char_traits<char>::length(kResourcesPrefix));
+            }
+
+            Model* model = nullptr;
+            if (!modelPath.empty()) {
+                model = modelManager->FindModel(modelPath);
+                if (!model) {
+                    std::error_code error;
+                    const std::filesystem::path resourcePath =
+                        std::filesystem::path("resources") / modelPath;
+                    if (std::filesystem::is_regular_file(resourcePath, error)) {
+                        modelManager->LoadModel(modelPath);
+                        model = modelManager->FindModel(modelPath);
+                    }
+                }
+            }
+
+            if (model) {
+                auto sceneObject = std::make_unique<Object3d>();
+                sceneObject->Initialize(object3dCommon_.get());
+                sceneObject->SetModel(model);
+                sceneObject->SetTranslate(objectData.translation);
+                sceneObject->SetRotate(objectData.rotation);
+                sceneObject->SetScale(objectData.scaling);
+                sceneObject->SetEnvironmentCoefficient(0.0f);
+                sceneObject->Update();
+
+                SceneSerializer::ObjectRecord record{};
+                record.name = objectData.name;
+                record.translate = objectData.translation;
+                record.rotate = objectData.rotation;
+                record.scale = objectData.scaling;
+                for (int index = 0;
+                    index < static_cast<int>(
+                        sizeof(kRuntimeSceneModelItems) /
+                        sizeof(kRuntimeSceneModelItems[0]));
+                    ++index) {
+                    if (modelPath == kRuntimeSceneModelItems[index]) {
+                        record.modelIndex = index;
+                        break;
+                    }
+                }
+
+                loadedObjects.push_back(std::move(sceneObject));
+                loadedRecords.push_back(std::move(record));
+            } else {
+                ++skippedMeshCount;
+            }
+        }
+
+        // 現在のObject3dには親Transformがないため、子も個別のObject3dとして配置する。
+        // JSON上の親子構造自体はLevelDataLoaderで再帰的に保持している。
+        for (const LevelDataLoader::ObjectData& child : objectData.children) {
+            loadObject(child);
+        }
+    };
+
+    for (const LevelDataLoader::ObjectData& objectData : levelData.objects) {
+        loadObject(objectData);
+    }
+
+    sceneObjects_ = std::move(loadedObjects);
+    sceneObjectRecords_ = std::move(loadedRecords);
+    currentSceneFilePath_ = path ? path : "";
+
+    editorStatusMessage_ =
+        "Blenderレベルを読み込みました: " + currentSceneFilePath_ +
+        " / 配置 " + std::to_string(sceneObjects_.size()) +
+        " / コライダー " + std::to_string(colliderCount);
+    if (skippedMeshCount > 0) {
+        editorStatusMessage_ +=
+            " / モデル未検出 " + std::to_string(skippedMeshCount);
+    }
+    return true;
+}
+
 bool GameRuntime::LoadSceneObjects(const char* path)
 {
     std::vector<SceneSerializer::ObjectRecord> records;
     SceneSerializer::SceneSettings settings{};
     if (!SceneSerializer::LoadScene(path, records, settings)) {
-        editorStatusMessage_ = "読み込み失敗: " + std::string(path ? path : "");
-        return false;
+        return LoadBlenderLevelObjects(path);
     }
 
     sceneObjects_.clear();

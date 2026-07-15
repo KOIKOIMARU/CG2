@@ -1,0 +1,32 @@
+{
+    "name": "scene",
+    "objects": [
+        {
+            "type": "MESH",
+            "name": "Suzanne",
+            "file_name": "suzanne.obj",
+            "transform": {
+                "translation": [-2.0, 0.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scaling": [1.0, 1.0, 1.0]
+            },
+            "collider": {
+                "type": "BOX",
+                "center": [0.0, 0.0, 0.0],
+                "size": [2.0, 2.0, 2.0]
+            },
+            "children": [
+                {
+                    "type": "MESH",
+                    "name": "ChildBunny",
+                    "file_name": "bunny.obj",
+                    "transform": {
+                        "translation": [4.0, 0.0, 0.0],
+                        "rotation": [0.0, 0.0, 0.0],
+                        "scaling": [0.5, 0.5, 0.5]
+                    }
+                }
+            ]
+        }
+    ]
+}
