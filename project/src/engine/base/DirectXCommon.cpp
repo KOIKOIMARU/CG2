@@ -3,11 +3,15 @@
 #include "engine/base/SrvManager.h"
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
 #include <format>
 #include <dxcapi.h>            // DXC（dxcUtils, dxcCompiler, IncludeHandler）
 #include <vector>              // arguments 用
 #include <string>              // wstring
 #include <chrono>
+#include <stdexcept>
 #include <thread>   // sleep_for 用
 
 
@@ -34,6 +38,102 @@ float ToMilliseconds(
     return std::chrono::duration<float, std::milli>(end - begin).count();
 }
 
+std::string WideToUtf8(const wchar_t* text)
+{
+    if (!text || *text == L'\0') {
+        return {};
+    }
+
+    const int requiredSize = WideCharToMultiByte(
+        CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+    if (requiredSize <= 1) {
+        return {};
+    }
+
+    std::string result(static_cast<size_t>(requiredSize), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, 0, text, -1, result.data(), requiredSize,
+        nullptr, nullptr);
+    result.resize(static_cast<size_t>(requiredSize - 1));
+    return result;
+}
+
+std::string GetDredObjectName(const char* ansiName, const wchar_t* wideName)
+{
+    if (ansiName && *ansiName != '\0') {
+        return ansiName;
+    }
+    const std::string convertedName = WideToUtf8(wideName);
+    return convertedName.empty() ? "<unnamed>" : convertedName;
+}
+
+const char* GetBreadcrumbOperationName(D3D12_AUTO_BREADCRUMB_OP operation)
+{
+    switch (operation) {
+    case D3D12_AUTO_BREADCRUMB_OP_SETMARKER: return "SetMarker";
+    case D3D12_AUTO_BREADCRUMB_OP_BEGINEVENT: return "BeginEvent";
+    case D3D12_AUTO_BREADCRUMB_OP_ENDEVENT: return "EndEvent";
+    case D3D12_AUTO_BREADCRUMB_OP_DRAWINSTANCED: return "DrawInstanced";
+    case D3D12_AUTO_BREADCRUMB_OP_DRAWINDEXEDINSTANCED:
+        return "DrawIndexedInstanced";
+    case D3D12_AUTO_BREADCRUMB_OP_EXECUTEINDIRECT: return "ExecuteIndirect";
+    case D3D12_AUTO_BREADCRUMB_OP_DISPATCH: return "Dispatch";
+    case D3D12_AUTO_BREADCRUMB_OP_COPYBUFFERREGION:
+        return "CopyBufferRegion";
+    case D3D12_AUTO_BREADCRUMB_OP_COPYTEXTUREREGION:
+        return "CopyTextureRegion";
+    case D3D12_AUTO_BREADCRUMB_OP_COPYRESOURCE: return "CopyResource";
+    case D3D12_AUTO_BREADCRUMB_OP_RESOLVESUBRESOURCE:
+        return "ResolveSubresource";
+    case D3D12_AUTO_BREADCRUMB_OP_CLEARRENDERTARGETVIEW:
+        return "ClearRenderTargetView";
+    case D3D12_AUTO_BREADCRUMB_OP_CLEARUNORDEREDACCESSVIEW:
+        return "ClearUnorderedAccessView";
+    case D3D12_AUTO_BREADCRUMB_OP_CLEARDEPTHSTENCILVIEW:
+        return "ClearDepthStencilView";
+    case D3D12_AUTO_BREADCRUMB_OP_RESOURCEBARRIER: return "ResourceBarrier";
+    case D3D12_AUTO_BREADCRUMB_OP_EXECUTEBUNDLE: return "ExecuteBundle";
+    case D3D12_AUTO_BREADCRUMB_OP_PRESENT: return "Present";
+    case D3D12_AUTO_BREADCRUMB_OP_RESOLVEQUERYDATA:
+        return "ResolveQueryData";
+    case D3D12_AUTO_BREADCRUMB_OP_BEGINSUBMISSION: return "BeginSubmission";
+    case D3D12_AUTO_BREADCRUMB_OP_ENDSUBMISSION: return "EndSubmission";
+    case D3D12_AUTO_BREADCRUMB_OP_WRITEBUFFERIMMEDIATE:
+        return "WriteBufferImmediate";
+    case D3D12_AUTO_BREADCRUMB_OP_BUILDRAYTRACINGACCELERATIONSTRUCTURE:
+        return "BuildRaytracingAccelerationStructure";
+    case D3D12_AUTO_BREADCRUMB_OP_DISPATCHRAYS: return "DispatchRays";
+    case D3D12_AUTO_BREADCRUMB_OP_DISPATCHMESH: return "DispatchMesh";
+    case D3D12_AUTO_BREADCRUMB_OP_BARRIER: return "Barrier";
+    case D3D12_AUTO_BREADCRUMB_OP_BEGIN_COMMAND_LIST:
+        return "BeginCommandList";
+    default: return "Unknown";
+    }
+}
+
+const char* GetMessageSeverityName(D3D12_MESSAGE_SEVERITY severity)
+{
+    switch (severity) {
+    case D3D12_MESSAGE_SEVERITY_CORRUPTION: return "CORRUPTION";
+    case D3D12_MESSAGE_SEVERITY_ERROR: return "ERROR";
+    case D3D12_MESSAGE_SEVERITY_WARNING: return "WARNING";
+    case D3D12_MESSAGE_SEVERITY_INFO: return "INFO";
+    case D3D12_MESSAGE_SEVERITY_MESSAGE: return "MESSAGE";
+    default: return "UNKNOWN";
+    }
+}
+
+}
+
+DirectXCommon::~DirectXCommon()
+{
+    FlushDebugMessages();
+    if (device_) {
+        const HRESULT removedReason = device_->GetDeviceRemovedReason();
+        if (FAILED(removedReason)) {
+            ReportDeviceRemovedDiagnostics("DirectXCommon shutdown", removedReason);
+        }
+    }
 }
 
 void DirectXCommon::Initialize(WinApp* winApp)
@@ -42,6 +142,7 @@ void DirectXCommon::Initialize(WinApp* winApp)
     assert(winApp);
     this->winApp_ = winApp;
 
+    InitializeDiagnosticLog();
     InitializeDevice();      // デバイス・DXGI
     InitializeCommand();     // コマンドキュー/アロケータ/リスト
     InitializeSwapChain();   // ★ スワップチェーン
@@ -65,9 +166,9 @@ void DirectXCommon::PreDraw() {
     // 0. コマンドリストを描画用に準備
     HRESULT hr = S_OK;
     hr = commandAllocator_->Reset();
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CommandAllocator::Reset");
     hr = commandList_->Reset(commandAllocator_.Get(), nullptr);
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "GraphicsCommandList::Reset");
 
     // バックバッファの番号取得
     currentBackBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
@@ -174,18 +275,18 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         randomParameterData_->time = randomTime_;
     }
     if (useGameTone) {
-        gameToneParameterData_->vignetteStrength = 0.46f;
-        gameToneParameterData_->saturation = 1.07f;
-        gameToneParameterData_->contrast = 1.15f;
+        gameToneParameterData_->vignetteStrength = 0.36f;
+        gameToneParameterData_->saturation = 1.10f;
+        gameToneParameterData_->contrast = 1.10f;
         gameToneParameterData_->damageTint = 0.0f;
-        gameToneParameterData_->fogStart = 78.0f;
-        gameToneParameterData_->fogEnd = 280.0f;
-        gameToneParameterData_->fogStrength = 0.060f;
-        gameToneParameterData_->horizonFogStrength = 0.040f;
-        gameToneParameterData_->exposure = 1.00f;
-        gameToneParameterData_->blackPoint = 0.010f;
-        gameToneParameterData_->highlightCompression = 0.46f;
-        gameToneParameterData_->colorTemperature = 0.035f;
+        gameToneParameterData_->fogStart = 68.0f;
+        gameToneParameterData_->fogEnd = 260.0f;
+        gameToneParameterData_->fogStrength = 0.085f;
+        gameToneParameterData_->horizonFogStrength = 0.050f;
+        gameToneParameterData_->exposure = 1.02f;
+        gameToneParameterData_->blackPoint = 0.006f;
+        gameToneParameterData_->highlightCompression = 0.50f;
+        gameToneParameterData_->colorTemperature = 0.050f;
         if (postEffectMode == 13) {
             gameToneParameterData_->vignetteStrength = 0.92f;
             gameToneParameterData_->saturation = 0.86f;
@@ -378,6 +479,21 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
         commandList_->ResourceBarrier(1, &depthBarrier);
     }
 
+    if (useGameTone) {
+        const float bloomThreshold = postEffectMode == 15 ? 0.94f : 0.90f;
+        const float bloomIntensity = postEffectMode == 15 ? 0.14f : 0.26f;
+        DrawBloomPasses(
+            postEffectTextureSrvIndex_,
+            WinApp::kClientWidth,
+            WinApp::kClientHeight,
+            bloomThreshold,
+            0.72f);
+        DrawBloomCompositeToBackBuffer(
+            postEffectTextureSrvIndex_,
+            bloomIntensity);
+        return;
+    }
+
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = GetCPUDescriptorHandle(
         rtvHeap_,
         rtvDescriptorSize_,
@@ -484,7 +600,7 @@ void DirectXCommon::PostDraw()
 
     // コマンドリストをクローズ
     hr = commandList_->Close();
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "GraphicsCommandList::Close");
 
     // GPU コマンドの実行
     ID3D12CommandList* cmdLists[] = { commandList_.Get() };
@@ -493,24 +609,41 @@ void DirectXCommon::PostDraw()
     // 画面のフリップ（Present）
     const auto presentBegin = std::chrono::steady_clock::now();
     hr = swapChain_->Present(1, 0);
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "SwapChain::Present");
     const auto presentEnd = std::chrono::steady_clock::now();
     frameTiming_.presentMs = ToMilliseconds(presentBegin, presentEnd);
 
     // Fence の値更新 & Signal
     fenceValue_++;
     hr = commandQueue_->Signal(fence_.Get(), fenceValue_);
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CommandQueue::Signal");
 
     // コマンド完了待ち
     const auto fenceBegin = std::chrono::steady_clock::now();
-    if (fence_->GetCompletedValue() < fenceValue_) {
+    const UINT64 completedValue = fence_->GetCompletedValue();
+    if (completedValue == UINT64_MAX) {
+        HRESULT removedReason = device_->GetDeviceRemovedReason();
+        if (SUCCEEDED(removedReason)) {
+            removedReason = DXGI_ERROR_DEVICE_REMOVED;
+        }
+        CheckDeviceOperation(removedReason, "Fence::GetCompletedValue");
+    }
+    if (completedValue < fenceValue_) {
         hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
-        assert(SUCCEEDED(hr));
-        WaitForSingleObject(fenceEvent_, INFINITE);
+        CheckDeviceOperation(hr, "Fence::SetEventOnCompletion");
+        const DWORD waitResult = WaitForSingleObject(fenceEvent_, INFINITE);
+        if (waitResult != WAIT_OBJECT_0) {
+            const DWORD error = waitResult == WAIT_FAILED
+                ? GetLastError()
+                : ERROR_GEN_FAILURE;
+            CheckDeviceOperation(
+                HRESULT_FROM_WIN32(error),
+                "WaitForSingleObject(fence)");
+        }
     }
     const auto fenceEnd = std::chrono::steady_clock::now();
     frameTiming_.fenceWaitMs = ToMilliseconds(fenceBegin, fenceEnd);
+    FlushDebugMessages();
 
     // ★ ここで FPS 固定
     UpdateFixFPS();
@@ -523,12 +656,20 @@ void DirectXCommon::PostDraw()
 void DirectXCommon::InitializeDevice() {
 
 #ifdef _DEBUG
+    ConfigureDred();
+
     ComPtr<ID3D12Debug1> debugController = nullptr;
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
         debugController->EnableDebugLayer();
+        AppendDiagnosticLog("D3D12_DEBUG_LAYER enabled=1");
 #ifdef ENABLE_D3D12_GPU_VALIDATION
         debugController->SetEnableGPUBasedValidation(true);
+        AppendDiagnosticLog("D3D12_GPU_BASED_VALIDATION enabled=1");
+#else
+        AppendDiagnosticLog("D3D12_GPU_BASED_VALIDATION enabled=0");
 #endif
+    } else {
+        AppendDiagnosticLog("D3D12_DEBUG_LAYER enabled=0");
     }
 #endif
 
@@ -578,24 +719,32 @@ void DirectXCommon::InitializeDevice() {
     Log("Complete create D3D12Device!!!\n");
 
 #ifdef _DEBUG
-    ComPtr<ID3D12InfoQueue> infoQueue = nullptr;
-    if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&infoQueue)))) {
-        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
-        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
-        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, false);
+    if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&infoQueue_)))) {
+        const bool breakOnSevereMessage = IsDebuggerPresent() != FALSE;
+        infoQueue_->SetBreakOnSeverity(
+            D3D12_MESSAGE_SEVERITY_CORRUPTION, breakOnSevereMessage);
+        infoQueue_->SetBreakOnSeverity(
+            D3D12_MESSAGE_SEVERITY_ERROR, breakOnSevereMessage);
+        infoQueue_->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, false);
 
         D3D12_MESSAGE_ID denyIds[] = {
             D3D12_MESSAGE_ID_RESOURCE_BARRIER_MISMATCHING_COMMAND_LIST_TYPE
         };
         D3D12_MESSAGE_SEVERITY severities[] = {
-            D3D12_MESSAGE_SEVERITY_INFO
+            D3D12_MESSAGE_SEVERITY_INFO,
+            D3D12_MESSAGE_SEVERITY_MESSAGE
         };
         D3D12_INFO_QUEUE_FILTER filter{};
         filter.DenyList.NumIDs = _countof(denyIds);
         filter.DenyList.pIDList = denyIds;
         filter.DenyList.NumSeverities = _countof(severities);
         filter.DenyList.pSeverityList = severities;
-        infoQueue->PushStorageFilter(&filter);
+        infoQueue_->PushStorageFilter(&filter);
+        AppendDiagnosticLog(std::format(
+            "D3D12_INFO_QUEUE enabled=1 break_on_error={}",
+            breakOnSevereMessage ? 1 : 0));
+    } else {
+        AppendDiagnosticLog("D3D12_INFO_QUEUE enabled=0");
     }
 #endif
 }
@@ -615,12 +764,14 @@ void DirectXCommon::InitializeCommand()
         &commandQueueDesc,
         IID_PPV_ARGS(&commandQueue_));
     assert(SUCCEEDED(hr));
+    commandQueue_->SetName(L"CG2 Main Direct Queue");
 
     // コマンドアロケータ生成
     hr = device_->CreateCommandAllocator(
         D3D12_COMMAND_LIST_TYPE_DIRECT,
         IID_PPV_ARGS(&commandAllocator_));
     assert(SUCCEEDED(hr));
+    commandAllocator_->SetName(L"CG2 Main Command Allocator");
 
     // コマンドリスト生成
     hr = device_->CreateCommandList(
@@ -630,6 +781,7 @@ void DirectXCommon::InitializeCommand()
         nullptr,
         IID_PPV_ARGS(&commandList_));
     assert(SUCCEEDED(hr));
+    commandList_->SetName(L"CG2 Main Graphics Command List");
 
     // いったん Close しておく（毎フレーム Reset して使う想定）
     hr = commandList_->Close();
@@ -983,6 +1135,280 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
 
     shaderCache_.emplace(cacheKey, shaderBlob);
     return shaderBlob;
+}
+
+void DirectXCommon::InitializeDiagnosticLog()
+{
+    const DWORD requiredLength = GetEnvironmentVariableW(
+        L"CG2_D3D12_DIAGNOSTIC_LOG", nullptr, 0);
+    if (requiredLength == 0) {
+#ifdef _DEBUG
+        std::array<wchar_t, 32768> executablePathBuffer{};
+        const DWORD executablePathLength = GetModuleFileNameW(
+            nullptr,
+            executablePathBuffer.data(),
+            static_cast<DWORD>(executablePathBuffer.size()));
+        if (executablePathLength == 0 ||
+            executablePathLength >= executablePathBuffer.size()) {
+            return;
+        }
+
+        diagnosticLogPath_ = (
+            std::filesystem::path(executablePathBuffer.data()).parent_path() /
+            L"d3d12-diagnostics.log").wstring();
+#else
+        return;
+#endif
+    } else {
+        std::vector<wchar_t> pathBuffer(requiredLength);
+        const DWORD copiedLength = GetEnvironmentVariableW(
+            L"CG2_D3D12_DIAGNOSTIC_LOG",
+            pathBuffer.data(),
+            static_cast<DWORD>(pathBuffer.size()));
+        if (copiedLength == 0 || copiedLength >= pathBuffer.size()) {
+            return;
+        }
+
+        diagnosticLogPath_ = pathBuffer.data();
+    }
+    const std::filesystem::path logPath(diagnosticLogPath_);
+    if (!logPath.parent_path().empty()) {
+        std::error_code error;
+        std::filesystem::create_directories(logPath.parent_path(), error);
+    }
+
+    std::ofstream clearLog(logPath, std::ios::out | std::ios::trunc);
+    clearLog.close();
+
+#ifdef _DEBUG
+    AppendDiagnosticLog("D3D12_DIAGNOSTICS_START build=Debug");
+#else
+    AppendDiagnosticLog("D3D12_DIAGNOSTICS_START build=Release");
+#endif
+}
+
+void DirectXCommon::ConfigureDred()
+{
+#ifdef _DEBUG
+    ComPtr<ID3D12DeviceRemovedExtendedDataSettings> dredSettings;
+    const HRESULT settingsResult = D3D12GetDebugInterface(
+        IID_PPV_ARGS(&dredSettings));
+    if (FAILED(settingsResult)) {
+        AppendDiagnosticLog(std::format(
+            "DRED_SETTINGS_UNAVAILABLE hr=0x{:08X}",
+            static_cast<uint32_t>(settingsResult)));
+        return;
+    }
+
+    dredSettings->SetAutoBreadcrumbsEnablement(
+        D3D12_DRED_ENABLEMENT_FORCED_ON);
+    dredSettings->SetPageFaultEnablement(
+        D3D12_DRED_ENABLEMENT_FORCED_ON);
+    dredSettings->SetWatsonDumpEnablement(
+        D3D12_DRED_ENABLEMENT_SYSTEM_CONTROLLED);
+
+    ComPtr<ID3D12DeviceRemovedExtendedDataSettings1> dredSettings1;
+    const bool breadcrumbContextsEnabled =
+        SUCCEEDED(dredSettings.As(&dredSettings1));
+    if (breadcrumbContextsEnabled) {
+        dredSettings1->SetBreadcrumbContextEnablement(
+            D3D12_DRED_ENABLEMENT_FORCED_ON);
+    }
+
+    AppendDiagnosticLog(std::format(
+        "DRED_SETTINGS_ENABLED breadcrumbs=1 page_faults=1 contexts={}",
+        breadcrumbContextsEnabled ? 1 : 0));
+#endif
+}
+
+void DirectXCommon::AppendDiagnosticLog(std::string_view message) const
+{
+    std::string output(message);
+    if (output.empty() || output.back() != '\n') {
+        output.push_back('\n');
+    }
+    Log(output);
+
+    if (diagnosticLogPath_.empty()) {
+        return;
+    }
+
+    std::ofstream log(
+        std::filesystem::path(diagnosticLogPath_),
+        std::ios::out | std::ios::app);
+    if (log) {
+        log << output;
+    }
+}
+
+void DirectXCommon::FlushDebugMessages()
+{
+#ifdef _DEBUG
+    if (!infoQueue_) {
+        return;
+    }
+
+    const UINT64 messageCount =
+        infoQueue_->GetNumStoredMessagesAllowedByRetrievalFilter();
+    for (UINT64 index = 0; index < messageCount; ++index) {
+        SIZE_T messageLength = 0;
+        if (FAILED(infoQueue_->GetMessage(index, nullptr, &messageLength)) ||
+            messageLength == 0) {
+            continue;
+        }
+
+        std::vector<std::byte> messageStorage(messageLength);
+        auto* message = reinterpret_cast<D3D12_MESSAGE*>(messageStorage.data());
+        if (FAILED(infoQueue_->GetMessage(index, message, &messageLength))) {
+            continue;
+        }
+
+        AppendDiagnosticLog(std::format(
+            "D3D12_MESSAGE severity={} id={} description={}",
+            GetMessageSeverityName(message->Severity),
+            static_cast<unsigned int>(message->ID),
+            message->pDescription ? message->pDescription : "<none>"));
+    }
+
+    if (messageCount > 0) {
+        infoQueue_->ClearStoredMessages();
+    }
+#endif
+}
+
+void DirectXCommon::CheckDeviceOperation(
+    HRESULT result,
+    std::string_view operation)
+{
+    if (SUCCEEDED(result)) {
+        return;
+    }
+
+    FlushDebugMessages();
+    ReportDeviceRemovedDiagnostics(operation, result);
+    throw std::runtime_error(std::format(
+        "DirectX 12 operation failed: {} (0x{:08X})",
+        operation,
+        static_cast<uint32_t>(result)));
+}
+
+void DirectXCommon::ReportDeviceRemovedDiagnostics(
+    std::string_view operation,
+    HRESULT failureResult)
+{
+    const HRESULT removedReason = device_
+        ? device_->GetDeviceRemovedReason()
+        : E_POINTER;
+    AppendDiagnosticLog(std::format(
+        "D3D12_OPERATION_FAILED operation={} failure_hr=0x{:08X} "
+        "device_reason_hr=0x{:08X}",
+        operation,
+        static_cast<uint32_t>(failureResult),
+        static_cast<uint32_t>(removedReason)));
+
+    if (!device_ || !FAILED(removedReason)) {
+        AppendDiagnosticLog("DEVICE_REMOVED detected=0");
+        return;
+    }
+
+    if (deviceRemovedDiagnosticsReported_) {
+        return;
+    }
+    deviceRemovedDiagnosticsReported_ = true;
+    AppendDiagnosticLog("DEVICE_REMOVED detected=1");
+
+    ComPtr<ID3D12DeviceRemovedExtendedData1> dred;
+    const HRESULT dredResult = device_.As(&dred);
+    if (FAILED(dredResult)) {
+        AppendDiagnosticLog(std::format(
+            "DRED_OUTPUT_UNAVAILABLE hr=0x{:08X}",
+            static_cast<uint32_t>(dredResult)));
+        return;
+    }
+
+    D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT1 breadcrumbs{};
+    if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput1(&breadcrumbs))) {
+        const D3D12_AUTO_BREADCRUMB_NODE1* node =
+            breadcrumbs.pHeadAutoBreadcrumbNode;
+        for (uint32_t nodeIndex = 0; node && nodeIndex < 64;
+             ++nodeIndex, node = node->pNext) {
+            const uint32_t completed = (std::min)(
+                node->pLastBreadcrumbValue
+                    ? *node->pLastBreadcrumbValue
+                    : 0,
+                node->BreadcrumbCount);
+            AppendDiagnosticLog(std::format(
+                "DRED_BREADCRUMB_NODE index={} queue={} list={} completed={}/{}",
+                nodeIndex,
+                GetDredObjectName(
+                    node->pCommandQueueDebugNameA,
+                    node->pCommandQueueDebugNameW),
+                GetDredObjectName(
+                    node->pCommandListDebugNameA,
+                    node->pCommandListDebugNameW),
+                completed,
+                node->BreadcrumbCount));
+
+            if (!node->pCommandHistory || node->BreadcrumbCount == 0) {
+                continue;
+            }
+
+            const uint32_t historyBegin = completed > 4 ? completed - 4 : 0;
+            const uint32_t historyEnd = (std::min)(
+                node->BreadcrumbCount,
+                completed + 5);
+            for (uint32_t historyIndex = historyBegin;
+                 historyIndex < historyEnd;
+                 ++historyIndex) {
+                const auto operationValue = node->pCommandHistory[historyIndex];
+                AppendDiagnosticLog(std::format(
+                    "DRED_BREADCRUMB_OP index={} state={} op={}({})",
+                    historyIndex,
+                    historyIndex < completed ? "completed" : "pending",
+                    GetBreadcrumbOperationName(operationValue),
+                    static_cast<unsigned int>(operationValue)));
+            }
+
+            for (uint32_t contextIndex = 0;
+                 contextIndex < node->BreadcrumbContextsCount;
+                 ++contextIndex) {
+                const auto& context = node->pBreadcrumbContexts[contextIndex];
+                if (context.BreadcrumbIndex < historyBegin ||
+                    context.BreadcrumbIndex >= historyEnd) {
+                    continue;
+                }
+                AppendDiagnosticLog(std::format(
+                    "DRED_BREADCRUMB_CONTEXT index={} text={}",
+                    context.BreadcrumbIndex,
+                    GetDredObjectName(nullptr, context.pContextString)));
+            }
+        }
+    }
+
+    D3D12_DRED_PAGE_FAULT_OUTPUT1 pageFault{};
+    if (SUCCEEDED(dred->GetPageFaultAllocationOutput1(&pageFault))) {
+        AppendDiagnosticLog(std::format(
+            "DRED_PAGE_FAULT virtual_address=0x{:016X}",
+            static_cast<uint64_t>(pageFault.PageFaultVA)));
+
+        const auto logAllocations = [this](
+            std::string_view category,
+            const D3D12_DRED_ALLOCATION_NODE1* allocation) {
+            for (uint32_t index = 0; allocation && index < 64;
+                 ++index, allocation = allocation->pNext) {
+                AppendDiagnosticLog(std::format(
+                    "DRED_ALLOCATION category={} index={} type={} name={}",
+                    category,
+                    index,
+                    static_cast<unsigned int>(allocation->AllocationType),
+                    GetDredObjectName(
+                        allocation->ObjectNameA,
+                        allocation->ObjectNameW)));
+            }
+        };
+        logAllocations("existing", pageFault.pHeadExistingAllocationNode);
+        logAllocations("recently_freed", pageFault.pHeadRecentFreedAllocationNode);
+    }
 }
 
 
@@ -1747,6 +2173,7 @@ void DirectXCommon::UploadTextureData(
             D3D12_COMMAND_LIST_TYPE_DIRECT,
             IID_PPV_ARGS(&uploadAllocator));
         assert(SUCCEEDED(hr));
+        uploadAllocator->SetName(L"CG2 Texture Upload Allocator");
 
         hr = device_->CreateCommandList(
             0,
@@ -1755,6 +2182,7 @@ void DirectXCommon::UploadTextureData(
             nullptr,
             IID_PPV_ARGS(&uploadList));
         assert(SUCCEEDED(hr));
+        uploadList->SetName(L"CG2 Texture Upload Command List");
         destinationList = uploadList.Get();
     }
     assert(destinationList);
@@ -1803,7 +2231,7 @@ void DirectXCommon::UploadTextureData(
 
     // ④ コマンドを閉じて実行
     hr = uploadList->Close();
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "TextureUpload CommandList::Close");
 
     ID3D12CommandList* lists[] = { uploadList.Get() };
     commandQueue_->ExecuteCommandLists(_countof(lists), lists);
@@ -1811,13 +2239,34 @@ void DirectXCommon::UploadTextureData(
     // ⑤ フェンスで GPU 完了を待つ
     fenceValue_++;
     hr = commandQueue_->Signal(fence_.Get(), fenceValue_);
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "TextureUpload CommandQueue::Signal");
 
-    if (fence_->GetCompletedValue() < fenceValue_) {
-        hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
-        assert(SUCCEEDED(hr));
-        WaitForSingleObject(fenceEvent_, INFINITE);
+    const UINT64 completedValue = fence_->GetCompletedValue();
+    if (completedValue == UINT64_MAX) {
+        HRESULT removedReason = device_->GetDeviceRemovedReason();
+        if (SUCCEEDED(removedReason)) {
+            removedReason = DXGI_ERROR_DEVICE_REMOVED;
+        }
+        CheckDeviceOperation(
+            removedReason,
+            "TextureUpload Fence::GetCompletedValue");
     }
+    if (completedValue < fenceValue_) {
+        hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
+        CheckDeviceOperation(
+            hr,
+            "TextureUpload Fence::SetEventOnCompletion");
+        const DWORD waitResult = WaitForSingleObject(fenceEvent_, INFINITE);
+        if (waitResult != WAIT_OBJECT_0) {
+            const DWORD error = waitResult == WAIT_FAILED
+                ? GetLastError()
+                : ERROR_GEN_FAILURE;
+            CheckDeviceOperation(
+                HRESULT_FROM_WIN32(error),
+                "TextureUpload WaitForSingleObject(fence)");
+        }
+    }
+    FlushDebugMessages();
 
     // ここまで来れば intermediate / uploadList / uploadAllocator は
     // GPU 側の処理が終わっているので破棄されてOK（スコープアウト）
@@ -1833,6 +2282,8 @@ void DirectXCommon::BeginTextureUploadBatch()
         D3D12_COMMAND_LIST_TYPE_DIRECT,
         IID_PPV_ARGS(&textureUploadBatchAllocator_));
     assert(SUCCEEDED(hr));
+    textureUploadBatchAllocator_->SetName(
+        L"CG2 Texture Upload Batch Allocator");
 
     hr = device_->CreateCommandList(
         0,
@@ -1841,6 +2292,8 @@ void DirectXCommon::BeginTextureUploadBatch()
         nullptr,
         IID_PPV_ARGS(&textureUploadBatchList_));
     assert(SUCCEEDED(hr));
+    textureUploadBatchList_->SetName(
+        L"CG2 Texture Upload Batch Command List");
     isTextureUploadBatchActive_ = true;
 }
 
@@ -1850,7 +2303,7 @@ void DirectXCommon::EndTextureUploadBatch()
     assert(textureUploadBatchList_);
 
     HRESULT hr = textureUploadBatchList_->Close();
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "TextureUploadBatch CommandList::Close");
 
     if (!textureUploadBatchIntermediates_.empty()) {
         ID3D12CommandList* lists[] = { textureUploadBatchList_.Get() };
@@ -1858,12 +2311,34 @@ void DirectXCommon::EndTextureUploadBatch()
 
         ++fenceValue_;
         hr = commandQueue_->Signal(fence_.Get(), fenceValue_);
-        assert(SUCCEEDED(hr));
-        if (fence_->GetCompletedValue() < fenceValue_) {
-            hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
-            assert(SUCCEEDED(hr));
-            WaitForSingleObject(fenceEvent_, INFINITE);
+        CheckDeviceOperation(hr, "TextureUploadBatch CommandQueue::Signal");
+        const UINT64 completedValue = fence_->GetCompletedValue();
+        if (completedValue == UINT64_MAX) {
+            HRESULT removedReason = device_->GetDeviceRemovedReason();
+            if (SUCCEEDED(removedReason)) {
+                removedReason = DXGI_ERROR_DEVICE_REMOVED;
+            }
+            CheckDeviceOperation(
+                removedReason,
+                "TextureUploadBatch Fence::GetCompletedValue");
         }
+        if (completedValue < fenceValue_) {
+            hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
+            CheckDeviceOperation(
+                hr,
+                "TextureUploadBatch Fence::SetEventOnCompletion");
+            const DWORD waitResult = WaitForSingleObject(
+                fenceEvent_, INFINITE);
+            if (waitResult != WAIT_OBJECT_0) {
+                const DWORD error = waitResult == WAIT_FAILED
+                    ? GetLastError()
+                    : ERROR_GEN_FAILURE;
+                CheckDeviceOperation(
+                    HRESULT_FROM_WIN32(error),
+                    "TextureUploadBatch WaitForSingleObject(fence)");
+            }
+        }
+        FlushDebugMessages();
     }
 
     textureUploadBatchIntermediates_.clear();

@@ -188,7 +188,9 @@ private:
     };
 
     void FirePlayerBullet();
-    void FireEnemyBullet(const Math::Vector3& position);
+    void FireEnemyBullet(
+        const Math::Vector3& position,
+        bool isDangerous = false);
     void SpawnEnemy();
     void InitializeRewardHearts();
     void SpawnRewardHearts(const Math::Vector3& worldPosition, int count);
@@ -234,6 +236,9 @@ private:
     void AddEnemyImpactEffect(
         const Math::Vector3& worldPosition,
         float strength = 1.0f);
+    void AddEnemyShotTelegraphEffect(
+        const Math::Vector3& worldPosition,
+        bool isDangerous);
     void AddEnemyMuzzleFlashEffect(const Math::Vector3& worldPosition);
     void AddMuzzleFlashEffect(
         const Math::Vector3& worldPosition,
@@ -246,6 +251,14 @@ private:
         bool isCharged,
         bool isBossHit,
         bool isDestroyed);
+    void TriggerHitConfirm(
+        const Math::Vector3& worldPosition,
+        bool isCharged,
+        bool isBossHit,
+        bool isDestroyed);
+    void TriggerPlayerDamageFeedback(
+        const Math::Vector3& worldPosition,
+        const Math::Vector3& incomingVelocity);
     void AddHitEffectVisual(
         HitEffect& effect,
         Model* model,
@@ -289,6 +302,8 @@ private:
     void DrawBossHud();
     void DrawStageCueHud();
     void DrawLockOnHud();
+    void DrawHitConfirmHud();
+    void DrawPlayerDamageHud();
     void DrawResultOverlay();
     void DrawPerformanceOverlay();
     void DrawBulletEffectObjects();
@@ -402,6 +417,12 @@ private:
     int playerImpactFlashDuration_ = 1;
     int playerImpactSlowTimer_ = 0;
     int playerImpactSlowDuration_ = 1;
+    int hitConfirmTimer_ = 0;
+    int hitConfirmDuration_ = 1;
+    int hitConfirmComboTimer_ = 0;
+    int hitConfirmComboCount_ = 0;
+    int playerDamageHudTimer_ = 0;
+    int playerDamageHudDuration_ = 1;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
     int bulletPoolWarmupTimer_ = 0;
@@ -422,6 +443,8 @@ private:
     float railDistance_ = 0.0f;
     float railSpeed_ = 0.115f;
     float targetRailSpeed_ = 0.115f;
+    float stageProgress_ = 0.0f;
+    float stageTimelineSpeed_ = 0.0f;
     float stageCameraYawBias_ = 0.0f;
     float stageCameraRollBias_ = 0.0f;
     float stageCameraLiftBias_ = 0.0f;
@@ -449,10 +472,20 @@ private:
     const char* stageCombatBeatName_ = "Intro";
     Math::Vector2 lockedEnemyScreen_{ 0.0f, 0.0f };
     Math::Vector2 reticleScreen_{ 0.0f, 0.0f };
+    Math::Vector2 hitConfirmScreen_{ 0.0f, 0.0f };
+    Math::Vector2 playerDamageScreen_{ 0.0f, 0.0f };
+    Math::Vector2 playerDamageDirection_{ 0.0f, -1.0f };
+    float hitConfirmStrength_ = 1.0f;
     std::string currentSceneFilePath_{ "resources/game_scene.json" };
     std::string editorStatusMessage_{ "Ready." };
     bool hasLockTarget_ = false;
     bool isReticleOnTarget_ = false;
+    bool hitConfirmCharged_ = false;
+    bool hitConfirmBoss_ = false;
+    bool hitConfirmDestroyed_ = false;
+    bool enemyVolleyTelegraphTriggered_ = false;
+    bool stageTimelineWasBlocked_ = false;
+    int stageEncounterBreatherTimer_ = 0;
     int postEffectMode_ = 12;
     bool isGameOver_ = false;
     bool isGameClear_ = false;

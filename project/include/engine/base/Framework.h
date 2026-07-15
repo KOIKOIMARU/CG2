@@ -13,7 +13,7 @@ class Framework {
 public:
     virtual ~Framework();
 
-    void Run();
+    int Run();
 
     virtual void Initialize();
     virtual void Finalize();
@@ -24,6 +24,7 @@ public:
 
 protected:
     bool endRequst_ = false;
+    int exitCode_ = 0;
 
     std::unique_ptr<WinApp> winApp_;
     std::unique_ptr<DirectXCommon> dxCommon_;

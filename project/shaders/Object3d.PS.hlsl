@@ -107,13 +107,13 @@ float3 CalculateDiffuseEnvironment(float3 normal, float roughness, float metalli
 
     float3 skyColor = SampleEnvironment(skyDirection);
     float3 horizonColor = SampleEnvironment(horizonDirection);
-    float3 groundBounce = float3(0.32f, 0.34f, 0.37f);
+    float3 groundBounce = float3(0.40f, 0.43f, 0.48f);
     float3 upperHemisphere = lerp(horizonColor, skyColor, upFactor);
     float3 hemisphereColor = lerp(groundBounce, upperHemisphere, upFactor);
 
     float surfaceWrap = lerp(0.78f, 1.04f, upFactor);
     float diffuseStrength =
-        lerp(0.095f, 0.150f, roughness) *
+        lerp(0.135f, 0.205f, roughness) *
         lerp(1.0f, 0.52f, metallic);
     return hemisphereColor * surfaceWrap * diffuseStrength;
 }
@@ -306,13 +306,24 @@ PixelShaderOutput main(VertexShaderOutput input)
         float3 diffuseEnvironment =
             diffuseAlbedo *
             CalculateDiffuseEnvironment(normal, roughness, metallic);
+        float rimFactor = pow(
+            1.0f - saturate(dot(normal, toEye)),
+            lerp(3.4f, 2.5f, metallic));
+        float rimVisibility =
+            saturate(0.32f + (1.0f - diffuseFactorDir) * 0.68f);
+        float3 stylizedRim =
+            lerp(float3(0.34f, 0.62f, 1.0f), specularTint, metallic * 0.42f) *
+            rimFactor *
+            rimVisibility *
+            lerp(0.024f, 0.052f, 1.0f - roughness);
 
         output.color.rgb =
             diffuseDir + specularDir +
             diffusePoint + specularPoint +
             diffuseSpot + specularSpot +
             diffuseEnvironment +
-            environmentColor;
+            environmentColor +
+            stylizedRim;
         output.color.a = gMaterial.color.a * tex.a;
     }
     else

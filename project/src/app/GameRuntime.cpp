@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <numbers>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -80,7 +81,7 @@ constexpr int kHitEffectPoolWarmupStartDelayFrames = 6;
 constexpr int kHitEffectPoolWarmupIntervalFrames = 1;
 constexpr int kRewardHeartPoolCount = 40;
 constexpr int kRewardHeartScoreValue = 25;
-constexpr int kDepthCueEffectCount = 12;
+constexpr int kDepthCueEffectCount = 18;
 constexpr float kDepthCueNearLocalZ = -10.0f;
 constexpr float kDepthCueFarLocalZ = 148.0f;
 constexpr float kDepthCueLoopLength = 172.0f;
@@ -111,6 +112,8 @@ constexpr float kSceneryFarLocalZ = 300.0f;
 constexpr float kStageClearDistance = 365.0f;
 constexpr float kBossWarningDistance = 300.0f;
 constexpr float kBossSpawnDistance = 330.0f;
+constexpr float kStageTimelineCruiseSpeed = 0.090f;
+constexpr int kStageEncounterBreatherFrames = 58;
 constexpr int kBossWarningDuration = 150;
 constexpr int kBossIntroDuration = 120;
 constexpr int kBossDefeatFlashDuration = 44;
@@ -126,6 +129,7 @@ constexpr int kJustDodgeSlowDuration = 46;
 constexpr int kPlayerImpactFlashDuration = 10;
 constexpr int kPlayerImpactSlowDuration = 8;
 constexpr float kPlayerImpactRailSlowScale = 0.42f;
+constexpr int kEnemyVolleyTelegraphLeadFrames = 18;
 int gSharedResourcePreloadStep = 0;
 bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
@@ -197,11 +201,11 @@ struct StageEnemySpawnEvent {
 constexpr int kWaveCount = 3;
 
 constexpr StageSegment kStageSegments[] = {
-    {   0.0f,  42.0f, 0.145f,  0.000f,  0.000f,  0.00f, 0.042f, "Opening" },
-    {  42.0f, 104.0f, 0.185f, -0.022f,  0.042f,  0.16f, 0.060f, "Side sweep" },
-    { 104.0f, 170.0f, 0.165f,  0.018f, -0.036f,  0.34f, 0.054f, "Climb and dodge" },
-    { 170.0f, 230.0f, 0.220f,  0.000f, -0.055f, -0.16f, 0.092f, "Fast dive" },
-    { 230.0f, 999.0f, 0.178f,  0.018f,  0.034f,  0.08f, 0.060f, "Final approach" }
+    {   0.0f,  42.0f, 0.160f,  0.000f,  0.000f,  0.00f, 0.048f, "Opening" },
+    {  42.0f, 104.0f, 0.205f, -0.022f,  0.042f,  0.16f, 0.068f, "Side sweep" },
+    { 104.0f, 170.0f, 0.185f,  0.018f, -0.036f,  0.34f, 0.062f, "Climb and dodge" },
+    { 170.0f, 230.0f, 0.235f,  0.000f, -0.055f, -0.16f, 0.102f, "Fast dive" },
+    { 230.0f, 999.0f, 0.198f,  0.018f,  0.034f,  0.08f, 0.068f, "Final approach" }
 };
 
 constexpr StageRailEvent kStageRailEvents[] = {
@@ -585,6 +589,10 @@ void GameRuntime::Initialize()
     railDistance_ = 0.0f;
     railSpeed_ = 0.145f;
     targetRailSpeed_ = 0.145f;
+    stageProgress_ = 0.0f;
+    stageTimelineSpeed_ = 0.0f;
+    stageTimelineWasBlocked_ = false;
+    stageEncounterBreatherTimer_ = 0;
     stageCameraYawBias_ = 0.0f;
     stageCameraRollBias_ = 0.0f;
     stageCameraLiftBias_ = 0.0f;
@@ -608,6 +616,19 @@ void GameRuntime::Initialize()
     playerImpactSlowTimer_ = 0;
     playerImpactSlowDuration_ = 1;
     playerImpactSlowScale_ = 1.0f;
+    hitConfirmTimer_ = 0;
+    hitConfirmDuration_ = 1;
+    hitConfirmComboTimer_ = 0;
+    hitConfirmComboCount_ = 0;
+    hitConfirmStrength_ = 1.0f;
+    hitConfirmCharged_ = false;
+    hitConfirmBoss_ = false;
+    hitConfirmDestroyed_ = false;
+    playerDamageHudTimer_ = 0;
+    playerDamageHudDuration_ = 1;
+    playerDamageScreen_ = {};
+    playerDamageDirection_ = { 0.0f, -1.0f };
+    enemyVolleyTelegraphTriggered_ = false;
     nextPlayerDodgeAfterimageIndex_ = 0;
     wasPlayerDodging_ = false;
     cameraShakeTimer_ = 0;
@@ -837,8 +858,8 @@ void GameRuntime::UpdateStageDirector()
 {
     const StageSegment* activeSegment = &kStageSegments[0];
     for (const StageSegment& segment : kStageSegments) {
-        if (railDistance_ >= segment.startDistance &&
-            railDistance_ < segment.endDistance) {
+        if (stageProgress_ >= segment.startDistance &&
+            stageProgress_ < segment.endDistance) {
             activeSegment = &segment;
             break;
         }
@@ -846,8 +867,8 @@ void GameRuntime::UpdateStageDirector()
 
     stageSectionName_ = activeSegment->name;
     currentWaveIndex_ =
-        railDistance_ < 104.0f ? 0 :
-        railDistance_ < 230.0f ? 1 :
+        stageProgress_ < 104.0f ? 0 :
+        stageProgress_ < 230.0f ? 1 :
         2;
     targetRailSpeed_ = activeSegment->targetSpeed;
     stageCameraYawBias_ =
@@ -866,7 +887,7 @@ void GameRuntime::UpdateStageDirector()
     for (size_t index = 0; index < eventCount; ++index) {
         const StageRailEvent& event = kStageRailEvents[index];
         if (stageRailEventTriggered_[index] ||
-            railDistance_ < event.distance) {
+            stageProgress_ < event.distance) {
             continue;
         }
 
@@ -881,7 +902,7 @@ void GameRuntime::UpdateStageDirector()
         !bossSpawned_ &&
         !isGameOver_ &&
         !isGameClear_ &&
-        railDistance_ >= kBossWarningDistance) {
+        stageProgress_ >= kBossWarningDistance) {
         bossWarningTriggered_ = true;
         bossWarningTimer_ = kBossWarningDuration;
         stageCombatBeatName_ = "WARNING";
@@ -894,7 +915,48 @@ void GameRuntime::UpdateRailProgress()
     if (!isGameOver_ && !isGameClear_) {
         UpdateStageDirector();
         railSpeed_ = Lerp(railSpeed_, targetRailSpeed_, 0.070f);
-        railDistance_ += railSpeed_ * GetCinematicWorldTimeScale();
+        const float worldTimeScale = GetCinematicWorldTimeScale();
+        railDistance_ += railSpeed_ * worldTimeScale;
+
+        int activeStageEnemyCount = 0;
+        for (const auto& enemy : enemies_) {
+            if (enemy && !enemy->IsDead() && !enemy->IsBoss()) {
+                ++activeStageEnemyCount;
+            }
+        }
+
+        const char* nextBeatName = nullptr;
+        const size_t eventCount =
+            (std::min)(stageEnemyEventTriggered_.size(), kStageEnemyEventCount);
+        for (size_t index = 0; index < eventCount; ++index) {
+            if (!stageEnemyEventTriggered_[index]) {
+                nextBeatName = kStageEnemySpawnEvents[index].beatName;
+                break;
+            }
+        }
+
+        const bool currentEncounterFullyScheduled =
+            nextBeatName == nullptr ||
+            std::string_view(nextBeatName) !=
+                std::string_view(stageCombatBeatName_ ? stageCombatBeatName_ : "Intro");
+        const bool timelineBlocked =
+            activeStageEnemyCount > 0 && currentEncounterFullyScheduled;
+
+        if (stageTimelineWasBlocked_ && !timelineBlocked &&
+            activeStageEnemyCount == 0) {
+            stageEncounterBreatherTimer_ = kStageEncounterBreatherFrames;
+        }
+        stageTimelineWasBlocked_ = timelineBlocked;
+
+        if (bossSpawned_ || timelineBlocked) {
+            stageTimelineSpeed_ = 0.0f;
+        } else if (stageEncounterBreatherTimer_ > 0) {
+            --stageEncounterBreatherTimer_;
+            stageTimelineSpeed_ = 0.0f;
+        } else {
+            stageTimelineSpeed_ = kStageTimelineCruiseSpeed;
+        }
+        stageProgress_ += stageTimelineSpeed_ * worldTimeScale;
     }
 }
 
@@ -953,6 +1015,38 @@ void GameRuntime::UpdateEnemyActions()
     UpdateEnemyWave();
 
     --enemyShotTimer_;
+    if (!enemyVolleyTelegraphTriggered_ &&
+        enemyShotTimer_ <= kEnemyVolleyTelegraphLeadFrames) {
+        int normalTelegraphCount = 0;
+        constexpr int kMaxNormalTelegraphs = 2;
+        for (const auto& enemy : enemies_) {
+            if (!enemy->CanShoot()) {
+                continue;
+            }
+
+            const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
+            if (enemy->IsBoss()) {
+                AddEnemyShotTelegraphEffect({
+                    enemyAimPosition.x - 2.2f,
+                    enemyAimPosition.y + 0.25f,
+                    enemyAimPosition.z - 1.0f
+                }, true);
+                AddEnemyShotTelegraphEffect({
+                    enemyAimPosition.x + 2.2f,
+                    enemyAimPosition.y + 0.25f,
+                    enemyAimPosition.z - 1.0f
+                }, true);
+            } else if (normalTelegraphCount < kMaxNormalTelegraphs) {
+                AddEnemyShotTelegraphEffect({
+                    enemyAimPosition.x,
+                    enemyAimPosition.y,
+                    enemyAimPosition.z - 1.0f
+                }, false);
+                ++normalTelegraphCount;
+            }
+        }
+        enemyVolleyTelegraphTriggered_ = true;
+    }
     if (enemyShotTimer_ <= 0) {
         int normalEnemyShotsThisVolley = 0;
         constexpr int kMaxNormalEnemyShotsThisVolley = 2;
@@ -971,18 +1065,18 @@ void GameRuntime::UpdateEnemyActions()
                         enemyAimPosition.x - 2.2f,
                         enemyAimPosition.y + 0.25f,
                         enemyAimPosition.z
-                    });
+                    }, true);
                     FireEnemyBullet({
                         enemyAimPosition.x + 2.2f,
                         enemyAimPosition.y + 0.25f,
                         enemyAimPosition.z
-                    });
+                    }, true);
                     if ((enemyShotTimer_ + static_cast<int>(railDistance_ * 10.0f)) % 2 == 0) {
                         FireEnemyBullet({
                             enemyAimPosition.x,
                             enemyAimPosition.y - 0.55f,
                             enemyAimPosition.z
-                        });
+                        }, true);
                     }
                 } else if (!enemy->IsCrossfire() &&
                     normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
@@ -992,6 +1086,7 @@ void GameRuntime::UpdateEnemyActions()
             }
         }
         enemyShotTimer_ = enemyShotInterval_;
+        enemyVolleyTelegraphTriggered_ = false;
     }
 }
 
@@ -1041,6 +1136,24 @@ void GameRuntime::UpdateResultAndSceneObjects()
         if (playerImpactSlowTimer_ <= 0) {
             playerImpactSlowDuration_ = 1;
             playerImpactSlowScale_ = 1.0f;
+        }
+    }
+    if (hitConfirmTimer_ > 0) {
+        --hitConfirmTimer_;
+        if (hitConfirmTimer_ <= 0) {
+            hitConfirmDuration_ = 1;
+        }
+    }
+    if (hitConfirmComboTimer_ > 0) {
+        --hitConfirmComboTimer_;
+        if (hitConfirmComboTimer_ <= 0) {
+            hitConfirmComboCount_ = 0;
+        }
+    }
+    if (playerDamageHudTimer_ > 0) {
+        --playerDamageHudTimer_;
+        if (playerDamageHudTimer_ <= 0) {
+            playerDamageHudDuration_ = 1;
         }
     }
     if (resultTransitionTimer_ > 0) {
@@ -1276,7 +1389,7 @@ void GameRuntime::InitializeDepthCueEffects()
 
     depthCueEffects_.reserve(kDepthCueEffectCount);
     for (int index = 0; index < kDepthCueEffectCount; ++index) {
-        const bool isStreak = (index % 2) == 0 && streakModel;
+        const bool isStreak = (index % 3) != 2 && streakModel;
         const bool isGold = !isStreak && (index % 7) == 0;
         const float side = PseudoRandom01(index, 0.12f) < 0.5f ? -1.0f : 1.0f;
         const float outerBias = std::pow(PseudoRandom01(index, 0.35f), 0.42f);
@@ -1294,13 +1407,13 @@ void GameRuntime::InitializeDepthCueEffects()
         cue.object->SetAlphaReference(0.01f);
         cue.anchor = { x, y, z };
         cue.color = isStreak ?
-            Math::Vector4{ 0.72f, 0.96f, 1.0f, 0.30f } :
+            Math::Vector4{ 0.72f, 0.96f, 1.0f, 0.26f } :
             isGold ?
                 Math::Vector4{ 1.0f, 0.86f, 0.42f, 0.40f } :
                 Math::Vector4{ 0.78f, 0.96f, 1.0f, 0.34f };
         cue.loopLength = kDepthCueLoopLength;
         cue.speedMultiplier = isStreak ?
-            Lerp(1.18f, 2.10f, PseudoRandom01(index, 1.12f)) :
+            Lerp(1.42f, 2.62f, PseudoRandom01(index, 1.12f)) :
             Lerp(0.86f, 1.58f, PseudoRandom01(index, 1.12f));
         cue.lateralDrift = Lerp(0.18f, 1.05f, PseudoRandom01(index, 1.46f));
         cue.verticalDrift = Lerp(0.10f, 0.62f, PseudoRandom01(index, 1.78f));
@@ -1310,7 +1423,7 @@ void GameRuntime::InitializeDepthCueEffects()
             Lerp(0.46f, 0.82f, PseudoRandom01(index, 2.82f)) :
             Lerp(0.09f, 0.26f, PseudoRandom01(index, 2.82f));
         cue.aspectX = isStreak ? 0.16f : 1.0f;
-        cue.aspectY = isStreak ? Lerp(3.2f, 5.8f, PseudoRandom01(index, 3.17f)) : 1.0f;
+        cue.aspectY = isStreak ? Lerp(4.0f, 7.2f, PseudoRandom01(index, 3.17f)) : 1.0f;
         cue.spinSpeed = isStreak ?
             Lerp(-0.006f, 0.006f, PseudoRandom01(index, 3.59f)) :
             Lerp(-0.018f, 0.018f, PseudoRandom01(index, 3.59f));
@@ -2256,16 +2369,16 @@ std::unique_ptr<Bullet> GameRuntime::CreatePooledEnemyBullet()
         { 0.0f, 0.0f, -enemyBulletSpeed_ },
         { 1.0f, 0.18f, 0.42f, 1.0f },
         1,
-        { 0.62f, 0.62f, 0.78f },
-        0.66f,
+        { 0.34f, 0.34f, 0.68f },
+        0.48f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.18f, 0.54f, 0.95f },
-        { 1.50f, 1.50f, 1.0f },
-        nullptr,
-        { 1.0f, 0.10f, 0.44f, 0.72f },
-        { 0.62f, 4.00f, 1.0f },
-        2.25f,
+        { 1.0f, 0.12f, 0.50f, 0.80f },
+        { 0.86f, 0.86f, 1.0f },
+        effectEnemyBulletTailModel_,
+        { 1.0f, 0.10f, 0.44f, 0.44f },
+        { 0.28f, 2.55f, 1.0f },
+        1.50f,
         nullptr,
         { 1.0f, 0.30f, 0.70f, 0.0f },
         { 0.14f, 0.14f, 1.0f });
@@ -2459,7 +2572,9 @@ void GameRuntime::FirePlayerBullet()
     }
 }
 
-void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
+void GameRuntime::FireEnemyBullet(
+    const Math::Vector3& position,
+    bool isDangerous)
 {
     if (!bulletModel_) {
         return;
@@ -2500,19 +2615,31 @@ void GameRuntime::FireEnemyBullet(const Math::Vector3& position)
         object3dCommon_.get(),
         bulletModel_,
         spawnPosition,
-        bulletDirection * enemyBulletSpeed_,
-        { 1.0f, 0.12f, 0.46f, 1.0f },
+        bulletDirection * enemyBulletSpeed_ * (isDangerous ? 1.08f : 1.0f),
+        isDangerous ?
+            Math::Vector4{ 1.0f, 0.82f, 0.52f, 1.0f } :
+            Math::Vector4{ 1.0f, 0.76f, 0.90f, 1.0f },
         260,
-        { 0.76f, 0.76f, 0.92f },
-        0.54f,
+        isDangerous ?
+            Math::Vector3{ 0.46f, 0.46f, 0.86f } :
+            Math::Vector3{ 0.34f, 0.34f, 0.68f },
+        isDangerous ? 0.62f : 0.48f,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        { 1.0f, 0.14f, 0.58f, 0.98f },
-        { 1.85f, 1.85f, 1.0f },
-        nullptr,
-        { 1.0f, 0.10f, 0.44f, 0.72f },
-        { 0.62f, 4.00f, 1.0f },
-        2.25f,
+        isDangerous ?
+            Math::Vector4{ 1.0f, 0.16f, 0.32f, 0.92f } :
+            Math::Vector4{ 1.0f, 0.12f, 0.50f, 0.80f },
+        isDangerous ?
+            Math::Vector3{ 1.16f, 1.16f, 1.0f } :
+            Math::Vector3{ 0.86f, 0.86f, 1.0f },
+        effectEnemyBulletTailModel_,
+        isDangerous ?
+            Math::Vector4{ 1.0f, 0.10f, 0.32f, 0.58f } :
+            Math::Vector4{ 1.0f, 0.10f, 0.44f, 0.44f },
+        isDangerous ?
+            Math::Vector3{ 0.38f, 3.40f, 1.0f } :
+            Math::Vector3{ 0.28f, 2.55f, 1.0f },
+        isDangerous ? 2.0f : 1.50f,
         nullptr,
         { 1.0f, 0.30f, 0.70f, 0.0f },
         { 0.14f, 0.14f, 1.0f });
@@ -2656,7 +2783,7 @@ void GameRuntime::SpawnBossEnemy()
         bossDefeated_ ||
         isGameOver_ ||
         isGameClear_ ||
-        railDistance_ < kBossSpawnDistance ||
+        stageProgress_ < kBossSpawnDistance ||
         !object3dCommon_) {
         return;
     }
@@ -2706,7 +2833,7 @@ void GameRuntime::UpdateStageEnemyEvents()
     for (size_t index = 0; index < eventCount; ++index) {
         const StageEnemySpawnEvent& event = kStageEnemySpawnEvents[index];
         if (stageEnemyEventTriggered_[index] ||
-            railDistance_ < event.distance) {
+            stageProgress_ < event.distance) {
             continue;
         }
         const bool isCrossfirePairStart =
@@ -2755,7 +2882,7 @@ void GameRuntime::AdvanceEnemyWaveIfCleared()
         return;
     }
 
-    if (railDistance_ < kStageClearDistance) {
+    if (stageProgress_ < kStageClearDistance) {
         return;
     }
 
@@ -2946,6 +3073,8 @@ void GameRuntime::AddEnemyHitEffect(
         { 1.0f, 0.36f, 0.12f, 0.82f }, 0.92f, 1.18f, -0.44f, 0.04f, 0.88f, 1.06f,
         { 0.018f, 0.010f, 0.0f });
     AddHitEffectVisual(effect, effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_, worldPosition,
+        { 0.72f, 0.94f, 1.0f, 0.76f }, 0.62f, 4.10f, 0.0f, 0.0f, 1.34f, 0.68f, {});
+    AddHitEffectVisual(effect, effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_, worldPosition,
         { 1.0f, 0.58f, 0.18f, 0.42f }, 0.92f, 2.80f, 0.0f, 0.0f, 1.14f, 0.72f, {});
     AddHitEffectVisual(effect, sparksModel, worldPosition,
         { 1.0f, 0.82f, 0.38f, 1.0f }, 0.74f, 0.86f, 0.32f, 0.00f, 1.0f, 1.0f, {});
@@ -2982,18 +3111,32 @@ void GameRuntime::AddEnemyImpactEffect(
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 24;
-    effect.strength = strength * 1.18f;
+    const bool isHeavyImpact = strength >= 1.35f;
+    effect.duration = isHeavyImpact ? 28 : 22;
+    effect.strength = strength * (isHeavyImpact ? 1.22f : 1.14f);
     effect.type = HitEffectType::EnemyImpact;
 
     Model* fireballModel = effectExplosionFireballModel_ ? effectExplosionFireballModel_ : effectImpactBurstModel_;
     Model* sparksModel = effectExplosionSparksModel_ ? effectExplosionSparksModel_ : effectSparkStarModel_;
     Model* debrisModel = effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_;
 
+    AddHitEffectVisual(effect, effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_, worldPosition,
+        isHeavyImpact ?
+            Math::Vector4{ 0.72f, 0.96f, 1.0f, 0.92f } :
+            Math::Vector4{ 0.82f, 0.98f, 1.0f, 0.78f },
+        isHeavyImpact ? 0.44f : 0.34f,
+        isHeavyImpact ? 3.20f : 2.34f,
+        0.0f, 0.0f, 1.26f, 0.72f, {});
+    AddHitEffectVisual(effect, effectSparkStarModel_ ? effectSparkStarModel_ : effectGlowCoreModel_, worldPosition,
+        { 1.0f, 1.0f, 0.96f, 0.96f },
+        isHeavyImpact ? 0.54f : 0.40f,
+        isHeavyImpact ? 0.46f : 0.34f,
+        isHeavyImpact ? 1.20f : 0.82f,
+        0.0f, 1.0f, 1.0f, {});
     AddHitEffectVisual(effect, fireballModel, worldPosition,
-        { 1.0f, 0.54f, 0.18f, 0.88f }, 0.54f, 0.52f, 0.24f, 0.0f, 1.10f, 0.82f, {});
+        { 1.0f, 0.52f, 0.16f, 0.82f }, 0.50f, 0.52f, 0.24f, 0.01f, 1.10f, 0.82f, {});
     AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.74f, 0.34f, 0.54f }, 0.36f, 0.50f, -0.18f, 0.0f, 1.42f, 0.54f, {});
+        { 0.66f, 0.94f, 1.0f, 0.66f }, 0.34f, 0.48f, -0.18f, 0.0f, 1.42f, 0.54f, {});
     AddHitEffectVisual(effect, sparksModel, worldPosition,
         { 1.0f, 0.76f, 0.32f, 0.88f }, 0.38f, 0.72f, 0.40f, 0.01f, 1.0f, 1.0f, {});
     AddHitEffectVisual(effect, debrisModel, worldPosition,
@@ -3003,6 +3146,49 @@ void GameRuntime::AddEnemyImpactEffect(
         { 1.0f, 0.48f, 0.18f, 0.86f }, 0.24f, 0.62f, 1.95f, 0.03f, 0.42f, 1.16f,
         { 0.092f, -0.058f, 0.004f });
 
+    if (effect.visualCount > 0) {
+        hitEffects_.push_back(std::move(effect));
+    }
+}
+
+void GameRuntime::AddEnemyShotTelegraphEffect(
+    const Math::Vector3& worldPosition,
+    bool isDangerous)
+{
+    HitEffect effect{};
+    effect.worldPosition = worldPosition;
+    effect.duration = kEnemyVolleyTelegraphLeadFrames;
+    effect.strength = isDangerous ? 1.18f : 0.92f;
+    effect.type = HitEffectType::EnemyImpact;
+
+    AddHitEffectVisual(
+        effect,
+        effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_,
+        worldPosition,
+        isDangerous ?
+            Math::Vector4{ 1.0f, 0.28f, 0.12f, 0.82f } :
+            Math::Vector4{ 1.0f, 0.18f, 0.54f, 0.68f },
+        isDangerous ? 1.05f : 0.78f,
+        -0.68f,
+        isDangerous ? 1.10f : -0.82f,
+        0.0f,
+        1.0f,
+        1.0f,
+        {});
+    AddHitEffectVisual(
+        effect,
+        effectGlowCoreModel_,
+        worldPosition,
+        isDangerous ?
+            Math::Vector4{ 1.0f, 0.72f, 0.42f, 0.52f } :
+            Math::Vector4{ 1.0f, 0.56f, 0.78f, 0.44f },
+        isDangerous ? 0.30f : 0.22f,
+        0.48f,
+        0.0f,
+        0.0f,
+        1.0f,
+        1.0f,
+        {});
     if (effect.visualCount > 0) {
         hitEffects_.push_back(std::move(effect));
     }
@@ -3079,15 +3265,23 @@ void GameRuntime::AddPlayerDamageEffect(const Math::Vector3& worldPosition)
 {
     HitEffect effect{};
     effect.worldPosition = worldPosition;
-    effect.duration = 28;
-    effect.strength = 1.0f;
+    effect.duration = 34;
+    effect.strength = 1.08f;
     effect.type = HitEffectType::PlayerDamage;
 
+    AddHitEffectVisual(effect, effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_, worldPosition,
+        { 0.54f, 0.94f, 1.0f, 0.82f }, 0.72f, 2.60f, 0.0f, 0.0f, 1.28f, 0.72f, {});
     AddHitEffectVisual(effect, effectGlowCoreModel_, worldPosition,
-        { 1.0f, 0.16f, 0.12f, 0.72f }, 1.15f, 0.36f, 0.0f, 0.0f, 1.25f, 0.72f, { 0.0f, 0.02f, -0.02f });
+        { 1.0f, 0.76f, 0.66f, 0.82f }, 0.82f, 0.42f, 0.0f, 0.0f, 1.20f, 0.76f, { 0.0f, 0.02f, -0.02f });
     AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
-        { 1.0f, 0.32f, 0.24f, 0.48f }, 0.95f, 0.82f, -1.35f, 0.10f, 1.45f, 0.65f, { 0.0f, 0.03f, 0.0f });
-    hitEffects_.push_back(std::move(effect));
+        { 1.0f, 0.36f, 0.22f, 0.76f }, 0.52f, 0.78f, -1.35f, 0.02f, 1.34f, 0.58f, { -0.078f, 0.048f, 0.012f });
+    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
+        { 1.0f, 0.72f, 0.34f, 0.68f }, 0.42f, 0.72f, 1.48f, 0.04f, 0.62f, 1.26f, { 0.086f, 0.026f, 0.010f });
+    AddHitEffectVisual(effect, effectSparkStarModel_, worldPosition,
+        { 0.72f, 0.94f, 1.0f, 0.60f }, 0.34f, 0.62f, -0.92f, 0.06f, 1.22f, 0.52f, { 0.012f, -0.072f, 0.008f });
+    if (effect.visualCount > 0) {
+        hitEffects_.push_back(std::move(effect));
+    }
 }
 
 void GameRuntime::AddPlayerDodgeGrazeEffect(const Math::Vector3& worldPosition)
@@ -3140,22 +3334,24 @@ void GameRuntime::TriggerPlayerImpactMoment(
     bool isBossHit,
     bool isDestroyed)
 {
-    if (!isCharged && !(isBossHit && isDestroyed)) {
-        return;
-    }
-
     const int flashDuration =
         isBossHit ?
             (isDestroyed ? 28 : 15) :
-            (isDestroyed ? 13 : kPlayerImpactFlashDuration);
+            (isDestroyed ?
+                (isCharged ? 13 : 7) :
+                (isCharged ? kPlayerImpactFlashDuration : 4));
     const int slowDuration =
         isBossHit ?
             (isDestroyed ? 24 : 11) :
-            (isDestroyed ? 10 : kPlayerImpactSlowDuration);
+            (isDestroyed ?
+                (isCharged ? 10 : 5) :
+                (isCharged ? kPlayerImpactSlowDuration : 2));
     const float slowScale =
         isBossHit ?
             (isDestroyed ? 0.18f : 0.32f) :
-            kPlayerImpactRailSlowScale;
+            (isDestroyed ?
+                (isCharged ? kPlayerImpactRailSlowScale : 0.62f) :
+                (isCharged ? kPlayerImpactRailSlowScale : 0.78f));
 
     if (flashDuration >= playerImpactFlashTimer_) {
         playerImpactFlashDuration_ = flashDuration;
@@ -3174,8 +3370,61 @@ void GameRuntime::TriggerPlayerImpactMoment(
         slowScale;
 
     AddCameraShake(
-        isBossHit ? (isDestroyed ? 0.32f : 0.12f) : 0.070f,
-        isBossHit ? (isDestroyed ? 42 : 14) : 9);
+        isBossHit ? (isDestroyed ? 0.32f : 0.12f) :
+            (isDestroyed ? (isCharged ? 0.070f : 0.045f) :
+                (isCharged ? 0.052f : 0.018f)),
+        isBossHit ? (isDestroyed ? 42 : 14) :
+            (isDestroyed ? (isCharged ? 9 : 6) :
+                (isCharged ? 7 : 3)));
+}
+
+void GameRuntime::TriggerHitConfirm(
+    const Math::Vector3& worldPosition,
+    bool isCharged,
+    bool isBossHit,
+    bool isDestroyed)
+{
+    Math::Vector2 screenPosition{};
+    hitConfirmScreen_ = TryProjectToScreen(worldPosition, screenPosition) ?
+        screenPosition : reticleScreen_;
+    hitConfirmDuration_ = isDestroyed ? (isBossHit ? 30 : 24) :
+        (isCharged || isBossHit ? 20 : 16);
+    hitConfirmTimer_ = hitConfirmDuration_;
+    hitConfirmStrength_ = isBossHit ? 1.35f :
+        (isDestroyed ? 1.22f : (isCharged ? 1.14f : 1.0f));
+    hitConfirmCharged_ = isCharged;
+    hitConfirmBoss_ = isBossHit;
+    hitConfirmDestroyed_ = isDestroyed;
+
+    hitConfirmComboCount_ = hitConfirmComboTimer_ > 0 ?
+        (std::min)(hitConfirmComboCount_ + 1, 99) : 1;
+    hitConfirmComboTimer_ = 90;
+}
+
+void GameRuntime::TriggerPlayerDamageFeedback(
+    const Math::Vector3& worldPosition,
+    const Math::Vector3& incomingVelocity)
+{
+    Math::Vector2 screenPosition{};
+    playerDamageScreen_ = TryProjectToScreen(worldPosition, screenPosition) ?
+        screenPosition : reticleScreen_;
+
+    Math::Vector2 sourceDirection{
+        -incomingVelocity.x,
+        incomingVelocity.y
+    };
+    const float directionLength = std::sqrt(
+        sourceDirection.x * sourceDirection.x +
+        sourceDirection.y * sourceDirection.y);
+    if (directionLength > 0.001f) {
+        sourceDirection.x /= directionLength;
+        sourceDirection.y /= directionLength;
+    } else {
+        sourceDirection = { 0.0f, -1.0f };
+    }
+    playerDamageDirection_ = sourceDirection;
+    playerDamageHudDuration_ = 30;
+    playerDamageHudTimer_ = playerDamageHudDuration_;
 }
 
 void GameRuntime::AddHitEffectVisual(
@@ -4517,7 +4766,71 @@ void GameRuntime::DrawHud()
             max.y);
         drawList->AddRectFilled(min, max, IM_COL32(17, 24, 38, 225), 4.0f);
         drawList->AddRectFilled(min, fillMax, fillColor, 4.0f);
+        if (fillMax.x > min.x + 2.0f) {
+            drawList->AddLine(
+                ImVec2(min.x + 3.0f, min.y + 2.0f),
+                ImVec2(fillMax.x - 2.0f, min.y + 2.0f),
+                IM_COL32(255, 255, 255, 62),
+                1.0f);
+        }
+        for (int segment = 1; segment < 4; ++segment) {
+            const float x = min.x + (max.x - min.x) *
+                (static_cast<float>(segment) / 4.0f);
+            drawList->AddLine(
+                ImVec2(x, min.y + 2.0f),
+                ImVec2(x, max.y - 2.0f),
+                IM_COL32(9, 18, 30, 118),
+                1.0f);
+        }
         drawList->AddRect(min, max, IM_COL32(228, 242, 255, 95), 4.0f);
+    };
+    auto drawTechCorners = [drawList](
+                               const ImVec2& min,
+                               const ImVec2& max,
+                               ImU32 color) {
+        constexpr float kLength = 17.0f;
+        constexpr float kOffset = 3.0f;
+        constexpr float kThickness = 2.0f;
+        drawList->AddLine(
+            ImVec2(min.x - kOffset, min.y + kLength),
+            ImVec2(min.x - kOffset, min.y - kOffset),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(min.x - kOffset, min.y - kOffset),
+            ImVec2(min.x + kLength, min.y - kOffset),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(max.x - kLength, min.y - kOffset),
+            ImVec2(max.x + kOffset, min.y - kOffset),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(max.x + kOffset, min.y - kOffset),
+            ImVec2(max.x + kOffset, min.y + kLength),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(min.x - kOffset, max.y - kLength),
+            ImVec2(min.x - kOffset, max.y + kOffset),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(min.x - kOffset, max.y + kOffset),
+            ImVec2(min.x + kLength, max.y + kOffset),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(max.x - kLength, max.y + kOffset),
+            ImVec2(max.x + kOffset, max.y + kOffset),
+            color,
+            kThickness);
+        drawList->AddLine(
+            ImVec2(max.x + kOffset, max.y + kOffset),
+            ImVec2(max.x + kOffset, max.y - kLength),
+            color,
+            kThickness);
     };
 
     if (hpRate <= 0.34f && !isGameOver_) {
@@ -4557,15 +4870,21 @@ void GameRuntime::DrawHud()
         playerPanelMax,
         IM_COL32(110, 178, 232, 95),
         6.0f);
-    drawList->AddRectFilled(
+    drawList->AddRectFilledMultiColor(
         playerPanelMin,
         ImVec2(playerPanelMax.x, playerPanelMin.y + 4.0f),
-        IM_COL32(104, 225, 255, 210),
-        6.0f);
+        IM_COL32(116, 238, 255, 225),
+        IM_COL32(92, 164, 255, 185),
+        IM_COL32(92, 164, 255, 185),
+        IM_COL32(116, 238, 255, 225));
+    drawTechCorners(
+        playerPanelMin,
+        playerPanelMax,
+        IM_COL32(120, 226, 255, 155));
     drawList->AddText(
         ImVec2(playerPanelMin.x + 16.0f, playerPanelMin.y + 14.0f),
         IM_COL32(232, 244, 255, 245),
-        "プレイヤー");
+        "PLAYER // UNIT 01");
     drawList->AddText(
         ImVec2(playerPanelMax.x - 74.0f, playerPanelMin.y + 14.0f),
         IM_COL32(168, 222, 255, 225),
@@ -4636,10 +4955,21 @@ void GameRuntime::DrawHud()
         scorePanelMax,
         IM_COL32(245, 219, 126, 100),
         6.0f);
+    drawList->AddRectFilledMultiColor(
+        scorePanelMin,
+        ImVec2(scorePanelMax.x, scorePanelMin.y + 3.0f),
+        IM_COL32(255, 226, 122, 205),
+        IM_COL32(255, 158, 92, 155),
+        IM_COL32(255, 158, 92, 155),
+        IM_COL32(255, 226, 122, 205));
+    drawTechCorners(
+        scorePanelMin,
+        scorePanelMax,
+        IM_COL32(255, 220, 126, 135));
     drawList->AddText(
         ImVec2(scorePanelMin.x + 14.0f, scorePanelMin.y + 10.0f),
         IM_COL32(248, 225, 128, 240),
-        "スコア");
+        "MISSION // スコア");
     drawList->AddText(
         ImVec2(scorePanelMax.x - 16.0f - ImGui::CalcTextSize(scoreText.c_str()).x,
                scorePanelMin.y + 10.0f),
@@ -4658,6 +4988,8 @@ void GameRuntime::DrawHud()
     DrawStageCueHud();
     DrawHitEffects();
     DrawLockOnHud();
+    DrawHitConfirmHud();
+    DrawPlayerDamageHud();
 }
 
 void GameRuntime::DrawBossHud()
@@ -4926,6 +5258,157 @@ void GameRuntime::DrawLockOnHud()
         reticleThickness);
 }
 
+void GameRuntime::DrawHitConfirmHud()
+{
+    if (hitConfirmTimer_ <= 0) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    const float rate = std::clamp(
+        static_cast<float>(hitConfirmTimer_) /
+            static_cast<float>((std::max)(hitConfirmDuration_, 1)),
+        0.0f,
+        1.0f);
+    const float elapsed = 1.0f - rate;
+    const float settle = 1.0f - std::pow(1.0f - elapsed, 3.0f);
+    const float fade = std::clamp(rate * 1.65f, 0.0f, 1.0f);
+    const int alpha = static_cast<int>(255.0f * fade);
+    const float radius =
+        Lerp(32.0f * hitConfirmStrength_, 14.0f, settle) +
+        (std::max)(elapsed - 0.72f, 0.0f) * 22.0f;
+    const float lineLength = hitConfirmDestroyed_ ? 12.0f : 9.0f;
+    const float thickness = hitConfirmDestroyed_ ? 3.0f : 2.2f;
+    const ImVec2 center(hitConfirmScreen_.x, hitConfirmScreen_.y);
+
+    const ImU32 mainColor = hitConfirmBoss_ ?
+        IM_COL32(255, 126, 230, (std::clamp)(alpha, 0, 255)) :
+        hitConfirmDestroyed_ ?
+            IM_COL32(255, 220, 112, (std::clamp)(alpha, 0, 255)) :
+            hitConfirmCharged_ ?
+                IM_COL32(142, 236, 255, (std::clamp)(alpha, 0, 255)) :
+                IM_COL32(210, 250, 255, (std::clamp)(alpha, 0, 255));
+    const int softAlpha = (std::clamp)(alpha / 3, 0, 96);
+    const ImU32 softColor = hitConfirmBoss_ ?
+        IM_COL32(255, 64, 192, softAlpha) :
+        IM_COL32(64, 198, 255, softAlpha);
+
+    drawList->AddCircle(
+        center,
+        radius + 5.0f,
+        softColor,
+        32,
+        hitConfirmDestroyed_ ? 4.0f : 3.0f);
+    for (int xSign : { -1, 1 }) {
+        for (int ySign : { -1, 1 }) {
+            const ImVec2 inner(
+                center.x + static_cast<float>(xSign) * radius,
+                center.y + static_cast<float>(ySign) * radius);
+            const ImVec2 outer(
+                center.x + static_cast<float>(xSign) * (radius + lineLength),
+                center.y + static_cast<float>(ySign) * (radius + lineLength));
+            drawList->AddLine(inner, outer, mainColor, thickness);
+        }
+    }
+    drawList->AddCircleFilled(center, hitConfirmDestroyed_ ? 3.2f : 2.4f, mainColor, 16);
+
+    const char* label = hitConfirmBoss_ && hitConfirmDestroyed_ ? "BOSS BREAK" :
+        hitConfirmDestroyed_ ? "DESTROY" :
+        hitConfirmCharged_ ? "POWER HIT" : "HIT";
+    const ImVec2 labelSize = ImGui::CalcTextSize(label);
+    const float labelY = center.y + radius + 17.0f;
+    drawList->AddText(
+        ImVec2(center.x - labelSize.x * 0.5f + 1.0f, labelY + 1.0f),
+        IM_COL32(4, 12, 20, (std::clamp)(alpha, 0, 210)),
+        label);
+    drawList->AddText(
+        ImVec2(center.x - labelSize.x * 0.5f, labelY),
+        mainColor,
+        label);
+
+    if (hitConfirmComboCount_ >= 2) {
+        char comboLabel[32]{};
+        std::snprintf(
+            comboLabel,
+            sizeof(comboLabel),
+            "CHAIN x%d",
+            hitConfirmComboCount_);
+        const ImVec2 comboSize = ImGui::CalcTextSize(comboLabel);
+        drawList->AddText(
+            ImVec2(center.x - comboSize.x * 0.5f, labelY + 17.0f),
+            IM_COL32(178, 226, 255, (std::clamp)(alpha * 3 / 4, 0, 220)),
+            comboLabel);
+    }
+}
+
+void GameRuntime::DrawPlayerDamageHud()
+{
+    if (playerDamageHudTimer_ <= 0) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const float rate = std::clamp(
+        static_cast<float>(playerDamageHudTimer_) /
+            static_cast<float>((std::max)(playerDamageHudDuration_, 1)),
+        0.0f,
+        1.0f);
+    const float pulse = rate * rate;
+    const int edgeAlpha = static_cast<int>(150.0f * pulse);
+    const int fillAlpha = static_cast<int>(34.0f * pulse);
+    const ImVec2 hudOrigin(hudMin.x, hudMin.y);
+    const ImVec2 hudMax(hudMin.x + hudSize.x, hudMin.y + hudSize.y);
+    drawList->AddRectFilled(
+        hudOrigin,
+        hudMax,
+        IM_COL32(255, 24, 32, (std::clamp)(fillAlpha, 0, 38)));
+    drawList->AddRect(
+        ImVec2(hudOrigin.x + 5.0f, hudOrigin.y + 5.0f),
+        ImVec2(hudMax.x - 5.0f, hudMax.y - 5.0f),
+        IM_COL32(255, 64, 58, (std::clamp)(edgeAlpha, 0, 160)),
+        0.0f,
+        0,
+        4.0f);
+
+    const ImVec2 direction(
+        playerDamageDirection_.x,
+        playerDamageDirection_.y);
+    const ImVec2 tangent(-direction.y, direction.x);
+    const ImVec2 arrowCenter(
+        playerDamageScreen_.x + direction.x * 82.0f,
+        playerDamageScreen_.y + direction.y * 82.0f);
+    const ImVec2 arrowTip(
+        arrowCenter.x + direction.x * 13.0f,
+        arrowCenter.y + direction.y * 13.0f);
+    const ImVec2 arrowBaseLeft(
+        arrowCenter.x - direction.x * 8.0f + tangent.x * 9.0f,
+        arrowCenter.y - direction.y * 8.0f + tangent.y * 9.0f);
+    const ImVec2 arrowBaseRight(
+        arrowCenter.x - direction.x * 8.0f - tangent.x * 9.0f,
+        arrowCenter.y - direction.y * 8.0f - tangent.y * 9.0f);
+    const ImU32 dangerColor =
+        IM_COL32(255, 98, 72, (std::clamp)(static_cast<int>(245.0f * rate), 0, 245));
+    drawList->AddTriangleFilled(
+        arrowTip,
+        arrowBaseLeft,
+        arrowBaseRight,
+        dangerColor);
+    for (int index = 0; index < 2; ++index) {
+        const float offset = 17.0f + static_cast<float>(index) * 9.0f;
+        const ImVec2 lineCenter(
+            arrowCenter.x - direction.x * offset,
+            arrowCenter.y - direction.y * offset);
+        drawList->AddLine(
+            ImVec2(lineCenter.x + tangent.x * 8.0f, lineCenter.y + tangent.y * 8.0f),
+            ImVec2(lineCenter.x - tangent.x * 8.0f, lineCenter.y - tangent.y * 8.0f),
+            dangerColor,
+            2.5f);
+    }
+}
+
 void GameRuntime::DrawResultOverlay()
 {
     if (!isGameOver_ && !isGameClear_) {
@@ -5132,10 +5615,11 @@ void GameRuntime::DrawPerformanceOverlay()
     std::snprintf(
         line,
         sizeof(line),
-        "rail %.1f  speed %.3f -> %.3f  section %s / %s",
+        "rail %.1f speed %.3f  stage %.1f pace %.3f  %s / %s",
         railDistance_,
         railSpeed_,
-        targetRailSpeed_,
+        stageProgress_,
+        stageTimelineSpeed_,
         stageSectionName_ ? stageSectionName_ : "Unknown",
         stageCombatBeatName_ ? stageCombatBeatName_ : "Intro");
     drawList->AddText(
@@ -5359,6 +5843,11 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     isBossHit ? 1.85f : (isChargedHit ? 1.42f : 1.20f));
                 bullet->RegisterHit();
                 const bool isDestroyed = enemy->Damage(damage);
+                TriggerHitConfirm(
+                    visibleImpactPosition,
+                    isChargedHit,
+                    isBossHit,
+                    isDestroyed);
                 AddCameraShake(
                     isDestroyed ?
                         (isBossHit ? 0.18f : (isChargedHit ? 0.075f : 0.055f)) :
@@ -5435,9 +5924,13 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
                 AddCameraShake(0.018f, 4);
                 continue;
             }
+            const Math::Vector3 incomingVelocity = bullet->GetVelocity();
             bullet->Kill();
             player_->Damage(8);
             AddPlayerDamageEffect(player_->GetTranslate());
+            TriggerPlayerDamageFeedback(
+                player_->GetTranslate(),
+                incomingVelocity);
             AddCameraShake(0.2f, 18);
             if (player_->IsDead() && !isGameOver_) {
                 isGameOver_ = true;

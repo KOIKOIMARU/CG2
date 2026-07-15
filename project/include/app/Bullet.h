@@ -43,6 +43,7 @@ public:
     void ClearHomingTarget() { hasHomingTarget_ = false; }
     bool CanHome() const { return homingEnabled_; }
     const Math::Vector3& GetTranslate() const { return translate_; }
+    const Math::Vector3& GetVelocity() const { return velocity_; }
     float GetRadius() const { return collisionRadius_; }
 
 private:

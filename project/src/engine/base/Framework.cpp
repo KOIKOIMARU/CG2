@@ -11,16 +11,22 @@
 
 Framework::~Framework() = default;
 
-void Framework::Run() {
+int Framework::Run() {
     Initialize();
 
-    while (true) {
-        Update();
-        if (IsEndRequst()) { break; }
-        Draw();
+    try {
+        while (true) {
+            Update();
+            if (IsEndRequst()) { break; }
+            Draw();
+        }
+    } catch (...) {
+        Finalize();
+        throw;
     }
 
     Finalize();
+    return exitCode_;
 }
 
 void Framework::Initialize() {

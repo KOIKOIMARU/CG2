@@ -76,6 +76,8 @@ private:
     int hp_ = 1;
     int maxHp_ = 1;
     int hitFlashTimer_ = 0;
+    int hitFlashDuration_ = 1;
+    float hitFlashStrength_ = 1.0f;
     float moveTimer_ = 0.0f;
     float phase_ = 0.0f;
     float horizontalAmplitude_ = 1.2f;

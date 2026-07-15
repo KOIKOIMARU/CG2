@@ -5,6 +5,7 @@
 #include <array>
 #include <dxcapi.h>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include "engine/base/WinApp.h"
@@ -30,6 +31,7 @@ public:
     static constexpr UINT kRTVDescriptorCount = kBackBufferCount + 6;
 
     // 初期化（全部まとめ）
+    ~DirectXCommon();
     void Initialize(WinApp* winApp);
 
 
@@ -191,6 +193,16 @@ private:
     // --- ここから「Initialize」専用の内部関数たち ---
 
     // 部分初期化（外から呼ばせない）
+    void InitializeDiagnosticLog();
+    void ConfigureDred();
+    void FlushDebugMessages();
+    void AppendDiagnosticLog(std::string_view message) const;
+    void CheckDeviceOperation(
+        HRESULT result,
+        std::string_view operation);
+    void ReportDeviceRemovedDiagnostics(
+        std::string_view operation,
+        HRESULT failureResult);
     void InitializeDevice();
     void InitializeCommand();
     void InitializeSwapChain();
@@ -246,6 +258,9 @@ private:
 
     // DirectX12デバイス
     Microsoft::WRL::ComPtr<ID3D12Device> device_;
+    Microsoft::WRL::ComPtr<ID3D12InfoQueue> infoQueue_;
+    std::wstring diagnosticLogPath_;
+    bool deviceRemovedDiagnosticsReported_ = false;
 
     // コマンド関連
     Microsoft::WRL::ComPtr<ID3D12CommandQueue>        commandQueue_;

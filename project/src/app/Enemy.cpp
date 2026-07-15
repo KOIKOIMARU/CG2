@@ -8,6 +8,7 @@
 namespace {
 
 constexpr float kPi = 3.1415926535f;
+constexpr float kStandardEnemyActionTimeScale = 0.82f;
 
 float Clamp01(float value)
 {
@@ -107,6 +108,8 @@ void Enemy::Initialize(
     age_ = 0;
     ageTimer_ = 0.0f;
     hitFlashTimer_ = 0;
+    hitFlashDuration_ = 1;
+    hitFlashStrength_ = 1.0f;
     moveTimer_ = 0.0f;
     visualScaleRate_ = 0.42f;
 
@@ -216,9 +219,12 @@ void Enemy::Update(float railDistance, float timeScale)
     }
 
     const float motionScale = std::clamp(timeScale, 0.05f, 1.0f);
-    ageTimer_ += motionScale;
+    const float actionTimeScale =
+        behavior_ == Behavior::Boss ?
+            motionScale : motionScale * kStandardEnemyActionTimeScale;
+    ageTimer_ += actionTimeScale;
     age_ = static_cast<int>(std::floor(ageTimer_));
-    moveTimer_ += motionScale;
+    moveTimer_ += actionTimeScale;
     if (hitFlashTimer_ > 0) {
         --hitFlashTimer_;
     }
@@ -491,8 +497,17 @@ void Enemy::Update(float railDistance, float timeScale)
     }
 
     const bool hitReacting = hitFlashTimer_ > 0;
-    const float hitRate = hitReacting ? static_cast<float>(hitFlashTimer_) / 22.0f : 0.0f;
-    const float hitPunch = hitReacting ? std::sin(Clamp01(hitRate) * kPi) * 0.22f : 0.0f;
+    const float hitRate = hitReacting ?
+        Clamp01(
+            static_cast<float>(hitFlashTimer_) /
+            static_cast<float>((std::max)(hitFlashDuration_, 1))) :
+        0.0f;
+    const float hitElapsed = 1.0f - hitRate;
+    const float hitOscillation =
+        std::sin(hitElapsed * kPi * 3.0f) * hitRate;
+    const float hitPunch = hitReacting ?
+        (0.070f * hitRate + 0.038f * hitOscillation) * hitFlashStrength_ :
+        0.0f;
     const float flashScale = 1.0f + hitPunch;
     visualScaleRate_ = std::clamp(visualScaleTarget, 0.34f, 1.12f);
     Math::Vector4 color = baseColor_;
@@ -505,14 +520,16 @@ void Enemy::Update(float railDistance, float timeScale)
         color.z = Lerp(color.z, 0.72f, telegraphPulse);
     }
     if (hitReacting) {
-        const float flash = std::clamp(hitRate * hitRate, 0.0f, 1.0f);
+        const float flash =
+            std::clamp(hitRate * hitRate * hitRate * hitFlashStrength_, 0.0f, 1.0f);
         const Math::Vector4 flashColor =
             behavior_ == Behavior::Boss ?
-            Math::Vector4{ 1.48f, 0.26f, 1.28f, 1.0f } :
-            Math::Vector4{ 1.56f, 0.38f, 0.16f, 1.0f };
+            Math::Vector4{ 2.02f, 1.52f, 2.18f, 1.0f } :
+            Math::Vector4{ 2.10f, 1.92f, 1.48f, 1.0f };
         color.x = Lerp(color.x, flashColor.x, flash);
         color.y = Lerp(color.y, flashColor.y, flash);
         color.z = Lerp(color.z, flashColor.z, flash);
+        objectRotate.z += hitOscillation * 0.055f * hitFlashStrength_;
     }
     object_->SetScale({
         baseScale_.x * visualScaleRate_ * flashScale,
@@ -558,8 +575,15 @@ bool Enemy::Damage(int damage)
         return false;
     }
 
-    hp_ = (std::max)(0, hp_ - (std::max)(damage, 0));
-    hitFlashTimer_ = 22;
+    const int appliedDamage = (std::max)(damage, 0);
+    hp_ = (std::max)(0, hp_ - appliedDamage);
+    hitFlashDuration_ = behavior_ == Behavior::Boss ? 14 :
+        (appliedDamage >= 3 ? 12 : 10);
+    hitFlashTimer_ = hitFlashDuration_;
+    hitFlashStrength_ = std::clamp(
+        0.84f + static_cast<float>(appliedDamage) * 0.10f,
+        0.90f,
+        behavior_ == Behavior::Boss ? 1.18f : 1.28f);
     if (hp_ <= 0) {
         Kill();
         return true;
