@@ -15,6 +15,7 @@ struct ColliderData {
 };
 
 struct ObjectData {
+    bool disabled = false;
     std::string type;
     std::string name;
     std::string fileName;

@@ -27,6 +27,17 @@
                     }
                 }
             ]
+        },
+        {
+            "type": "MESH",
+            "name": "DisabledSuzanne",
+            "file_name": "suzanne.obj",
+            "disabled": true,
+            "transform": {
+                "translation": [0.0, 0.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scaling": [1.0, 1.0, 1.0]
+            }
         }
     ]
 }

@@ -93,6 +93,13 @@ LevelDataLoader::ObjectData ParseObject(
     objectData.type = objectJson.at("type").get<std::string>();
     objectData.name = objectJson.at("name").get<std::string>();
 
+    if (objectJson.contains("disabled")) {
+        if (!objectJson.at("disabled").is_boolean()) {
+            throw std::runtime_error(location + ".disabled must be a boolean.");
+        }
+        objectData.disabled = objectJson.at("disabled").get<bool>();
+    }
+
     if (objectJson.contains("file_name")) {
         if (!objectJson.at("file_name").is_string()) {
             throw std::runtime_error(location + ".file_name must be a string.");

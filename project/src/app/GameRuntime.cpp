@@ -2127,6 +2127,10 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     ModelManager* modelManager = ModelManager::GetInstance();
     std::function<void(const LevelDataLoader::ObjectData&)> loadObject;
     loadObject = [&](const LevelDataLoader::ObjectData& objectData) {
+        if (objectData.disabled) {
+            return;
+        }
+
         if (objectData.collider.enabled) {
             ++colliderCount;
         }
