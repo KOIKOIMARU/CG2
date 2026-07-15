@@ -452,6 +452,7 @@ private:
     Math::Vector2 reticleScreen_{ 0.0f, 0.0f };
     std::string currentSceneFilePath_{ "resources/game_scene.json" };
     std::string editorStatusMessage_{ "Ready." };
+    bool isBlenderLevelLoaded_ = false;
     bool hasLockTarget_ = false;
     bool isReticleOnTarget_ = false;
     int postEffectMode_ = 12;

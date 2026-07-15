@@ -17,6 +17,7 @@
 #include <TextEditor.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -782,6 +783,31 @@ void GameRuntime::Finalize()
 void GameRuntime::Update()
 {
     if (HandleRuntimeShortcuts()) {
+        return;
+    }
+
+    if (isBlenderLevelLoaded_) {
+        // レールシューティングの進行を止め、Blender配置を確認しやすい固定視点にする。
+        cameraTranslate_ = { 0.0f, 2.5f, -13.0f };
+        cameraRotate_ = { 0.12f, 0.0f, 0.0f };
+        cameraFovY_ = 0.60f;
+        if (camera_) {
+            camera_->SetTranslate(cameraTranslate_);
+            camera_->SetRotate(cameraRotate_);
+            camera_->SetFovY(cameraFovY_);
+            camera_->Update();
+        }
+        if (skybox_) {
+            skybox_->Update(camera_.get());
+        }
+        for (const auto& sceneObject : sceneObjects_) {
+            if (sceneObject) {
+                sceneObject->Update();
+            }
+        }
+#ifdef ENABLE_DEBUG_GUI
+        DrawEditorOverlayGuiRich();
+#endif
         return;
     }
 
@@ -2062,6 +2088,11 @@ bool GameRuntime::SaveSceneObjects(const char* path)
         editorStatusMessage_ = "保存失敗: パスが無効です。";
         return false;
     }
+    if (isBlenderLevelLoaded_) {
+        editorStatusMessage_ =
+            "保存できません: BlenderレベルJSONは読み込み専用です。";
+        return false;
+    }
 
     const std::vector<SceneSerializer::ObjectRecord> records =
         BuildRuntimeSceneRecords();
@@ -2090,6 +2121,7 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     std::vector<std::unique_ptr<Object3d>> loadedObjects;
     std::vector<SceneSerializer::ObjectRecord> loadedRecords;
     size_t skippedMeshCount = 0;
+    size_t unsupportedFormatCount = 0;
     size_t colliderCount = 0;
 
     ModelManager* modelManager = ModelManager::GetInstance();
@@ -2110,12 +2142,29 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
             if (!modelPath.empty()) {
                 model = modelManager->FindModel(modelPath);
                 if (!model) {
-                    std::error_code error;
-                    const std::filesystem::path resourcePath =
-                        std::filesystem::path("resources") / modelPath;
-                    if (std::filesystem::is_regular_file(resourcePath, error)) {
-                        modelManager->LoadModel(modelPath);
-                        model = modelManager->FindModel(modelPath);
+                    std::string extension =
+                        std::filesystem::path(modelPath).extension().string();
+                    std::transform(
+                        extension.begin(),
+                        extension.end(),
+                        extension.begin(),
+                        [](unsigned char character) {
+                            return static_cast<char>(std::tolower(character));
+                        });
+                    const bool supportedFormat =
+                        extension == ".obj" ||
+                        extension == ".gltf" ||
+                        extension == ".glb";
+                    if (supportedFormat) {
+                        std::error_code error;
+                        const std::filesystem::path resourcePath =
+                            std::filesystem::path("resources") / modelPath;
+                        if (std::filesystem::is_regular_file(resourcePath, error)) {
+                            modelManager->LoadModel(modelPath);
+                            model = modelManager->FindModel(modelPath);
+                        }
+                    } else {
+                        ++unsupportedFormatCount;
                     }
                 }
             }
@@ -2167,6 +2216,7 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     sceneObjects_ = std::move(loadedObjects);
     sceneObjectRecords_ = std::move(loadedRecords);
     currentSceneFilePath_ = path ? path : "";
+    isBlenderLevelLoaded_ = true;
 
     editorStatusMessage_ =
         "Blenderレベルを読み込みました: " + currentSceneFilePath_ +
@@ -2175,6 +2225,10 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     if (skippedMeshCount > 0) {
         editorStatusMessage_ +=
             " / モデル未検出 " + std::to_string(skippedMeshCount);
+    }
+    if (unsupportedFormatCount > 0) {
+        editorStatusMessage_ +=
+            " / 非対応形式 " + std::to_string(unsupportedFormatCount);
     }
     return true;
 }
@@ -2186,6 +2240,7 @@ bool GameRuntime::LoadSceneObjects(const char* path)
     if (!SceneSerializer::LoadScene(path, records, settings)) {
         return LoadBlenderLevelObjects(path);
     }
+    isBlenderLevelLoaded_ = false;
 
     sceneObjects_.clear();
     sceneObjectRecords_.clear();

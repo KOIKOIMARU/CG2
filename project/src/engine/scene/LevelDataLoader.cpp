@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <numbers>
 #include <sstream>
@@ -13,6 +15,13 @@ using Json = nlohmann::json;
 
 constexpr float kDegreesToRadians =
     std::numbers::pi_v<float> / 180.0f;
+
+std::filesystem::path PathFromUtf8(const char* path)
+{
+    const auto* begin = reinterpret_cast<const char8_t*>(path);
+    return std::filesystem::path(
+        std::u8string(begin, begin + std::strlen(path)));
+}
 
 void SetError(std::string* errorMessage, const std::string& message)
 {
@@ -158,7 +167,7 @@ bool LevelDataLoader::LoadFile(
         return false;
     }
 
-    std::ifstream file(path);
+    std::ifstream file(PathFromUtf8(path));
     if (!file) {
         SetError(errorMessage, std::string("Could not open level JSON: ") + path);
         return false;

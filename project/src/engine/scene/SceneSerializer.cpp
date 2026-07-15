@@ -1,5 +1,6 @@
 #include "engine/scene/SceneSerializer.h"
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -7,6 +8,13 @@
 #include <sstream>
 
 namespace {
+
+std::filesystem::path PathFromUtf8(const char* path)
+{
+    const auto* begin = reinterpret_cast<const char8_t*>(path);
+    return std::filesystem::path(
+        std::u8string(begin, begin + std::strlen(path)));
+}
 
 bool ExtractJsonVector3(
     const std::string& source,
@@ -144,7 +152,7 @@ bool SceneSerializer::SaveScene(
         return false;
     }
 
-    std::filesystem::path filePath(path);
+    const std::filesystem::path filePath = PathFromUtf8(path);
     if (filePath.has_parent_path()) {
         std::filesystem::create_directories(filePath.parent_path());
     }
@@ -234,7 +242,7 @@ bool SceneSerializer::LoadScene(
         return false;
     }
 
-    std::ifstream file(path);
+    std::ifstream file(PathFromUtf8(path));
     if (!file) {
         return false;
     }
