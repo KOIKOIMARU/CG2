@@ -1738,21 +1738,26 @@ void DirectXCommon::UploadTextureData(
 
     HRESULT hr{};
 
-    // ① アップロード専用のコマンドアロケータ＆コマンドリストを作成
+    // ① 単発転送の場合だけ、専用コマンドを作成
     ComPtr<ID3D12CommandAllocator> uploadAllocator;
-    hr = device_->CreateCommandAllocator(
-        D3D12_COMMAND_LIST_TYPE_DIRECT,
-        IID_PPV_ARGS(&uploadAllocator));
-    assert(SUCCEEDED(hr));
-
     ComPtr<ID3D12GraphicsCommandList> uploadList;
-    hr = device_->CreateCommandList(
-        0,
-        D3D12_COMMAND_LIST_TYPE_DIRECT,
-        uploadAllocator.Get(),
-        nullptr,
-        IID_PPV_ARGS(&uploadList));
-    assert(SUCCEEDED(hr));
+    ID3D12GraphicsCommandList* destinationList = textureUploadBatchList_.Get();
+    if (!isTextureUploadBatchActive_) {
+        hr = device_->CreateCommandAllocator(
+            D3D12_COMMAND_LIST_TYPE_DIRECT,
+            IID_PPV_ARGS(&uploadAllocator));
+        assert(SUCCEEDED(hr));
+
+        hr = device_->CreateCommandList(
+            0,
+            D3D12_COMMAND_LIST_TYPE_DIRECT,
+            uploadAllocator.Get(),
+            nullptr,
+            IID_PPV_ARGS(&uploadList));
+        assert(SUCCEEDED(hr));
+        destinationList = uploadList.Get();
+    }
+    assert(destinationList);
 
     // ② サブリソース情報を作成
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
@@ -1774,7 +1779,7 @@ void DirectXCommon::UploadTextureData(
 
     // ③ UpdateSubresources で COPY_DEST にコピー
     UpdateSubresources(
-        uploadList.Get(),
+        destinationList,
         texture.Get(),
         intermediate.Get(),
         0, 0,
@@ -1789,7 +1794,12 @@ void DirectXCommon::UploadTextureData(
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
-    uploadList->ResourceBarrier(1, &barrier);
+    destinationList->ResourceBarrier(1, &barrier);
+
+    if (isTextureUploadBatchActive_) {
+        textureUploadBatchIntermediates_.push_back(intermediate);
+        return;
+    }
 
     // ④ コマンドを閉じて実行
     hr = uploadList->Close();
@@ -1811,6 +1821,55 @@ void DirectXCommon::UploadTextureData(
 
     // ここまで来れば intermediate / uploadList / uploadAllocator は
     // GPU 側の処理が終わっているので破棄されてOK（スコープアウト）
+}
+
+void DirectXCommon::BeginTextureUploadBatch()
+{
+    assert(device_);
+    assert(!isTextureUploadBatchActive_);
+
+    textureUploadBatchIntermediates_.clear();
+    HRESULT hr = device_->CreateCommandAllocator(
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        IID_PPV_ARGS(&textureUploadBatchAllocator_));
+    assert(SUCCEEDED(hr));
+
+    hr = device_->CreateCommandList(
+        0,
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        textureUploadBatchAllocator_.Get(),
+        nullptr,
+        IID_PPV_ARGS(&textureUploadBatchList_));
+    assert(SUCCEEDED(hr));
+    isTextureUploadBatchActive_ = true;
+}
+
+void DirectXCommon::EndTextureUploadBatch()
+{
+    assert(isTextureUploadBatchActive_);
+    assert(textureUploadBatchList_);
+
+    HRESULT hr = textureUploadBatchList_->Close();
+    assert(SUCCEEDED(hr));
+
+    if (!textureUploadBatchIntermediates_.empty()) {
+        ID3D12CommandList* lists[] = { textureUploadBatchList_.Get() };
+        commandQueue_->ExecuteCommandLists(_countof(lists), lists);
+
+        ++fenceValue_;
+        hr = commandQueue_->Signal(fence_.Get(), fenceValue_);
+        assert(SUCCEEDED(hr));
+        if (fence_->GetCompletedValue() < fenceValue_) {
+            hr = fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
+            assert(SUCCEEDED(hr));
+            WaitForSingleObject(fenceEvent_, INFINITE);
+        }
+    }
+
+    textureUploadBatchIntermediates_.clear();
+    textureUploadBatchList_.Reset();
+    textureUploadBatchAllocator_.Reset();
+    isTextureUploadBatchActive_ = false;
 }
 
 // すでにある UploadTextureData の下あたりに追加

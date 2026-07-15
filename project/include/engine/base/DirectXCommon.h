@@ -6,6 +6,7 @@
 #include <dxcapi.h>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "engine/base/WinApp.h"
 #include "engine/base/Math.h"
 #include "DirectXTex.h"
@@ -83,6 +84,8 @@ public:
     void UploadTextureData(
         const Microsoft::WRL::ComPtr<ID3D12Resource>& texture,
         const DirectX::ScratchImage& mipImages);
+    void BeginTextureUploadBatch();
+    void EndTextureUploadBatch();
 
     // 描画前処理
 	void PreDraw();
@@ -248,6 +251,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandQueue>        commandQueue_;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator>    commandAllocator_;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> textureUploadBatchAllocator_;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> textureUploadBatchList_;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>>
+        textureUploadBatchIntermediates_;
+    bool isTextureUploadBatchActive_ = false;
 
     // スワップチェーン
     Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain_;

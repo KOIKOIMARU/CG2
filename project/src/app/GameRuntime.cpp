@@ -33,23 +33,23 @@ constexpr const char* kFreeEnemyModelPath =
 constexpr const char* kEnemyFormationModelPath =
     "free_models/Spitfire-20260707T202640Z-3-001/Spitfire/glTF/Spitfire.gltf";
 constexpr const char* kEnemyFormationTexturePath =
-    "resources/free_models/Spitfire-20260707T202640Z-3-001/Spitfire/Textures/Spitfire_Red.png";
+    "resources/free_models/Spitfire-20260707T202640Z-3-001/Spitfire/Textures/Spitfire_Red.dds";
 constexpr const char* kEnemySwoopModelPath =
     "free_models/Striker-20260707T202647Z-3-001/Striker/glTF/Striker.gltf";
 constexpr const char* kEnemySwoopTexturePath =
-    "resources/free_models/Striker-20260707T202647Z-3-001/Striker/Textures/Striker_Purple.png";
+    "resources/free_models/Striker-20260707T202647Z-3-001/Striker/Textures/Striker_Purple.dds";
 constexpr const char* kEnemyShooterModelPath =
     "free_models/Pancake-20260707T202659Z-3-001/Pancake/glTF/Pancake.gltf";
 constexpr const char* kEnemyShooterTexturePath =
-    "resources/free_models/Pancake-20260707T202659Z-3-001/Pancake/Textures/Pancake_Orange.png";
+    "resources/free_models/Pancake-20260707T202659Z-3-001/Pancake/Textures/Pancake_Orange.dds";
 constexpr const char* kEnemyHeavyModelPath =
     "free_models/Challenger-20260707T202702Z-3-001/Challenger/glTF/Challenger.gltf";
 constexpr const char* kEnemyHeavyTexturePath =
-    "resources/free_models/Challenger-20260707T202702Z-3-001/Challenger/Textures/Challenger_Blue.png";
+    "resources/free_models/Challenger-20260707T202702Z-3-001/Challenger/Textures/Challenger_Blue.dds";
 constexpr const char* kBossModelPath =
     "free_models/Imperial-20260707T180457Z-3-001/Imperial/glTF/Imperial.gltf";
 constexpr const char* kBossTexturePath =
-    "resources/free_models/Imperial-20260707T180457Z-3-001/Imperial/Textures/Imperial_Purple.png";
+    "resources/free_models/Imperial-20260707T180457Z-3-001/Imperial/Textures/Imperial_Purple.dds";
 constexpr const char* kCityStreet4LaneModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Street_4Lane.gltf";
@@ -404,6 +404,7 @@ bool GameRuntime::PreloadSharedResourceStep(
 
     ModelManager* modelManager = ModelManager::GetInstance();
     const auto stepBegin = std::chrono::steady_clock::now();
+    dxCommon->BeginTextureUploadBatch();
     switch (gSharedResourcePreloadStep) {
     case 0:
         gSharedResourcePreloadLabel = "Renderer resources";
@@ -511,6 +512,7 @@ bool GameRuntime::PreloadSharedResourceStep(
         gSharedResourcePreloadLabel = "Ready";
         return true;
     }
+    dxCommon->EndTextureUploadBatch();
 
     const auto stepEnd = std::chrono::steady_clock::now();
     gSharedResourceLastStepMs =

@@ -291,6 +291,13 @@ std::string ResolveAssimpTexturePath(
     const aiString& texturePath,
     const std::string& directoryPath)
 {
+    const auto preferPreconvertedDds =
+        [](const std::filesystem::path& sourcePath) {
+            std::filesystem::path ddsPath = sourcePath;
+            ddsPath.replace_extension(".dds");
+            return std::filesystem::exists(ddsPath) ? ddsPath : sourcePath;
+        };
+
     const std::string texturePathString = texturePath.C_Str();
     if (texturePathString.empty() || texturePathString[0] == '*') {
         return kDefaultTextureFilePath;
@@ -299,7 +306,7 @@ std::string ResolveAssimpTexturePath(
     const std::filesystem::path textureRelativePath = texturePathString;
     if (textureRelativePath.is_absolute()) {
         if (std::filesystem::exists(textureRelativePath)) {
-            return textureRelativePath.generic_string();
+            return preferPreconvertedDds(textureRelativePath).generic_string();
         }
 
         return kDefaultTextureFilePath;
@@ -308,12 +315,12 @@ std::string ResolveAssimpTexturePath(
     const std::filesystem::path directory = directoryPath;
     const std::filesystem::path resolvedPath = directory / textureRelativePath;
     if (std::filesystem::exists(resolvedPath)) {
-        return resolvedPath.generic_string();
+        return preferPreconvertedDds(resolvedPath).generic_string();
     }
 
     const std::filesystem::path legacyPath = directory / textureRelativePath.filename();
     if (std::filesystem::exists(legacyPath)) {
-        return legacyPath.generic_string();
+        return preferPreconvertedDds(legacyPath).generic_string();
     }
 
     return kDefaultTextureFilePath;
