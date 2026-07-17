@@ -50,6 +50,37 @@ float CalculateBillboardRoll(
     return std::atan2(-projectedX, projectedY);
 }
 
+Math::Vector3 CalculateBillboardTrailOffset(
+    const Math::Vector3& velocity,
+    const Math::Vector3& cameraRotate,
+    float distance)
+{
+    const Math::Matrix4x4 cameraMatrix =
+        Math::Multiply(
+            Math::MakeRotateXMatrix(cameraRotate.x),
+            Math::Multiply(
+                Math::MakeRotateYMatrix(cameraRotate.y),
+                Math::MakeRotateZMatrix(cameraRotate.z)));
+    const Math::Vector3 cameraRight =
+        TransformDirection({ 1.0f, 0.0f, 0.0f }, cameraMatrix);
+    const Math::Vector3 cameraUp =
+        TransformDirection({ 0.0f, 1.0f, 0.0f }, cameraMatrix);
+    const float projectedX = Dot(velocity, cameraRight);
+    const float projectedY = Dot(velocity, cameraUp);
+    const float projectedLength =
+        std::sqrt(projectedX * projectedX + projectedY * projectedY);
+    if (projectedLength <= 0.001f) {
+        return {};
+    }
+
+    const float offsetScale = -distance / projectedLength;
+    return {
+        (cameraRight.x * projectedX + cameraUp.x * projectedY) * offsetScale,
+        (cameraRight.y * projectedX + cameraUp.y * projectedY) * offsetScale,
+        (cameraRight.z * projectedX + cameraUp.z * projectedY) * offsetScale
+    };
+}
+
 } // namespace
 
 void Bullet::Initialize(
@@ -71,7 +102,8 @@ void Bullet::Initialize(
     float trailOffset,
     Model* sparkleModel,
     const Math::Vector4& sparkleColor,
-    const Math::Vector3& sparkleScale)
+    const Math::Vector3& sparkleScale,
+    int damage)
 {
     if (!object_) {
         object_ = std::make_unique<Object3d>();
@@ -106,6 +138,7 @@ void Bullet::Initialize(
     homingTarget_ = {};
     isDead_ = false;
     collisionRadius_ = collisionRadius;
+    damage_ = (std::max)(damage, 0);
     remainingHits_ = hitLimit;
     const float velocityLength =
         std::sqrt(
@@ -154,11 +187,7 @@ void Bullet::Initialize(
         trailObject_->SetLightingMode(0);
         trailObject_->SetEnvironmentCoefficient(0.0f);
         trailObject_->SetRotate({ 0.0f, 0.0f, trailRoll_ });
-        trailObject_->SetTranslate({
-            translate_.x + trailOffset_.x,
-            translate_.y + trailOffset_.y,
-            translate_.z + trailOffset_.z
-        });
+        trailObject_->SetTranslate(translate_);
         trailObject_->Update();
 
     } else {
@@ -255,11 +284,7 @@ void Bullet::Update(float timeScale)
         glowObject_->Update();
     }
     if (trailObject_) {
-        trailObject_->SetTranslate({
-            translate_.x + trailOffset_.x,
-            translate_.y + trailOffset_.y,
-            translate_.z + trailOffset_.z
-        });
+        trailObject_->SetTranslate(translate_);
         trailObject_->Update();
     }
 
@@ -310,10 +335,15 @@ void Bullet::DrawGlow(const Math::Vector3& cameraRotate)
             trailFade *
             0.82f;
         trailObject_->SetColor(trailColor);
+        const Math::Vector3 billboardOffset =
+            CalculateBillboardTrailOffset(
+                velocity_,
+                cameraRotate,
+                trailDistance_ * 0.50f);
         trailObject_->SetTranslate({
-            translate_.x + trailOffset_.x * 0.56f,
-            translate_.y + trailOffset_.y * 0.56f,
-            translate_.z + trailOffset_.z * 0.56f
+            translate_.x + billboardOffset.x,
+            translate_.y + billboardOffset.y,
+            translate_.z + billboardOffset.z
         });
         trailObject_->Update();
         trailObject_->Draw();

@@ -113,7 +113,8 @@ constexpr float kStageClearDistance = 365.0f;
 constexpr float kBossWarningDistance = 300.0f;
 constexpr float kBossSpawnDistance = 330.0f;
 constexpr float kStageTimelineCruiseSpeed = 0.090f;
-constexpr int kStageEncounterBreatherFrames = 58;
+constexpr int kStageEncounterBreatherFrames = 84;
+constexpr float kStageEncounterGroupingDistance = 10.5f;
 constexpr int kBossWarningDuration = 150;
 constexpr int kBossIntroDuration = 120;
 constexpr int kBossDefeatFlashDuration = 44;
@@ -130,6 +131,15 @@ constexpr int kPlayerImpactFlashDuration = 10;
 constexpr int kPlayerImpactSlowDuration = 8;
 constexpr float kPlayerImpactRailSlowScale = 0.42f;
 constexpr int kEnemyVolleyTelegraphLeadFrames = 18;
+constexpr int kSniperTelegraphLeadFrames = 34;
+constexpr int kFeverGaugeMax = 100;
+constexpr int kFeverDurationFrames = 600;
+constexpr int kFeverActivationFlashFrames = 90;
+constexpr int kFeverRapidShotCooldown = 12;
+constexpr int kFeverScoreMultiplier = 3;
+constexpr int kFeverEncounterBreatherFrames = 18;
+constexpr float kFeverRailSpeedMultiplier = 2.15f;
+constexpr float kFeverRailAccelerationResponse = 0.15f;
 int gSharedResourcePreloadStep = 0;
 bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
@@ -223,13 +233,13 @@ constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     {  38.0f,  5.1f,  1.2f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.032f,  6,  5, 1.08f, "Right sweep" },
     {  58.0f, -5.1f,  0.7f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.032f,  6,  5, 1.08f, "Cross sweep" },
     {  68.0f, -4.0f, -0.6f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.022f,  5,  4, 1.04f, "Low gate" },
-    {  78.0f, -3.2f,  1.3f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Dodge target" },
+    {  78.0f, -3.2f,  1.3f, 48.0f, Enemy::Behavior::Sniper,         Enemy::EntryStyle::PopShooter, 0.052f, 10,  6, 1.18f, "Sniper lock" },
     {  98.0f,  3.2f,  0.9f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Dodge target" },
     { 112.0f,  4.6f,  1.6f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::RightSweep, 0.036f,  8,  5, 1.12f, "High dive" },
     { 124.0f, -2.9f, -0.4f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
     { 134.0f,  2.9f, -0.2f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
     { 148.0f, -4.6f,  1.5f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::LeftSweep,  0.036f,  8,  5, 1.12f, "High dive" },
-    { 160.0f,  0.0f,  1.45f, 52.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.070f, 14, 12, 1.48f, "Heavy drone" },
+    { 160.0f,  0.0f,  1.45f, 54.0f, Enemy::Behavior::Shield,        Enemy::EntryStyle::Direct,     0.070f, 14, 11, 1.24f, "Shield wall" },
     { 174.0f, -5.4f,  0.55f, 52.0f, Enemy::Behavior::Crossfire,     Enemy::EntryStyle::LeftSweep,  0.048f,  9,  6, 1.12f, "Crossfire pair" },
     { 174.0f,  5.4f,  1.15f, 52.0f, Enemy::Behavior::Crossfire,     Enemy::EntryStyle::RightSweep, 0.048f,  9,  6, 1.12f, "Crossfire pair" },
     { 188.0f, -4.9f,  1.0f, 52.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.038f,  7,  5, 1.14f, "High-speed pass" },
@@ -237,13 +247,15 @@ constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     { 214.0f,  0.0f,  1.0f, 50.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.18f, "Break formation" },
     { 228.0f, -3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
     { 248.0f,  3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
-    { 258.0f, -2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Last gate" },
+    { 258.0f,  0.0f,  1.9f, 48.0f, Enemy::Behavior::Support,       Enemy::EntryStyle::Direct,     0.050f, 10,  8, 1.16f, "Support gate" },
+    { 258.0f, -2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Support gate" },
+    { 258.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Support gate" },
     { 274.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Last gate" },
     { 286.0f, -5.2f,  1.2f, 54.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.034f,  7,  5, 1.12f, "Boss screen" },
     { 296.0f,  5.2f,  1.2f, 54.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.034f,  7,  5, 1.12f, "Boss screen" }
 };
 
-constexpr size_t kStageEnemyEventCapacity = 24;
+constexpr size_t kStageEnemyEventCapacity = 28;
 constexpr size_t kStageEnemyEventCount =
     sizeof(kStageEnemySpawnEvents) / sizeof(kStageEnemySpawnEvents[0]);
 static_assert(kStageEnemyEventCount <= kStageEnemyEventCapacity);
@@ -608,6 +620,10 @@ void GameRuntime::Initialize()
     shootBufferTimer_ = 0;
     chargeTimer_ = 0;
     chargeFlashTimer_ = 0;
+    feverGauge_ = 0;
+    feverTimer_ = 0;
+    feverActivationFlashTimer_ = 0;
+    feverSpeedEffectRate_ = 0.0f;
     playerDodgeAfterimageTimer_ = 0;
     justDodgeFlashTimer_ = 0;
     justDodgeSlowTimer_ = 0;
@@ -807,6 +823,7 @@ void GameRuntime::Update()
     UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
     UpdatePlayerAndCamera();
+    UpdateFever();
 
     if (!isGameOver_ && !isGameClear_) {
         UpdatePlayerShooting();
@@ -870,7 +887,8 @@ void GameRuntime::UpdateStageDirector()
         stageProgress_ < 104.0f ? 0 :
         stageProgress_ < 230.0f ? 1 :
         2;
-    targetRailSpeed_ = activeSegment->targetSpeed;
+    targetRailSpeed_ = activeSegment->targetSpeed *
+        (feverTimer_ > 0 ? kFeverRailSpeedMultiplier : 1.0f);
     stageCameraYawBias_ =
         Lerp(stageCameraYawBias_, activeSegment->yawBias, 0.035f);
     stageCameraRollBias_ =
@@ -914,7 +932,10 @@ void GameRuntime::UpdateRailProgress()
 {
     if (!isGameOver_ && !isGameClear_) {
         UpdateStageDirector();
-        railSpeed_ = Lerp(railSpeed_, targetRailSpeed_, 0.070f);
+        railSpeed_ = Lerp(
+            railSpeed_,
+            targetRailSpeed_,
+            feverTimer_ > 0 ? kFeverRailAccelerationResponse : 0.070f);
         const float worldTimeScale = GetCinematicWorldTimeScale();
         railDistance_ += railSpeed_ * worldTimeScale;
 
@@ -925,26 +946,31 @@ void GameRuntime::UpdateRailProgress()
             }
         }
 
-        const char* nextBeatName = nullptr;
+        const StageEnemySpawnEvent* nextEnemyEvent = nullptr;
         const size_t eventCount =
             (std::min)(stageEnemyEventTriggered_.size(), kStageEnemyEventCount);
         for (size_t index = 0; index < eventCount; ++index) {
             if (!stageEnemyEventTriggered_[index]) {
-                nextBeatName = kStageEnemySpawnEvents[index].beatName;
+                nextEnemyEvent = &kStageEnemySpawnEvents[index];
                 break;
             }
         }
 
+        const bool nextEventContinuesCurrentEncounter =
+            nextEnemyEvent != nullptr &&
+            std::string_view(nextEnemyEvent->beatName) ==
+                std::string_view(stageCombatBeatName_ ? stageCombatBeatName_ : "Intro") &&
+            nextEnemyEvent->distance - stageProgress_ <=
+                kStageEncounterGroupingDistance;
         const bool currentEncounterFullyScheduled =
-            nextBeatName == nullptr ||
-            std::string_view(nextBeatName) !=
-                std::string_view(stageCombatBeatName_ ? stageCombatBeatName_ : "Intro");
+            !nextEventContinuesCurrentEncounter;
         const bool timelineBlocked =
             activeStageEnemyCount > 0 && currentEncounterFullyScheduled;
 
         if (stageTimelineWasBlocked_ && !timelineBlocked &&
             activeStageEnemyCount == 0) {
-            stageEncounterBreatherTimer_ = kStageEncounterBreatherFrames;
+            stageEncounterBreatherTimer_ = feverTimer_ > 0 ?
+                kFeverEncounterBreatherFrames : kStageEncounterBreatherFrames;
         }
         stageTimelineWasBlocked_ = timelineBlocked;
 
@@ -995,8 +1021,9 @@ void GameRuntime::UpdatePlayerShooting()
         AddCameraShake(
             isCharged ? (hasAssistShot ? 0.105f : 0.085f) : 0.026f,
             isCharged ? (hasAssistShot ? 16 : 14) : 5);
-        shootCooldown_ =
-            isCharged ? chargedShootCooldown_ : normalShootCooldown_;
+        shootCooldown_ = feverTimer_ > 0 ?
+            kFeverRapidShotCooldown :
+            (isCharged ? chargedShootCooldown_ : normalShootCooldown_);
     } else if (!isShootPressed && shootBufferTimer_ <= 0) {
         chargeTimer_ = (std::min)(chargeTimer_ + 1, kChargeShotMax);
     }
@@ -1006,6 +1033,171 @@ void GameRuntime::UpdatePlayerShooting()
     }
 }
 
+void GameRuntime::UpdateFever()
+{
+    const float targetSpeedEffectRate = feverTimer_ > 0 ? 1.0f : 0.0f;
+    const float speedEffectResponse =
+        targetSpeedEffectRate > feverSpeedEffectRate_ ? 0.16f : 0.045f;
+    feverSpeedEffectRate_ = Lerp(
+        feverSpeedEffectRate_,
+        targetSpeedEffectRate,
+        speedEffectResponse);
+    if (targetSpeedEffectRate <= 0.0f && feverSpeedEffectRate_ < 0.001f) {
+        feverSpeedEffectRate_ = 0.0f;
+    }
+
+    if (feverActivationFlashTimer_ > 0) {
+        --feverActivationFlashTimer_;
+    }
+
+    if (feverTimer_ > 0) {
+        --feverTimer_;
+        chargeTimer_ = kChargeShotMax;
+        return;
+    }
+
+    if (isGameOver_ || isGameClear_ || !input_ ||
+        feverGauge_ < kFeverGaugeMax || !input_->TriggerKey(DIK_E)) {
+        return;
+    }
+
+    ActivateFever();
+}
+
+void GameRuntime::ActivateFever()
+{
+    if (isGameOver_ || isGameClear_) {
+        return;
+    }
+
+    feverGauge_ = 0;
+    feverTimer_ = kFeverDurationFrames;
+    feverActivationFlashTimer_ = kFeverActivationFlashFrames;
+    chargeTimer_ = kChargeShotMax;
+    chargeFlashTimer_ = (std::max)(chargeFlashTimer_, 30);
+    stageEncounterBreatherTimer_ =
+        (std::min)(stageEncounterBreatherTimer_, kFeverEncounterBreatherFrames);
+    if (player_) {
+        const Math::Vector3 playerPosition = player_->GetTranslate();
+        AddPlayerDodgeGrazeEffect(playerPosition);
+        AddPlayerDodgeGrazeEffect({
+            playerPosition.x,
+            playerPosition.y + 0.18f,
+            playerPosition.z + 0.70f
+        });
+    }
+    AddCameraShake(0.16f, 24);
+}
+
+void GameRuntime::AddFeverGauge(int amount)
+{
+    if (amount <= 0 || feverTimer_ > 0 || isGameOver_ || isGameClear_) {
+        return;
+    }
+    feverGauge_ = (std::clamp)(feverGauge_ + amount, 0, kFeverGaugeMax);
+}
+
+void GameRuntime::AddScore(int baseScore)
+{
+    if (baseScore <= 0) {
+        return;
+    }
+    score_ += baseScore * (feverTimer_ > 0 ? kFeverScoreMultiplier : 1);
+}
+
+#ifdef ENABLE_DEBUG_GUI
+void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
+{
+    if (isGameOver_ || isGameClear_) {
+        editorStatusMessage_ = "フェーズ移動はゲーム進行中のみ使用できます。";
+        return;
+    }
+
+    constexpr std::array<float, 4> kDebugPhaseStartDistances{
+        0.0f,
+        104.0f,
+        230.0f,
+        kBossSpawnDistance
+    };
+    const int clampedPhase =
+        (std::clamp)(phaseIndex, 0, static_cast<int>(kDebugPhaseStartDistances.size()) - 1);
+    const float targetProgress = kDebugPhaseStartDistances[clampedPhase];
+
+    lockedEnemy_ = nullptr;
+    hasLockTarget_ = false;
+    isReticleOnTarget_ = false;
+    homingBulletTargets_.clear();
+    justDodgedEnemyBullets_.clear();
+    enemies_.clear();
+
+    while (!playerBullets_.empty()) {
+        playerBulletPool_.push_back(std::move(playerBullets_.front()));
+        playerBullets_.pop_front();
+    }
+    while (!enemyBullets_.empty()) {
+        enemyBulletPool_.push_back(std::move(enemyBullets_.front()));
+        enemyBullets_.pop_front();
+    }
+    for (RewardHeart& heart : rewardHearts_) {
+        heart.isActive = false;
+    }
+
+    stageProgress_ = targetProgress;
+    stageTimelineSpeed_ = 0.0f;
+    stageTimelineWasBlocked_ = false;
+    stageEncounterBreatherTimer_ = 0;
+    currentWaveIndex_ = (std::min)(clampedPhase, kWaveCount - 1);
+    spawnedEnemyCountInWave_ = 0;
+    defeatedEnemyCountInWave_ = 0;
+    spawnSequenceIndex_ = 0;
+    defeatedEnemyCount_ = 0;
+    enemySpawnTimer_ = 0;
+    enemyShotTimer_ = 32;
+    enemyVolleyTelegraphTriggered_ = false;
+    bossSpawned_ = false;
+    bossDefeated_ = false;
+    bossWarningTriggered_ = clampedPhase == 3;
+    bossWarningTimer_ = clampedPhase == 3 ? 42 : 0;
+    bossIntroTimer_ = 0;
+    bossDefeatFlashTimer_ = 0;
+    resultTransitionTimer_ = -1;
+
+    const size_t railEventCount =
+        (std::min)(
+            stageRailEventTriggered_.size(),
+            sizeof(kStageRailEvents) / sizeof(kStageRailEvents[0]));
+    for (size_t index = 0; index < railEventCount; ++index) {
+        stageRailEventTriggered_[index] =
+            kStageRailEvents[index].distance < targetProgress;
+    }
+
+    const size_t enemyEventCount =
+        (std::min)(stageEnemyEventTriggered_.size(), kStageEnemyEventCount);
+    for (size_t index = 0; index < enemyEventCount; ++index) {
+        const bool skippedEvent =
+            clampedPhase == 3 ||
+            kStageEnemySpawnEvents[index].distance < targetProgress;
+        stageEnemyEventTriggered_[index] = skippedEvent;
+        if (skippedEvent) {
+            ++spawnSequenceIndex_;
+            ++defeatedEnemyCount_;
+        }
+    }
+
+    stageCombatBeatName_ = clampedPhase == 3 ? "Boss" : "Debug phase jump";
+    UpdateStageDirector();
+
+    constexpr const char* kDebugPhaseNames[] = {
+        "Wave 1",
+        "Wave 2",
+        "Wave 3",
+        "Boss"
+    };
+    editorStatusMessage_ =
+        std::string("デバッグ移動: ") + kDebugPhaseNames[clampedPhase];
+}
+#endif
+
 void GameRuntime::UpdateEnemyActions()
 {
     if (justDodgeSlowTimer_ > 0) {
@@ -1013,6 +1205,14 @@ void GameRuntime::UpdateEnemyActions()
     }
 
     UpdateEnemyWave();
+
+    bool hasSupportDrone = false;
+    for (const auto& enemy : enemies_) {
+        if (enemy && !enemy->IsDead() && enemy->IsSupport()) {
+            hasSupportDrone = true;
+            break;
+        }
+    }
 
     --enemyShotTimer_;
     if (!enemyVolleyTelegraphTriggered_ &&
@@ -1049,11 +1249,25 @@ void GameRuntime::UpdateEnemyActions()
     }
     if (enemyShotTimer_ <= 0) {
         int normalEnemyShotsThisVolley = 0;
-        constexpr int kMaxNormalEnemyShotsThisVolley = 2;
+        const int maxNormalEnemyShotsThisVolley = hasSupportDrone ? 3 : 2;
+        for (const auto& enemy : enemies_) {
+            if (enemy->IsSniper() && enemy->CanShoot() &&
+                normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
+                FireEnemyBullet(
+                    enemy->GetAimPosition(),
+                    EnemyBulletStyle::Sniper);
+                ++normalEnemyShotsThisVolley;
+                break;
+            }
+        }
         for (const auto& enemy : enemies_) {
             if (enemy->IsCrossfire() && enemy->CanShoot() &&
-                normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
-                FireEnemyBullet(enemy->GetAimPosition());
+                normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
+                const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
+                FireEnemyBullet(
+                    enemyAimPosition,
+                    EnemyBulletStyle::Crossfire,
+                    { enemyAimPosition.x < 0.0f ? 1.25f : -1.25f, 0.0f });
                 ++normalEnemyShotsThisVolley;
             }
         }
@@ -1065,27 +1279,46 @@ void GameRuntime::UpdateEnemyActions()
                         enemyAimPosition.x - 2.2f,
                         enemyAimPosition.y + 0.25f,
                         enemyAimPosition.z
-                    }, true);
+                    }, EnemyBulletStyle::BossCannon, { -1.15f, 0.0f });
                     FireEnemyBullet({
                         enemyAimPosition.x + 2.2f,
                         enemyAimPosition.y + 0.25f,
                         enemyAimPosition.z
-                    }, true);
+                    }, EnemyBulletStyle::BossCannon, { 1.15f, 0.0f });
                     if ((enemyShotTimer_ + static_cast<int>(railDistance_ * 10.0f)) % 2 == 0) {
                         FireEnemyBullet({
                             enemyAimPosition.x,
                             enemyAimPosition.y - 0.55f,
                             enemyAimPosition.z
-                        }, true);
+                        }, EnemyBulletStyle::BossCannon, { 0.0f, -1.35f });
                     }
-                } else if (!enemy->IsCrossfire() &&
-                    normalEnemyShotsThisVolley < kMaxNormalEnemyShotsThisVolley) {
-                    FireEnemyBullet(enemyAimPosition);
+                } else if (enemy->IsShield() &&
+                    normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
+                    FireEnemyBullet(
+                        enemyAimPosition,
+                        EnemyBulletStyle::ShieldOrb,
+                        { -3.0f, 0.15f });
+                    FireEnemyBullet(
+                        enemyAimPosition,
+                        EnemyBulletStyle::ShieldOrb,
+                        { 0.0f, -0.25f });
+                    FireEnemyBullet(
+                        enemyAimPosition,
+                        EnemyBulletStyle::ShieldOrb,
+                        { 3.0f, 0.15f });
+                    ++normalEnemyShotsThisVolley;
+                } else if (!enemy->IsCrossfire() && !enemy->IsSniper() &&
+                    normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
+                    FireEnemyBullet(
+                        enemyAimPosition,
+                        EnemyBulletStyle::Standard);
                     ++normalEnemyShotsThisVolley;
                 }
             }
         }
-        enemyShotTimer_ = enemyShotInterval_;
+        enemyShotTimer_ = (std::max)(
+            24,
+            enemyShotInterval_ - (hasSupportDrone ? 18 : 0));
         enemyVolleyTelegraphTriggered_ = false;
     }
 }
@@ -1338,7 +1571,7 @@ void GameRuntime::UpdateRewardHearts()
             if (distanceSq <= heart.collisionRadius * heart.collisionRadius ||
                 heart.age >= heart.life) {
                 heart.isActive = false;
-                score_ += heart.scoreValue;
+                AddScore(heart.scoreValue);
                 AddRewardHeartCollectEffect(targetPosition);
                 AddCameraShake(0.004f, 2);
                 continue;
@@ -1454,6 +1687,7 @@ void GameRuntime::UpdateDepthCueEffects()
     const float frameStep =
         dxCommon_ ? std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 4.0f) : 1.0f;
     const float speedRate = std::clamp((railSpeed_ - 0.13f) / 0.10f, 0.0f, 1.0f);
+    const float feverSpeedRate = feverSpeedEffectRate_;
     for (DepthCueEffect& cue : depthCueEffects_) {
         if (!cue.object) {
             continue;
@@ -1472,7 +1706,8 @@ void GameRuntime::UpdateDepthCueEffects()
             0.0f,
             1.0f);
         const float motion = railDistance_ * cue.driftSpeed + cue.phase;
-        const float sidePull = 1.0f + (1.0f - depthRate) * (0.28f + speedRate * 0.18f);
+        const float sidePull = 1.0f + (1.0f - depthRate) *
+            (0.28f + speedRate * 0.18f + feverSpeedRate * 0.42f);
         Math::Vector3 position{};
         position.x = cue.anchor.x * sidePull + std::sin(motion) * cue.lateralDrift;
         position.y = cue.anchor.y + std::cos(motion * 0.77f) * cue.verticalDrift;
@@ -1484,10 +1719,16 @@ void GameRuntime::UpdateDepthCueEffects()
             0.22f * std::sin(cue.phase + railDistance_ * (0.16f + cue.driftSpeed));
         const float scale =
             cue.baseScale *
-            Lerp(0.66f, 1.68f + speedRate * 0.28f, nearRate) *
+            Lerp(
+                0.66f,
+                1.68f + speedRate * 0.28f + feverSpeedRate * 0.70f,
+                nearRate) *
             twinkle;
         Math::Vector4 color = cue.color;
-        color.w *= Lerp(0.44f, 1.22f + speedRate * 0.22f, nearRate) * twinkle;
+        color.w *= Lerp(
+            0.44f,
+            1.22f + speedRate * 0.22f + feverSpeedRate * 0.58f,
+            nearRate) * twinkle;
 
         Math::Vector3 rotate = cameraRotate;
         rotate.z += cue.phase * 0.34f + railDistance_ * cue.spinSpeed * frameStep;
@@ -1496,7 +1737,9 @@ void GameRuntime::UpdateDepthCueEffects()
         cue.object->SetRotate(rotate);
         cue.object->SetScale({
             scale * cue.aspectX,
-            scale * cue.aspectY * (1.0f + speedRate * nearRate * 0.36f),
+            scale * cue.aspectY *
+                (1.0f + speedRate * nearRate * 0.36f +
+                    feverSpeedRate * nearRate * 1.20f),
             1.0f,
         });
         cue.object->SetColor(color);
@@ -2375,7 +2618,7 @@ std::unique_ptr<Bullet> GameRuntime::CreatePooledEnemyBullet()
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
         { 1.0f, 0.12f, 0.50f, 0.80f },
         { 0.86f, 0.86f, 1.0f },
-        effectEnemyBulletTailModel_,
+        nullptr,
         { 1.0f, 0.10f, 0.44f, 0.44f },
         { 0.28f, 2.55f, 1.0f },
         1.50f,
@@ -2563,7 +2806,7 @@ void GameRuntime::FirePlayerBullet()
     playerBullets_.push_back(std::move(bullet));
     maxActivePlayerBullets_ =
         (std::max)(maxActivePlayerBullets_, playerBullets_.size());
-    chargeTimer_ = 0;
+    chargeTimer_ = feverTimer_ > 0 ? kChargeShotMax : 0;
     if (isCharged) {
         AddMuzzleFlashEffect(spawnPosition, true);
         chargeFlashTimer_ = 18;
@@ -2574,7 +2817,8 @@ void GameRuntime::FirePlayerBullet()
 
 void GameRuntime::FireEnemyBullet(
     const Math::Vector3& position,
-    bool isDangerous)
+    EnemyBulletStyle style,
+    Math::Vector2 aimOffset)
 {
     if (!bulletModel_) {
         return;
@@ -2585,7 +2829,8 @@ void GameRuntime::FireEnemyBullet(
     Math::Vector3 bulletDirection{ 0.0f, 0.0f, -1.0f };
     if (player_) {
         Math::Vector3 targetPosition = player_->GetTranslate();
-        targetPosition.y += 0.08f;
+        targetPosition.x += aimOffset.x;
+        targetPosition.y += 0.08f + aimOffset.y;
         targetPosition.z += 0.18f;
 
         const Math::Vector3 toPlayer{
@@ -2606,6 +2851,75 @@ void GameRuntime::FireEnemyBullet(
         }
     }
 
+    Math::Vector4 bodyColor{ 1.0f, 0.76f, 0.90f, 1.0f };
+    Math::Vector3 bodyScale{ 0.34f, 0.34f, 0.68f };
+    Math::Vector4 glowColor{ 1.0f, 0.12f, 0.50f, 0.80f };
+    Math::Vector3 glowScale{ 0.86f, 0.86f, 1.0f };
+    Math::Vector4 trailColor{ 1.0f, 0.10f, 0.44f, 0.44f };
+    Math::Vector3 trailScale{ 0.28f, 2.55f, 1.0f };
+    float trailOffset = 1.50f;
+    float speedScale = 1.0f;
+    float collisionRadius = 0.48f;
+    int lifeTimer = 260;
+    int damage = 8;
+
+    switch (style) {
+    case EnemyBulletStyle::Crossfire:
+        bodyColor = { 0.82f, 0.54f, 1.0f, 1.0f };
+        bodyScale = { 0.24f, 0.24f, 1.15f };
+        glowColor = { 0.72f, 0.18f, 1.0f, 0.92f };
+        glowScale = { 0.72f, 1.05f, 1.0f };
+        trailColor = { 0.54f, 0.12f, 1.0f, 0.62f };
+        trailScale = { 0.20f, 3.30f, 1.0f };
+        trailOffset = 1.90f;
+        speedScale = 1.12f;
+        collisionRadius = 0.42f;
+        damage = 7;
+        break;
+    case EnemyBulletStyle::Sniper:
+        bodyColor = { 1.45f, 0.88f, 0.78f, 1.0f };
+        bodyScale = { 0.34f, 0.34f, 1.82f };
+        glowColor = { 1.0f, 0.08f, 0.18f, 1.0f };
+        glowScale = { 1.18f, 1.48f, 1.0f };
+        trailColor = { 1.0f, 0.04f, 0.12f, 0.82f };
+        trailScale = { 0.24f, 6.80f, 1.0f };
+        trailOffset = 3.55f;
+        speedScale = 1.67f;
+        collisionRadius = 0.56f;
+        lifeTimer = 210;
+        damage = 14;
+        break;
+    case EnemyBulletStyle::ShieldOrb:
+        bodyColor = { 0.48f, 1.20f, 1.45f, 1.0f };
+        bodyScale = { 0.62f, 0.62f, 0.62f };
+        glowColor = { 0.10f, 0.92f, 1.0f, 0.94f };
+        glowScale = { 1.42f, 1.42f, 1.0f };
+        trailColor = { 0.08f, 0.76f, 1.0f, 0.48f };
+        trailScale = { 0.34f, 1.42f, 1.0f };
+        trailOffset = 0.78f;
+        speedScale = 0.78f;
+        collisionRadius = 0.62f;
+        lifeTimer = 300;
+        damage = 6;
+        break;
+    case EnemyBulletStyle::BossCannon:
+        bodyColor = { 1.45f, 0.94f, 0.42f, 1.0f };
+        bodyScale = { 0.58f, 0.58f, 1.18f };
+        glowColor = { 1.0f, 0.18f, 0.08f, 1.0f };
+        glowScale = { 1.38f, 1.58f, 1.0f };
+        trailColor = { 1.0f, 0.12f, 0.04f, 0.72f };
+        trailScale = { 0.42f, 4.35f, 1.0f };
+        trailOffset = 2.45f;
+        speedScale = 1.08f;
+        collisionRadius = 0.72f;
+        lifeTimer = 280;
+        damage = 12;
+        break;
+    case EnemyBulletStyle::Standard:
+    default:
+        break;
+    }
+
     auto bullet = AcquireBullet(enemyBulletPool_);
     if (!bullet) {
         ++enemyBulletPoolMisses_;
@@ -2615,34 +2929,23 @@ void GameRuntime::FireEnemyBullet(
         object3dCommon_.get(),
         bulletModel_,
         spawnPosition,
-        bulletDirection * enemyBulletSpeed_ * (isDangerous ? 1.08f : 1.0f),
-        isDangerous ?
-            Math::Vector4{ 1.0f, 0.82f, 0.52f, 1.0f } :
-            Math::Vector4{ 1.0f, 0.76f, 0.90f, 1.0f },
-        260,
-        isDangerous ?
-            Math::Vector3{ 0.46f, 0.46f, 0.86f } :
-            Math::Vector3{ 0.34f, 0.34f, 0.68f },
-        isDangerous ? 0.62f : 0.48f,
+        bulletDirection * enemyBulletSpeed_ * speedScale,
+        bodyColor,
+        lifeTimer,
+        bodyScale,
+        collisionRadius,
         1,
         effectEnemyBulletCoreModel_ ? effectEnemyBulletCoreModel_ : effectBulletGlowModel_,
-        isDangerous ?
-            Math::Vector4{ 1.0f, 0.16f, 0.32f, 0.92f } :
-            Math::Vector4{ 1.0f, 0.12f, 0.50f, 0.80f },
-        isDangerous ?
-            Math::Vector3{ 1.16f, 1.16f, 1.0f } :
-            Math::Vector3{ 0.86f, 0.86f, 1.0f },
-        effectEnemyBulletTailModel_,
-        isDangerous ?
-            Math::Vector4{ 1.0f, 0.10f, 0.32f, 0.58f } :
-            Math::Vector4{ 1.0f, 0.10f, 0.44f, 0.44f },
-        isDangerous ?
-            Math::Vector3{ 0.38f, 3.40f, 1.0f } :
-            Math::Vector3{ 0.28f, 2.55f, 1.0f },
-        isDangerous ? 2.0f : 1.50f,
+        glowColor,
+        glowScale,
+        nullptr,
+        trailColor,
+        trailScale,
+        trailOffset,
         nullptr,
         { 1.0f, 0.30f, 0.70f, 0.0f },
-        { 0.14f, 0.14f, 1.0f });
+        { 0.14f, 0.14f, 1.0f },
+        damage);
     AddEnemyMuzzleFlashEffect(spawnPosition);
     enemyBullets_.push_back(std::move(bullet));
     maxActiveEnemyBullets_ =
@@ -2719,9 +3022,10 @@ void GameRuntime::SpawnStageEnemy(
 
     Model* model = GetEnemyModelForBehavior(behavior);
     const char* textureOverride = GetEnemyTextureOverrideForBehavior(behavior);
-    if (behavior == Enemy::Behavior::StrafeShooter &&
+    if ((behavior == Enemy::Behavior::StrafeShooter &&
         maxHpOverride >= 7 &&
-        enemyHeavyModel_) {
+        enemyHeavyModel_) ||
+        (behavior == Enemy::Behavior::Shield && enemyHeavyModel_)) {
         model = enemyHeavyModel_;
         textureOverride = kEnemyHeavyTexturePath;
     }
@@ -2746,6 +3050,13 @@ void GameRuntime::SpawnStageEnemy(
 Model* GameRuntime::GetEnemyModelForBehavior(Enemy::Behavior behavior) const
 {
     switch (behavior) {
+    case Enemy::Behavior::Support:
+        return enemyFormationModel_ ? enemyFormationModel_ : enemyModel_;
+    case Enemy::Behavior::Shield:
+        return enemyHeavyModel_ ? enemyHeavyModel_ :
+            (enemyFormationModel_ ? enemyFormationModel_ : enemyModel_);
+    case Enemy::Behavior::Sniper:
+        return enemyShooterModel_ ? enemyShooterModel_ : enemyModel_;
     case Enemy::Behavior::DiveBomber:
         return enemySwoopModel_ ? enemySwoopModel_ : enemyModel_;
     case Enemy::Behavior::Swoop:
@@ -2763,6 +3074,13 @@ Model* GameRuntime::GetEnemyModelForBehavior(Enemy::Behavior behavior) const
 const char* GameRuntime::GetEnemyTextureOverrideForBehavior(Enemy::Behavior behavior) const
 {
     switch (behavior) {
+    case Enemy::Behavior::Support:
+        return enemyFormationModel_ ? kEnemyFormationTexturePath : nullptr;
+    case Enemy::Behavior::Shield:
+        return enemyHeavyModel_ ? kEnemyHeavyTexturePath :
+            (enemyFormationModel_ ? kEnemyFormationTexturePath : nullptr);
+    case Enemy::Behavior::Sniper:
+        return enemyShooterModel_ ? kEnemyShooterTexturePath : nullptr;
     case Enemy::Behavior::DiveBomber:
         return enemySwoopModel_ ? kEnemySwoopTexturePath : nullptr;
     case Enemy::Behavior::Swoop:
@@ -3311,7 +3629,8 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
         return;
     }
 
-    score_ += kJustDodgeScoreBonus;
+    AddScore(kJustDodgeScoreBonus);
+    AddFeverGauge(22);
     chargeTimer_ = (std::min)(chargeTimer_ + kJustDodgeChargeBonus, kChargeShotMax);
     chargeFlashTimer_ = (std::max)(chargeFlashTimer_, 26);
     justDodgeFlashTimer_ = (std::max)(justDodgeFlashTimer_, kJustDodgeFlashDuration);
@@ -3644,6 +3963,7 @@ void GameRuntime::InitializePlayerFlightAura()
         4.5f,
         0.0f,
         0.083f);
+
 }
 
 void GameRuntime::InitializePlayerExhaustParticles()
@@ -3735,8 +4055,11 @@ void GameRuntime::EmitPlayerExhaustParticles(
             const Math::Vector3 velocityJitter = RotateLocalOffset(
                 { wobbleX * 2.6f, wobbleY * 2.0f, 0.0f },
                 playerRotate);
+            const float feverRate =
+                std::clamp(feverSpeedEffectRate_, 0.0f, 1.0f);
             const float speed =
-                (isCore ? 6.6f : 4.8f) + playerExhaustThrust_ * 2.1f;
+                (isCore ? 6.6f : 4.8f) + playerExhaustThrust_ * 2.1f +
+                feverRate * (isCore ? 3.4f : 2.8f);
 
             particle.model = model;
             particle.position = {
@@ -3750,13 +4073,26 @@ void GameRuntime::EmitPlayerExhaustParticles(
                 exhaustDirection.z * speed + velocityJitter.z
             };
             particle.color = isCore ?
-                Math::Vector4{ 0.78f, 0.97f, 1.0f, 0.92f } :
-                Math::Vector4{ 0.06f, 0.48f, 1.0f, 0.66f };
+                Math::Vector4{
+                    Lerp(0.78f, 1.0f, feverRate),
+                    Lerp(0.97f, 1.0f, feverRate),
+                    Lerp(1.0f, 0.92f, feverRate),
+                    Lerp(0.92f, 1.0f, feverRate) } :
+                Math::Vector4{
+                    Lerp(0.06f, 0.34f, feverRate),
+                    Lerp(0.48f, 0.82f, feverRate),
+                    1.0f,
+                    Lerp(0.66f, 0.86f, feverRate) };
             particle.age = 0.0f;
-            particle.lifetime = isCore ? 0.15f : 0.28f;
+            particle.lifetime =
+                (isCore ? 0.15f : 0.28f) +
+                feverRate * (isCore ? 0.06f : 0.09f);
             particle.startSize =
-                (isCore ? 0.16f : 0.27f) * (0.92f + playerExhaustThrust_ * 0.22f);
-            particle.endSize = isCore ? 0.025f : 0.075f;
+                (isCore ? 0.16f : 0.27f) *
+                (0.92f + playerExhaustThrust_ * 0.22f) *
+                (1.0f + feverRate * (isCore ? 0.38f : 0.52f));
+            particle.endSize =
+                (isCore ? 0.025f : 0.075f) * (1.0f + feverRate * 0.40f);
             particle.aspectX = isCore ? 0.74f : 1.08f;
             particle.aspectY = isCore ? 1.24f : 1.16f;
             particle.roll = phase * 0.37f;
@@ -3947,6 +4283,7 @@ void GameRuntime::DrawPlayerFlightAura()
         (targetRailSpeed_ - railSpeed_) / 0.045f,
         0.0f,
         1.0f);
+    const float feverThrustBoost = feverSpeedEffectRate_;
     const float dodgeBoost = player_->IsDodging() ? 1.0f : 0.0f;
     const float justDodgeBoost =
         justDodgeFlashTimer_ > 0 ?
@@ -3958,9 +4295,10 @@ void GameRuntime::DrawPlayerFlightAura()
             speedRate * 0.42f +
             accelerationRate * 0.20f +
             dodgeBoost * 0.82f +
-            justDodgeBoost * 0.34f,
+            justDodgeBoost * 0.34f +
+            feverThrustBoost * 0.95f,
         0.0f,
-        1.55f);
+        1.75f);
     float effectFrameStep = 1.0f;
     if (dxCommon_) {
         effectFrameStep = std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.25f, 3.0f);
@@ -4017,18 +4355,35 @@ void GameRuntime::DrawPlayerFlightAura()
         Math::Vector3 rotate = cameraRotate;
         rotate.z += playerRotate.z + aura.roll + exhaustAxisWobble;
         Math::Vector4 color = aura.color;
+        if (isOuterFlame) {
+            color.x = Lerp(color.x, 0.46f, feverThrustBoost);
+            color.y = Lerp(color.y, 0.90f, feverThrustBoost);
+            color.z = Lerp(color.z, 1.0f, feverThrustBoost);
+        } else {
+            color.x = Lerp(color.x, 1.0f, feverThrustBoost);
+            color.y = Lerp(color.y, 1.0f, feverThrustBoost);
+            color.z = Lerp(color.z, 0.92f, feverThrustBoost);
+        }
         color.w *= flicker *
-            (0.76f + speedRate * 0.10f + playerExhaustThrust_ * alphaResponse);
+            (0.76f + speedRate * 0.10f + playerExhaustThrust_ * alphaResponse) *
+            (1.0f + feverThrustBoost * 0.20f);
         color.w = std::clamp(color.w, 0.0f, 1.0f);
+
+        const float feverWidthScale =
+            1.0f + feverThrustBoost *
+                (isOuterFlame ? 0.24f : isInnerFlame ? 0.18f : 0.12f);
+        const float feverLengthScale =
+            1.0f + feverThrustBoost *
+                (isOuterFlame ? 0.56f : isInnerFlame ? 0.42f : 0.18f);
 
         aura.object->SetModel(aura.model);
         aura.object->SetTranslate(translate);
         aura.object->SetRotate(rotate);
         aura.object->SetScale({
             aura.baseSize * aura.aspectX * pulse *
-                (1.0f + playerExhaustThrust_ * widthResponse),
+                (1.0f + playerExhaustThrust_ * widthResponse) * feverWidthScale,
             aura.baseSize * aura.aspectY * (2.0f - pulse) *
-                (1.0f + playerExhaustThrust_ * lengthResponse),
+                (1.0f + playerExhaustThrust_ * lengthResponse) * feverLengthScale,
             1.0f
         });
         aura.object->SetColor(color);
@@ -4601,6 +4956,76 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             enemySpawnTimer_ = 0;
         }
 
+#ifdef ENABLE_DEBUG_GUI
+        if (ImGui::CollapsingHeader("デバッグ操作", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const bool isFeverActive = feverTimer_ > 0;
+            const float feverRate = isFeverActive ?
+                static_cast<float>(feverTimer_) / static_cast<float>(kFeverDurationFrames) :
+                static_cast<float>(feverGauge_) / static_cast<float>(kFeverGaugeMax);
+            char feverLabel[64]{};
+            if (isFeverActive) {
+                std::snprintf(
+                    feverLabel,
+                    sizeof(feverLabel),
+                    "FEVER %.1f sec",
+                    static_cast<double>(feverTimer_) / 60.0);
+            } else {
+                std::snprintf(
+                    feverLabel,
+                    sizeof(feverLabel),
+                    "Gauge %d / %d",
+                    feverGauge_,
+                    kFeverGaugeMax);
+            }
+            ImGui::ProgressBar(
+                (std::clamp)(feverRate, 0.0f, 1.0f),
+                ImVec2(-1.0f, 0.0f),
+                feverLabel);
+
+            const float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
+            const float halfButtonWidth =
+                (ImGui::GetContentRegionAvail().x - buttonSpacing) * 0.5f;
+            if (ImGui::Button("ゲージ MAX", ImVec2(halfButtonWidth, 0.0f))) {
+                feverGauge_ = kFeverGaugeMax;
+                editorStatusMessage_ = "フィーバーゲージを最大にしました。";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("即時発動", ImVec2(halfButtonWidth, 0.0f))) {
+                ActivateFever();
+                editorStatusMessage_ = "フィーバーを発動しました。";
+            }
+            ImGui::BeginDisabled(!isFeverActive);
+            if (ImGui::Button("終了", ImVec2(-1.0f, 0.0f))) {
+                feverTimer_ = 0;
+                feverActivationFlashTimer_ = 0;
+                editorStatusMessage_ = "フィーバーを終了しました。";
+            }
+            ImGui::EndDisabled();
+
+            ImGui::SeparatorText("フェーズ移動");
+            const bool phaseJumpDisabled = isGameOver_ || isGameClear_;
+            ImGui::BeginDisabled(phaseJumpDisabled);
+            if (ImGui::Button("Wave 1", ImVec2(halfButtonWidth, 0.0f))) {
+                DebugJumpToStagePhase(0);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Wave 2", ImVec2(halfButtonWidth, 0.0f))) {
+                DebugJumpToStagePhase(1);
+            }
+            if (ImGui::Button("Wave 3", ImVec2(halfButtonWidth, 0.0f))) {
+                DebugJumpToStagePhase(2);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Boss", ImVec2(halfButtonWidth, 0.0f))) {
+                DebugJumpToStagePhase(3);
+            }
+            ImGui::EndDisabled();
+            if (phaseJumpDisabled) {
+                ImGui::TextDisabled("フェーズ移動はゲーム進行中のみ使用できます。 ");
+            }
+        }
+#endif
+
         if (ImGui::CollapsingHeader(ICON_FA_WAND_MAGIC_SPARKLES " 操作感", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.240f, "%.3f");
             ImGui::SliderFloat("自弾速度", &playerBulletSpeed_, 0.30f, 1.80f, "%.2f");
@@ -4733,11 +5158,453 @@ void GameRuntime::DrawEditorOverlayGuiRich()
         ImGuiFileDialog::Instance()->Close();
     }
 }
+void GameRuntime::DrawFeverBackdrop()
+{
+    const float feverVisualRate =
+        std::clamp(feverSpeedEffectRate_, 0.0f, 1.0f);
+    if (feverVisualRate <= 0.001f) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 origin(hudMin.x, hudMin.y);
+    const ImVec2 drawSize(hudSize.x, hudSize.y);
+    const ImVec2 viewportMax(origin.x + drawSize.x, origin.y + drawSize.y);
+    if (drawSize.x <= 1.0f || drawSize.y <= 1.0f) {
+        return;
+    }
+
+    const float rainbowTime = cameraTimer_ * 0.008f;
+    const auto rainbowColor = [rainbowTime, feverVisualRate](float offset, int alpha) {
+        float hue = std::fmod(rainbowTime + offset, 1.0f);
+        if (hue < 0.0f) {
+            hue += 1.0f;
+        }
+        float red = 1.0f;
+        float green = 1.0f;
+        float blue = 1.0f;
+        ImGui::ColorConvertHSVtoRGB(hue, 0.76f, 1.0f, red, green, blue);
+        return IM_COL32(
+            static_cast<int>(red * 255.0f),
+            static_cast<int>(green * 255.0f),
+            static_cast<int>(blue * 255.0f),
+            (std::clamp)(
+                static_cast<int>(static_cast<float>(alpha) * feverVisualRate),
+                0,
+                255));
+    };
+
+    const float ambiencePulse =
+        0.5f + 0.5f * std::sin(cameraTimer_ * 0.055f);
+    const int dimAlpha = static_cast<int>(
+        (50.0f + ambiencePulse * 9.0f) * feverVisualRate);
+    drawList->AddRectFilled(
+        origin,
+        viewportMax,
+        IM_COL32(2, 4, 15, dimAlpha));
+    drawList->AddRectFilled(
+        origin,
+        viewportMax,
+        rainbowColor(0.0f, 8));
+
+    const float vignetteSize =
+        std::clamp((std::min)(drawSize.x, drawSize.y) * 0.14f, 54.0f, 112.0f);
+    const int vignetteAlpha = static_cast<int>(
+        (68.0f + ambiencePulse * 18.0f) * feverVisualRate);
+    drawList->AddRectFilledMultiColor(
+        origin,
+        ImVec2(viewportMax.x, origin.y + vignetteSize),
+        IM_COL32(0, 1, 8, vignetteAlpha),
+        IM_COL32(0, 1, 8, vignetteAlpha),
+        IM_COL32(0, 1, 8, 0),
+        IM_COL32(0, 1, 8, 0));
+    drawList->AddRectFilledMultiColor(
+        ImVec2(origin.x, viewportMax.y - vignetteSize),
+        viewportMax,
+        IM_COL32(0, 1, 8, 0),
+        IM_COL32(0, 1, 8, 0),
+        IM_COL32(0, 1, 8, vignetteAlpha),
+        IM_COL32(0, 1, 8, vignetteAlpha));
+    drawList->AddRectFilledMultiColor(
+        origin,
+        ImVec2(origin.x + vignetteSize, viewportMax.y),
+        IM_COL32(0, 1, 8, vignetteAlpha),
+        IM_COL32(0, 1, 8, 0),
+        IM_COL32(0, 1, 8, 0),
+        IM_COL32(0, 1, 8, vignetteAlpha));
+    drawList->AddRectFilledMultiColor(
+        ImVec2(viewportMax.x - vignetteSize, origin.y),
+        viewportMax,
+        IM_COL32(0, 1, 8, 0),
+        IM_COL32(0, 1, 8, vignetteAlpha),
+        IM_COL32(0, 1, 8, vignetteAlpha),
+        IM_COL32(0, 1, 8, 0));
+
+    const float activationElapsedFrames =
+        static_cast<float>(kFeverActivationFlashFrames - feverActivationFlashTimer_);
+    const float accelerationKickPhase =
+        std::clamp(activationElapsedFrames / 28.0f, 0.0f, 1.0f);
+    const float feverAccelerationKick =
+        feverActivationFlashTimer_ > 0 ?
+        std::sin(accelerationKickPhase * std::numbers::pi_v<float>) : 0.0f;
+    const float windIntensity = std::clamp(
+        feverVisualRate + feverAccelerationKick * 0.48f,
+        0.0f,
+        1.28f);
+    const ImVec2 windVanishingPoint(
+        origin.x + drawSize.x * 0.50f,
+        origin.y + drawSize.y * 0.445f);
+    constexpr int kWindStreakCount = 60;
+    constexpr float kPi = 3.14159265358979323846f;
+    drawList->PushClipRect(origin, viewportMax, true);
+    for (int index = 0; index < kWindStreakCount; ++index) {
+        float seed = std::sin(
+            static_cast<float>(index) * 12.9898f + 78.233f) * 43758.5453f;
+        seed -= std::floor(seed);
+        const float angle =
+            2.0f * kPi *
+            (static_cast<float>(index) + seed * 0.58f) /
+            static_cast<float>(kWindStreakCount);
+        const float travelSpeed =
+            0.028f + static_cast<float>(index % 5) * 0.0017f +
+            feverAccelerationKick * 0.009f;
+        float phase = std::fmod(cameraTimer_ * travelSpeed + seed, 1.0f);
+        if (phase < 0.0f) {
+            phase += 1.0f;
+        }
+
+        const float frontRate = 0.17f + phase * 1.04f;
+        const float edgeRate =
+            std::clamp((frontRate - 0.24f) / 0.80f, 0.0f, 1.0f);
+        const float streakLength =
+            0.035f + edgeRate * (0.16f + seed * 0.08f);
+        const float backRate = (std::max)(0.15f, frontRate - streakLength);
+        const float directionX = std::cos(angle) * drawSize.x * 0.72f;
+        const float directionY = std::sin(angle) * drawSize.y * 0.72f;
+        const ImVec2 streakStart(
+            windVanishingPoint.x + directionX * backRate,
+            windVanishingPoint.y + directionY * backRate);
+        const ImVec2 streakEnd(
+            windVanishingPoint.x + directionX * frontRate,
+            windVanishingPoint.y + directionY * frontRate);
+        const float lifeFade = std::sin(phase * kPi);
+        const int coreAlpha = static_cast<int>(
+            (18.0f + edgeRate * 108.0f) * lifeFade * windIntensity);
+        if (coreAlpha <= 1) {
+            continue;
+        }
+
+        const bool useRainbowGlint = index % 6 == 0;
+        const ImU32 coreColor = useRainbowGlint ?
+            rainbowColor(seed + phase * 0.14f, coreAlpha) :
+            IM_COL32(190, 236, 255, coreAlpha);
+        drawList->AddLine(
+            streakStart,
+            streakEnd,
+            IM_COL32(90, 190, 255, coreAlpha / 4),
+            4.0f + edgeRate * 5.0f);
+        drawList->AddLine(
+            streakStart,
+            streakEnd,
+            coreColor,
+            1.0f + edgeRate * 1.9f);
+        drawList->AddCircleFilled(
+            streakEnd,
+            0.8f + edgeRate * 1.5f,
+            IM_COL32(
+                235,
+                252,
+                255,
+                (std::min)(
+                    coreAlpha + static_cast<int>(38.0f * feverVisualRate),
+                    190)),
+            8);
+    }
+    drawList->PopClipRect();
+
+    constexpr int kBackdropHorizontalSegments = 20;
+    constexpr int kBackdropVerticalSegments = 12;
+    for (int layer = 0; layer < 4; ++layer) {
+        const float margin = 6.0f + static_cast<float>(layer) * 4.0f;
+        const float left = origin.x + margin;
+        const float right = viewportMax.x - margin;
+        const float top = origin.y + margin;
+        const float bottom = viewportMax.y - margin;
+        const int alpha = 34 - layer * 6;
+        const float thickness = 7.0f - static_cast<float>(layer) * 1.2f;
+        for (int segment = 0; segment < kBackdropHorizontalSegments; ++segment) {
+            const float rate0 =
+                static_cast<float>(segment) /
+                static_cast<float>(kBackdropHorizontalSegments);
+            const float rate1 =
+                static_cast<float>(segment + 1) /
+                static_cast<float>(kBackdropHorizontalSegments);
+            drawList->AddLine(
+                ImVec2(Lerp(left, right, rate0), top),
+                ImVec2(Lerp(left, right, rate1) + 1.0f, top),
+                rainbowColor(rate0 * 0.78f + static_cast<float>(layer) * 0.05f, alpha),
+                thickness);
+            drawList->AddLine(
+                ImVec2(Lerp(left, right, rate0), bottom),
+                ImVec2(Lerp(left, right, rate1) + 1.0f, bottom),
+                rainbowColor(0.78f - rate0 * 0.78f + static_cast<float>(layer) * 0.05f, alpha),
+                thickness);
+        }
+        for (int segment = 0; segment < kBackdropVerticalSegments; ++segment) {
+            const float rate0 =
+                static_cast<float>(segment) /
+                static_cast<float>(kBackdropVerticalSegments);
+            const float rate1 =
+                static_cast<float>(segment + 1) /
+                static_cast<float>(kBackdropVerticalSegments);
+            drawList->AddLine(
+                ImVec2(left, Lerp(top, bottom, rate0)),
+                ImVec2(left, Lerp(top, bottom, rate1) + 1.0f),
+                rainbowColor(0.18f + rate0 * 0.46f + static_cast<float>(layer) * 0.05f, alpha),
+                thickness);
+            drawList->AddLine(
+                ImVec2(right, Lerp(top, bottom, rate0)),
+                ImVec2(right, Lerp(top, bottom, rate1) + 1.0f),
+                rainbowColor(0.94f - rate0 * 0.46f + static_cast<float>(layer) * 0.05f, alpha),
+                thickness);
+        }
+    }
+
+    const auto getPerimeterPoint = [origin, viewportMax](float rate, float margin) {
+        const float left = origin.x + margin;
+        const float right = viewportMax.x - margin;
+        const float top = origin.y + margin;
+        const float bottom = viewportMax.y - margin;
+        const float width = (std::max)(right - left, 1.0f);
+        const float height = (std::max)(bottom - top, 1.0f);
+        const float perimeter = (width + height) * 2.0f;
+        float distance = std::fmod(rate, 1.0f) * perimeter;
+        if (distance < 0.0f) {
+            distance += perimeter;
+        }
+        if (distance < width) {
+            return ImVec2(left + distance, top);
+        }
+        distance -= width;
+        if (distance < height) {
+            return ImVec2(right, top + distance);
+        }
+        distance -= height;
+        if (distance < width) {
+            return ImVec2(right - distance, bottom);
+        }
+        distance -= width;
+        return ImVec2(left, bottom - distance);
+    };
+
+    constexpr int kBorderSparkleCount = 42;
+    for (int index = 0; index < kBorderSparkleCount; ++index) {
+        const float indexRate =
+            static_cast<float>(index) / static_cast<float>(kBorderSparkleCount);
+        const float travelRate =
+            indexRate + cameraTimer_ * (0.00042f + 0.00005f * static_cast<float>(index % 3));
+        const ImVec2 position = getPerimeterPoint(
+            travelRate,
+            17.0f + static_cast<float>(index % 3) * 4.0f);
+        const float rawTwinkle =
+            0.5f + 0.5f * std::sin(cameraTimer_ * 0.18f + static_cast<float>(index) * 1.73f);
+        const float twinkle = rawTwinkle * rawTwinkle * rawTwinkle;
+        const float radius = 2.2f + twinkle * (5.8f + static_cast<float>(index % 4));
+        const int glowAlpha = static_cast<int>(65.0f + twinkle * 125.0f);
+        const ImU32 color = rainbowColor(indexRate + twinkle * 0.10f, glowAlpha);
+        drawList->AddCircleFilled(position, radius * 1.35f, rainbowColor(indexRate, glowAlpha / 3), 16);
+        drawList->AddQuadFilled(
+            ImVec2(position.x, position.y - radius * 1.55f),
+            ImVec2(position.x + radius * 0.34f, position.y),
+            ImVec2(position.x, position.y + radius * 1.55f),
+            ImVec2(position.x - radius * 0.34f, position.y),
+            color);
+        drawList->AddQuadFilled(
+            ImVec2(position.x - radius * 1.55f, position.y),
+            ImVec2(position.x, position.y - radius * 0.34f),
+            ImVec2(position.x + radius * 1.55f, position.y),
+            ImVec2(position.x, position.y + radius * 0.34f),
+            color);
+        drawList->AddCircleFilled(
+            position,
+            (std::max)(1.0f, radius * 0.24f),
+            IM_COL32(
+                255,
+                255,
+                255,
+                static_cast<int>((145.0f + twinkle * 110.0f) * feverVisualRate)),
+            10);
+    }
+}
+
+void GameRuntime::DrawEnemyTypeTelegraphs()
+{
+    if (!player_) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    const bool sniperTelegraphActive =
+        enemyShotTimer_ > 0 &&
+        enemyShotTimer_ <= kSniperTelegraphLeadFrames;
+    Math::Vector2 playerScreen{};
+    Math::Vector3 playerAimPosition = player_->GetTranslate();
+    playerAimPosition.y += 0.12f;
+    const bool hasPlayerScreenPosition =
+        TryProjectToScreen(playerAimPosition, playerScreen);
+
+    const float chargeRate = 1.0f - std::clamp(
+        static_cast<float>(enemyShotTimer_) /
+            static_cast<float>(kSniperTelegraphLeadFrames),
+        0.0f,
+        1.0f);
+    const float pulse =
+        0.5f + 0.5f * std::sin(cameraTimer_ * 0.48f);
+    const int lineAlpha = static_cast<int>(
+        70.0f + chargeRate * 130.0f + pulse * 35.0f);
+
+    for (const auto& enemy : enemies_) {
+        if (!enemy || enemy->IsDead()) {
+            continue;
+        }
+
+        Math::Vector2 enemyScreen{};
+        if (!TryProjectToScreen(enemy->GetAimPosition(), enemyScreen)) {
+            continue;
+        }
+
+        if (enemy->IsShield() && enemy->HasShield()) {
+            const float shieldRate = std::clamp(
+                static_cast<float>(enemy->GetShieldHp()) /
+                    static_cast<float>((std::max)(enemy->GetShieldMaxHp(), 1)),
+                0.0f,
+                1.0f);
+            const float shieldPulse =
+                0.5f + 0.5f * std::sin(cameraTimer_ * 0.16f + enemyScreen.x * 0.01f);
+            const int shieldAlpha = static_cast<int>(
+                105.0f + shieldRate * 90.0f + shieldPulse * 35.0f);
+            const ImVec2 center(enemyScreen.x, enemyScreen.y);
+            const float radius = 25.0f + shieldPulse * 4.0f;
+            drawList->AddCircleFilled(
+                center,
+                radius,
+                IM_COL32(32, 176, 255, shieldAlpha / 7),
+                32);
+            drawList->AddCircle(
+                center,
+                radius,
+                IM_COL32(86, 222, 255, shieldAlpha),
+                32,
+                2.5f);
+            drawList->AddCircle(
+                center,
+                radius + 5.0f,
+                IM_COL32(180, 248, 255, shieldAlpha / 2),
+                32,
+                1.0f);
+            char shieldLabel[32]{};
+            std::snprintf(
+                shieldLabel,
+                sizeof(shieldLabel),
+                "SHIELD %d",
+                enemy->GetShieldHp());
+            drawList->AddText(
+                ImVec2(center.x + radius + 7.0f, center.y - 8.0f),
+                IM_COL32(136, 236, 255, shieldAlpha),
+                shieldLabel);
+        }
+
+        if (enemy->IsSupport()) {
+            const float supportPulse =
+                0.5f + 0.5f * std::sin(cameraTimer_ * 0.18f + enemyScreen.y * 0.01f);
+            const int supportAlpha = static_cast<int>(
+                120.0f + supportPulse * 95.0f);
+            const ImVec2 supportCenter(enemyScreen.x, enemyScreen.y);
+            drawList->AddCircleFilled(
+                supportCenter,
+                13.0f + supportPulse * 3.0f,
+                IM_COL32(112, 255, 94, supportAlpha / 6),
+                20);
+            drawList->AddCircle(
+                supportCenter,
+                17.0f + supportPulse * 4.0f,
+                IM_COL32(132, 255, 104, supportAlpha),
+                4,
+                2.5f);
+            drawList->AddText(
+                ImVec2(supportCenter.x + 21.0f, supportCenter.y - 9.0f),
+                IM_COL32(174, 255, 144, supportAlpha),
+                "SUPPORT BOOST");
+
+            int linkCount = 0;
+            constexpr int kMaxSupportLinks = 3;
+            for (const auto& linkedEnemy : enemies_) {
+                if (!linkedEnemy || linkedEnemy.get() == enemy.get() ||
+                    linkedEnemy->IsDead() || linkedEnemy->IsSupport()) {
+                    continue;
+                }
+                Math::Vector2 linkedScreen{};
+                if (!TryProjectToScreen(linkedEnemy->GetAimPosition(), linkedScreen)) {
+                    continue;
+                }
+                drawList->AddLine(
+                    supportCenter,
+                    ImVec2(linkedScreen.x, linkedScreen.y),
+                    IM_COL32(102, 255, 132, supportAlpha / 2),
+                    1.5f + supportPulse);
+                if (++linkCount >= kMaxSupportLinks) {
+                    break;
+                }
+            }
+        }
+
+        if (!sniperTelegraphActive || !hasPlayerScreenPosition ||
+            !enemy->IsSniper() || !enemy->CanShoot()) {
+            continue;
+        }
+
+        const ImVec2 start(enemyScreen.x, enemyScreen.y);
+        const ImVec2 end(playerScreen.x, playerScreen.y);
+        drawList->AddLine(
+            start,
+            end,
+            IM_COL32(20, 0, 10, lineAlpha / 2),
+            5.0f);
+        drawList->AddLine(
+            start,
+            end,
+            IM_COL32(255, 42, 92, lineAlpha),
+            1.5f + chargeRate * 1.5f);
+        drawList->AddCircle(
+            start,
+            15.0f + chargeRate * 7.0f,
+            IM_COL32(255, 74, 112, lineAlpha),
+            20,
+            2.0f);
+        drawList->AddCircle(
+            end,
+            10.0f + pulse * 5.0f,
+            IM_COL32(255, 52, 104, lineAlpha),
+            16,
+            2.0f);
+        drawList->AddText(
+            ImVec2(start.x + 18.0f, start.y - 22.0f),
+            IM_COL32(255, 126, 150, lineAlpha),
+            "SNIPER LOCK");
+    }
+}
+
 void GameRuntime::DrawHud()
 {
     if (!player_) {
         return;
     }
+
+    DrawFeverBackdrop();
+    DrawEnemyTypeTelegraphs();
 
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
     Math::Vector2 hudMin{};
@@ -4990,6 +5857,7 @@ void GameRuntime::DrawHud()
     DrawLockOnHud();
     DrawHitConfirmHud();
     DrawPlayerDamageHud();
+    DrawFeverHud();
 }
 
 void GameRuntime::DrawBossHud()
@@ -5198,6 +6066,347 @@ void GameRuntime::DrawStageCueHud()
             ImVec2(center.x + halfWidth, lineY),
             IM_COL32(255, 72, 142, (std::clamp)(alpha, 0, 150)),
             4.0f);
+    }
+}
+
+void GameRuntime::DrawFeverHud()
+{
+    if (!player_) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 origin(hudMin.x, hudMin.y);
+    const ImVec2 drawSize(hudSize.x, hudSize.y);
+    const bool isActive = feverTimer_ > 0;
+    const bool isReady = !isActive && feverGauge_ >= kFeverGaugeMax;
+    const float rate = isActive ?
+        static_cast<float>(feverTimer_) / static_cast<float>(kFeverDurationFrames) :
+        static_cast<float>(feverGauge_) / static_cast<float>(kFeverGaugeMax);
+    const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * (isActive ? 8.5f : 5.0f));
+    const float rainbowTime = cameraTimer_ * (isActive ? 0.010f : 0.006f);
+    const auto rainbowColor = [rainbowTime](float offset, int alpha) {
+        float hue = std::fmod(rainbowTime + offset, 1.0f);
+        if (hue < 0.0f) {
+            hue += 1.0f;
+        }
+        float red = 1.0f;
+        float green = 1.0f;
+        float blue = 1.0f;
+        ImGui::ColorConvertHSVtoRGB(hue, 0.78f, 1.0f, red, green, blue);
+        return IM_COL32(
+            static_cast<int>(red * 255.0f),
+            static_cast<int>(green * 255.0f),
+            static_cast<int>(blue * 255.0f),
+            (std::clamp)(alpha, 0, 255));
+    };
+
+    const float barWidth = std::clamp(drawSize.x * 0.35f, 340.0f, 520.0f);
+    const ImVec2 panelMin(
+        origin.x + drawSize.x * 0.5f - barWidth * 0.5f,
+        origin.y + drawSize.y - 58.0f);
+    const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 40.0f);
+    const ImVec2 barMin(panelMin.x + 10.0f, panelMin.y + 23.0f);
+    const ImVec2 barMax(panelMax.x - 10.0f, panelMax.y - 7.0f);
+    const ImVec2 fillMax(
+        barMin.x + (barMax.x - barMin.x) * std::clamp(rate, 0.0f, 1.0f),
+        barMax.y);
+    const ImU32 borderColor = isActive || isReady ?
+        rainbowColor(0.0f, isReady ? 245 : 225) :
+        IM_COL32(106, 210, 255, 155);
+
+    drawList->AddRectFilled(
+        ImVec2(panelMin.x + 3.0f, panelMin.y + 4.0f),
+        ImVec2(panelMax.x + 3.0f, panelMax.y + 4.0f),
+        IM_COL32(0, 0, 0, 94),
+        5.0f);
+    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(7, 12, 25, 208), 5.0f);
+    drawList->AddRect(panelMin, panelMax, borderColor, 5.0f, 0, isReady ? 2.5f : 1.5f);
+    drawList->AddRectFilled(barMin, barMax, IM_COL32(16, 25, 42, 235), 3.0f);
+    if (fillMax.x > barMin.x) {
+        if (isActive || isReady) {
+            constexpr int kRainbowBarSegments = 18;
+            const float filledWidth = fillMax.x - barMin.x;
+            for (int segment = 0; segment < kRainbowBarSegments; ++segment) {
+                const float segmentRate0 =
+                    static_cast<float>(segment) / static_cast<float>(kRainbowBarSegments);
+                const float segmentRate1 =
+                    static_cast<float>(segment + 1) / static_cast<float>(kRainbowBarSegments);
+                const ImVec2 segmentMin(
+                    barMin.x + filledWidth * segmentRate0,
+                    barMin.y);
+                const ImVec2 segmentMax(
+                    barMin.x + filledWidth * segmentRate1 + 1.0f,
+                    barMax.y);
+                drawList->AddRectFilledMultiColor(
+                    segmentMin,
+                    segmentMax,
+                    rainbowColor(segmentRate0 * 0.82f, 245),
+                    rainbowColor(segmentRate1 * 0.82f, 245),
+                    rainbowColor(segmentRate1 * 0.82f + 0.05f, 225),
+                    rainbowColor(segmentRate0 * 0.82f + 0.05f, 225));
+            }
+            const float sweepRate = std::fmod(cameraTimer_ * 0.022f, 1.0f);
+            const float sweepX = barMin.x + filledWidth * sweepRate;
+            const float sweepHalfWidth = 7.0f + pulse * 4.0f;
+            drawList->AddRectFilledMultiColor(
+                ImVec2((std::max)(barMin.x, sweepX - sweepHalfWidth), barMin.y + 1.0f),
+                ImVec2((std::min)(fillMax.x, sweepX + sweepHalfWidth), barMax.y - 1.0f),
+                IM_COL32(255, 255, 255, 15),
+                IM_COL32(255, 255, 255, 180),
+                IM_COL32(255, 255, 255, 115),
+                IM_COL32(255, 255, 255, 10));
+        } else {
+            drawList->AddRectFilledMultiColor(
+                barMin,
+                fillMax,
+                IM_COL32(72, 220, 255, 245),
+                IM_COL32(255, 82, 218, 245),
+                IM_COL32(255, 130, 112, 235),
+                IM_COL32(96, 190, 255, 235));
+        }
+        drawList->AddLine(
+            ImVec2(barMin.x + 2.0f, barMin.y + 2.0f),
+            ImVec2(fillMax.x - 2.0f, barMin.y + 2.0f),
+            IM_COL32(255, 255, 255, 150),
+            1.0f);
+    }
+    drawList->AddRect(barMin, barMax, IM_COL32(212, 238, 255, 110), 3.0f);
+    for (int segment = 1; segment < 10; ++segment) {
+        const float x = barMin.x + (barMax.x - barMin.x) *
+            (static_cast<float>(segment) / 10.0f);
+        drawList->AddLine(
+            ImVec2(x, barMin.y + 1.0f),
+            ImVec2(x, barMax.y - 1.0f),
+            IM_COL32(7, 15, 28, 125),
+            1.0f);
+    }
+
+    const char* status = isActive ? "JACKPOT // SCORE x3" :
+        isReady ? "E // JACKPOT" : "HIT  DESTROY  JUST DODGE";
+    drawList->AddText(
+        ImVec2(panelMin.x + 10.0f, panelMin.y + 5.0f),
+        isActive || isReady ? rainbowColor(0.12f, 255) : IM_COL32(152, 230, 255, 235),
+        "FEVER");
+    const ImVec2 statusSize = ImGui::CalcTextSize(status);
+    drawList->AddText(
+        ImVec2(panelMax.x - statusSize.x - 10.0f, panelMin.y + 5.0f),
+        isReady ?
+            IM_COL32(255, 232, 122, static_cast<int>(205.0f + pulse * 50.0f)) :
+            IM_COL32(218, 230, 244, 220),
+        status);
+
+    if (isReady) {
+        drawList->AddRect(
+            ImVec2(panelMin.x - 4.0f, panelMin.y - 4.0f),
+            ImVec2(panelMax.x + 4.0f, panelMax.y + 4.0f),
+            rainbowColor(0.42f, static_cast<int>(65.0f + pulse * 105.0f)),
+            7.0f,
+            0,
+            3.0f);
+    }
+
+    if (isActive) {
+        const int edgeAlpha = static_cast<int>(45.0f + pulse * 38.0f);
+        constexpr int kHorizontalEdgeSegments = 16;
+        constexpr int kVerticalEdgeSegments = 9;
+        const float edgeLeft = origin.x + 7.0f;
+        const float edgeRight = origin.x + drawSize.x - 7.0f;
+        const float edgeTop = origin.y + 7.0f;
+        const float edgeBottom = origin.y + drawSize.y - 7.0f;
+        for (int segment = 0; segment < kHorizontalEdgeSegments; ++segment) {
+            const float rate0 =
+                static_cast<float>(segment) / static_cast<float>(kHorizontalEdgeSegments);
+            const float rate1 =
+                static_cast<float>(segment + 1) / static_cast<float>(kHorizontalEdgeSegments);
+            const float x0 = Lerp(edgeLeft, edgeRight, rate0);
+            const float x1 = Lerp(edgeLeft, edgeRight, rate1);
+            drawList->AddLine(
+                ImVec2(x0, edgeTop),
+                ImVec2(x1 + 1.0f, edgeTop),
+                rainbowColor(rate0 * 0.76f, edgeAlpha),
+                4.0f);
+            drawList->AddLine(
+                ImVec2(x0, edgeBottom),
+                ImVec2(x1 + 1.0f, edgeBottom),
+                rainbowColor(0.76f - rate0 * 0.76f, edgeAlpha),
+                4.0f);
+        }
+        for (int segment = 0; segment < kVerticalEdgeSegments; ++segment) {
+            const float rate0 =
+                static_cast<float>(segment) / static_cast<float>(kVerticalEdgeSegments);
+            const float rate1 =
+                static_cast<float>(segment + 1) / static_cast<float>(kVerticalEdgeSegments);
+            const float y0 = Lerp(edgeTop, edgeBottom, rate0);
+            const float y1 = Lerp(edgeTop, edgeBottom, rate1);
+            drawList->AddLine(
+                ImVec2(edgeLeft, y0),
+                ImVec2(edgeLeft, y1 + 1.0f),
+                rainbowColor(0.16f + rate0 * 0.48f, edgeAlpha),
+                4.0f);
+            drawList->AddLine(
+                ImVec2(edgeRight, y0),
+                ImVec2(edgeRight, y1 + 1.0f),
+                rainbowColor(0.92f - rate0 * 0.48f, edgeAlpha),
+                4.0f);
+        }
+        drawList->AddRect(
+            ImVec2(origin.x + 12.0f, origin.y + 12.0f),
+            ImVec2(origin.x + drawSize.x - 12.0f, origin.y + drawSize.y - 12.0f),
+            IM_COL32(255, 255, 255, edgeAlpha / 3),
+            0.0f,
+            0,
+            1.5f);
+    }
+
+    if (feverActivationFlashTimer_ > 0) {
+        const float flashRate =
+            static_cast<float>(feverActivationFlashTimer_) /
+            static_cast<float>(kFeverActivationFlashFrames);
+        const float elapsed = 1.0f - flashRate;
+        const float bannerAlpha = std::clamp(flashRate * 2.5f, 0.0f, 1.0f);
+        const char* banner = "FEVER TIME";
+        const float fontSize = 34.0f + std::sin(elapsed * std::numbers::pi_v<float>) * 9.0f;
+        const ImVec2 textSize =
+            ImGui::GetFont()->CalcTextSizeA(fontSize, 100000.0f, 0.0f, banner);
+        const ImVec2 bannerPosition(
+            origin.x + drawSize.x * 0.5f - textSize.x * 0.5f,
+            origin.y + drawSize.y * 0.24f);
+        const ImVec2 burstCenter(
+            origin.x + drawSize.x * 0.5f,
+            bannerPosition.y + fontSize * 0.48f);
+        const float burstEase =
+            1.0f - (1.0f - elapsed) * (1.0f - elapsed) * (1.0f - elapsed);
+        const int burstAlpha = static_cast<int>(bannerAlpha * (155.0f - elapsed * 55.0f));
+
+        constexpr int kBurstRayCount = 28;
+        for (int ray = 0; ray < kBurstRayCount; ++ray) {
+            const float rayRate =
+                static_cast<float>(ray) / static_cast<float>(kBurstRayCount);
+            const float angle =
+                rayRate * kTwoPi + elapsed * 0.42f;
+            const float innerRadius = 42.0f + burstEase * 68.0f;
+            const float outerRadius =
+                innerRadius + 58.0f + PseudoRandom01(ray, 5.7f) * 72.0f;
+            drawList->AddLine(
+                ImVec2(
+                    burstCenter.x + std::cos(angle) * innerRadius,
+                    burstCenter.y + std::sin(angle) * innerRadius),
+                ImVec2(
+                    burstCenter.x + std::cos(angle) * outerRadius,
+                    burstCenter.y + std::sin(angle) * outerRadius),
+                rainbowColor(rayRate + elapsed * 0.18f, burstAlpha),
+                2.0f + PseudoRandom01(ray, 2.3f) * 2.4f);
+        }
+
+        constexpr int kBurstRingCount = 3;
+        constexpr int kBurstRingArcs = 12;
+        for (int ring = 0; ring < kBurstRingCount; ++ring) {
+            const float ringRate =
+                std::fmod(elapsed + static_cast<float>(ring) * 0.27f, 1.0f);
+            const float ringRadius = 62.0f + ringRate * 190.0f;
+            const int ringAlpha =
+                static_cast<int>(bannerAlpha * (1.0f - ringRate) * 165.0f);
+            for (int arc = 0; arc < kBurstRingArcs; ++arc) {
+                const float arcRate0 =
+                    static_cast<float>(arc) / static_cast<float>(kBurstRingArcs);
+                const float arcRate1 =
+                    static_cast<float>(arc + 1) / static_cast<float>(kBurstRingArcs);
+                drawList->PathArcTo(
+                    burstCenter,
+                    ringRadius,
+                    arcRate0 * kTwoPi + 0.025f,
+                    arcRate1 * kTwoPi - 0.025f,
+                    8);
+                drawList->PathStroke(
+                    rainbowColor(arcRate0 + ringRate, ringAlpha),
+                    0,
+                    2.5f);
+            }
+        }
+
+        constexpr int kConfettiCount = 24;
+        for (int index = 0; index < kConfettiCount; ++index) {
+            const float seedX = PseudoRandom01(index, 3.1f);
+            const float seedY = PseudoRandom01(index, 7.9f);
+            const float fallRate = std::fmod(
+                seedY + elapsed * (0.32f + PseudoRandom01(index, 1.4f) * 0.34f),
+                1.0f);
+            const float x =
+                origin.x + drawSize.x * (0.07f + seedX * 0.86f) +
+                std::sin(elapsed * 8.0f + static_cast<float>(index)) * 8.0f;
+            const float y = origin.y + drawSize.y * (0.05f + fallRate * 0.64f);
+            const float width = 3.0f + PseudoRandom01(index, 6.2f) * 4.0f;
+            const float height = 6.0f + PseudoRandom01(index, 9.6f) * 7.0f;
+            drawList->AddRectFilled(
+                ImVec2(x - width, y - height),
+                ImVec2(x + width, y + height),
+                rainbowColor(seedX + elapsed * 0.24f, static_cast<int>(bannerAlpha * 205.0f)),
+                1.5f);
+        }
+
+        const ImVec2 plateMin(
+            bannerPosition.x - 30.0f,
+            bannerPosition.y - 8.0f);
+        const ImVec2 plateMax(
+            bannerPosition.x + textSize.x + 30.0f,
+            bannerPosition.y + fontSize + 26.0f);
+        drawList->AddRectFilledMultiColor(
+            plateMin,
+            plateMax,
+            IM_COL32(5, 7, 18, static_cast<int>(bannerAlpha * 62.0f)),
+            IM_COL32(15, 5, 22, static_cast<int>(bannerAlpha * 112.0f)),
+            IM_COL32(5, 12, 24, static_cast<int>(bannerAlpha * 45.0f)),
+            IM_COL32(12, 5, 22, static_cast<int>(bannerAlpha * 96.0f)));
+        drawList->AddText(
+            ImGui::GetFont(),
+            fontSize,
+            ImVec2(bannerPosition.x + 3.0f, bannerPosition.y + 3.0f),
+            IM_COL32(0, 0, 0, static_cast<int>(210.0f * bannerAlpha)),
+            banner);
+        float glyphX = bannerPosition.x;
+        for (int index = 0; banner[index] != '\0'; ++index) {
+            const char glyph[] = { banner[index], '\0' };
+            const ImVec2 glyphSize =
+                ImGui::GetFont()->CalcTextSizeA(fontSize, 100000.0f, 0.0f, glyph);
+            if (banner[index] != ' ') {
+                drawList->AddText(
+                    ImGui::GetFont(),
+                    fontSize,
+                    ImVec2(glyphX, bannerPosition.y),
+                    rainbowColor(
+                        static_cast<float>(index) * 0.105f,
+                        static_cast<int>(255.0f * bannerAlpha)),
+                    glyph);
+            }
+            glyphX += glyphSize.x;
+        }
+
+        const char* jackpotText = "RAINBOW JACKPOT // SCORE x3";
+        const float jackpotFontSize = 15.0f + pulse * 2.0f;
+        const ImVec2 jackpotSize = ImGui::GetFont()->CalcTextSizeA(
+            jackpotFontSize,
+            100000.0f,
+            0.0f,
+            jackpotText);
+        const ImVec2 jackpotPosition(
+            burstCenter.x - jackpotSize.x * 0.5f,
+            bannerPosition.y + fontSize + 2.0f);
+        drawList->AddText(
+            ImGui::GetFont(),
+            jackpotFontSize,
+            ImVec2(jackpotPosition.x + 2.0f, jackpotPosition.y + 2.0f),
+            IM_COL32(0, 0, 0, static_cast<int>(220.0f * bannerAlpha)),
+            jackpotText);
+        drawList->AddText(
+            ImGui::GetFont(),
+            jackpotFontSize,
+            jackpotPosition,
+            IM_COL32(255, 245, 182, static_cast<int>(245.0f * bannerAlpha)),
+            jackpotText);
     }
 }
 
@@ -5843,6 +7052,10 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     isBossHit ? 1.85f : (isChargedHit ? 1.42f : 1.20f));
                 bullet->RegisterHit();
                 const bool isDestroyed = enemy->Damage(damage);
+                AddFeverGauge(
+                    isDestroyed ?
+                        (isBossHit ? 25 : (isChargedHit ? 16 : 13)) :
+                        (isChargedHit ? 4 : 2));
                 TriggerHitConfirm(
                     visibleImpactPosition,
                     isChargedHit,
@@ -5863,7 +7076,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     SpawnRewardHearts(
                         enemyAimPosition,
                         isBossHit ? 14 : (isChargedHit ? 6 : 4));
-                    score_ += isBossHit ? 1500 : 100;
+                    AddScore(isBossHit ? 1500 : 100);
                     ++defeatedEnemyCount_;
                     ++defeatedEnemyCountInWave_;
                     if (isBossHit) {
@@ -5925,8 +7138,15 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
                 continue;
             }
             const Math::Vector3 incomingVelocity = bullet->GetVelocity();
+            const int incomingDamage = bullet->GetDamage();
             bullet->Kill();
-            player_->Damage(8);
+            player_->Damage(
+                feverTimer_ > 0 ?
+                    (std::max)(1, (incomingDamage + 1) / 2) :
+                    incomingDamage);
+            if (feverTimer_ <= 0) {
+                feverGauge_ = (std::max)(0, feverGauge_ - 20);
+            }
             AddPlayerDamageEffect(player_->GetTranslate());
             TriggerPlayerDamageFeedback(
                 player_->GetTranslate(),
@@ -5984,6 +7204,14 @@ void GameRuntime::UpdateGameCamera()
     const float speedPulse =
         0.5f + 0.5f * std::sin(railDistance_ * 0.021f + 0.80f);
     const float railSpeedRate = std::clamp((railSpeed_ - 0.13f) / 0.10f, 0.0f, 1.0f);
+    const float feverSpeedRate = feverSpeedEffectRate_;
+    const float feverActivationElapsedFrames =
+        static_cast<float>(kFeverActivationFlashFrames - feverActivationFlashTimer_);
+    const float feverAccelerationKickPhase =
+        std::clamp(feverActivationElapsedFrames / 28.0f, 0.0f, 1.0f);
+    const float feverAccelerationKick =
+        feverActivationFlashTimer_ > 0 ?
+        std::sin(feverAccelerationKickPhase * std::numbers::pi_v<float>) : 0.0f;
     const bool isPlayerDodging = player_->IsDodging();
     const float justDodgeCameraRate =
         justDodgeFlashTimer_ > 0 ?
@@ -6032,6 +7260,12 @@ void GameRuntime::UpdateGameCamera()
         1.0f);
     const float shakeX = std::sin(cameraTimer_ * 1.9f) * cameraShakePower_ * shakeRate;
     const float shakeY = std::cos(cameraTimer_ * 2.3f) * cameraShakePower_ * shakeRate;
+    const float feverWindBuffetX = feverSpeedRate * (
+        std::sin(cameraTimer_ * 0.21f) * 0.040f +
+        std::sin(cameraTimer_ * 0.53f + 1.20f) * 0.016f);
+    const float feverWindBuffetY = feverSpeedRate * (
+        std::sin(cameraTimer_ * 0.27f + 0.70f) * 0.024f +
+        std::sin(cameraTimer_ * 0.61f) * 0.010f);
     const float resultZoom =
         isGameClear_ ? 0.9f :
         isGameOver_ ? -0.8f :
@@ -6045,6 +7279,7 @@ void GameRuntime::UpdateGameCamera()
             std::sin(cameraTimer_ * 3.7f) * justDodgeChromaticShift * 0.085f +
             railWideCurve * 0.22f +
             railDrift * 0.04f +
+            feverWindBuffetX +
             shakeX,
         2.65f +
             playerTranslate.y * (0.04f + justDodgeWhip * kJustDodgeCameraPlayerFollowY) +
@@ -6054,12 +7289,16 @@ void GameRuntime::UpdateGameCamera()
             std::sin(railDistance_ * 0.017f + 0.35f) * 0.16f +
             justDodgeImpulse * 0.24f +
             justDodgeWhip * (0.08f - kJustDodgeCameraLowAngle) +
+            feverSpeedRate * -0.12f +
             bob +
+            feverWindBuffetY +
             shakeY,
             railDistance_ -
             (kGameplayCameraBaseDistance +
                 speedPulse * 0.55f +
                 railSpeedRate * 0.46f +
+                feverSpeedRate * (1.15f + speedPulse * 0.25f) +
+                feverAccelerationKick * 0.78f +
                 inputSpeed * 0.22f +
             std::abs(turnRate) * 0.18f) +
             resultZoom +
@@ -6071,7 +7310,9 @@ void GameRuntime::UpdateGameCamera()
     const float cameraTranslateRate =
         0.065f +
         justDodgeCameraRate * 0.105f +
-        playerImpactCameraRate * 0.020f;
+        playerImpactCameraRate * 0.020f +
+        feverSpeedRate * 0.035f +
+        feverAccelerationKick * 0.025f;
     cameraTranslate_ = Lerp(cameraTranslate_, targetTranslate, cameraTranslateRate);
 
     const Math::Vector3 targetRotate = {
@@ -6080,6 +7321,7 @@ void GameRuntime::UpdateGameCamera()
             railLift * 0.005f +
             speedPulse * 0.004f +
             bob * 0.006f +
+            feverWindBuffetY * 0.012f +
             shakeY * 0.008f,
         -playerTranslate.x * 0.0045f +
             railWideCurve * 0.018f +
@@ -6090,6 +7332,7 @@ void GameRuntime::UpdateGameCamera()
             turnRate * 0.024f +
             playerEdgeRoll +
             playerImpactCameraRate * 0.010f +
+            feverWindBuffetX * 0.020f +
             shakeX * 0.006f,
     };
 
@@ -6103,13 +7346,19 @@ void GameRuntime::UpdateGameCamera()
         playerImpactCameraRate * 0.030f -
         justDodgeWhip * kJustDodgeCameraFovTighten -
         justDodgeImpulse * 0.026f +
+        feverSpeedRate *
+            (0.115f + std::sin(cameraTimer_ * 0.11f) * 0.012f) +
+        feverAccelerationKick * 0.060f +
         stageCameraFovBoost_ +
         (isGameClear_ ? -0.035f : 0.0f) +
         (isGameOver_ ? 0.025f : 0.0f) +
         cameraShakePower_ * shakeRate * 0.04f;
 
     cameraRotate_ = Lerp(cameraRotate_, targetRotate, 0.075f + justDodgeCameraRate * 0.082f);
-    cameraFovY_ = Lerp(cameraFovY_, targetFov, 0.060f + justDodgeCameraRate * 0.080f);
+    cameraFovY_ = Lerp(
+        cameraFovY_,
+        targetFov,
+        0.060f + justDodgeCameraRate * 0.080f + feverSpeedRate * 0.040f);
 
     camera_->SetTranslate(cameraTranslate_);
     camera_->SetRotate(cameraRotate_);

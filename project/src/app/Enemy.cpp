@@ -8,7 +8,7 @@
 namespace {
 
 constexpr float kPi = 3.1415926535f;
-constexpr float kStandardEnemyActionTimeScale = 0.82f;
+constexpr float kStandardEnemyActionTimeScale = 0.66f;
 
 float Clamp01(float value)
 {
@@ -155,6 +155,31 @@ void Enemy::Initialize(
         verticalAmplitude_ = 0.45f;
         collisionRadius_ = 1.55f;
         break;
+    case Behavior::Sniper:
+        baseScale_ = { 0.54f, 0.54f, 0.54f };
+        baseColor_ = { 1.0f, 0.48f, 0.62f, 1.0f };
+        maxHp_ = 6;
+        horizontalAmplitude_ = 0.65f;
+        verticalAmplitude_ = 0.28f;
+        collisionRadius_ = 1.55f;
+        break;
+    case Behavior::Shield:
+        baseScale_ = { 0.70f, 0.70f, 0.70f };
+        baseColor_ = { 0.48f, 0.88f, 1.0f, 1.0f };
+        maxHp_ = 10;
+        shieldMaxHp_ = 3;
+        horizontalAmplitude_ = 1.1f;
+        verticalAmplitude_ = 0.32f;
+        collisionRadius_ = 1.90f;
+        break;
+    case Behavior::Support:
+        baseScale_ = { 0.56f, 0.56f, 0.56f };
+        baseColor_ = { 0.56f, 1.0f, 0.52f, 1.0f };
+        maxHp_ = 7;
+        horizontalAmplitude_ = 0.72f;
+        verticalAmplitude_ = 0.34f;
+        collisionRadius_ = 1.60f;
+        break;
     case Behavior::Formation:
     default:
         baseScale_ = { 0.42f, 0.42f, 0.42f };
@@ -174,6 +199,7 @@ void Enemy::Initialize(
     baseScale_.z *= safeScaleMultiplier;
     collisionRadius_ *= safeScaleMultiplier;
     hp_ = maxHp_;
+    shieldHp_ = shieldMaxHp_;
 
     const ModelAimBounds aimBounds = CalculateModelAimBounds(model);
     if (aimBounds.isValid) {
@@ -298,8 +324,8 @@ void Enemy::Update(float railDistance, float timeScale)
         translate_.z =
             railDistance +
             Lerp(70.0f, laneZ, entryRate);
-        translate_.x += -side * exitRunRate * 18.0f;
-        translate_.y += exitRunRate * 5.0f;
+        translate_.x += -side * exitRunRate * 64.0f;
+        translate_.y += exitRunRate * 34.0f;
         translate_.z += exitRunRate * 18.0f;
         visualScaleTarget =
             Lerp(0.42f, 1.0f, entryRate) +
@@ -308,8 +334,8 @@ void Enemy::Update(float railDistance, float timeScale)
         objectRotate.y =
             kPi +
             side * Lerp(0.35f, -0.25f, passRate) -
-            side * exitRunRate * 0.55f;
-        objectRotate.z = -side * (0.18f + curve * 0.40f + exitRunRate * 0.32f);
+            side * exitRunRate * 0.78f;
+        objectRotate.z = -side * (0.18f + curve * 0.40f + exitRunRate * 0.56f);
         if (exitRunRate >= 1.0f) {
             Escape();
             return;
@@ -343,8 +369,8 @@ void Enemy::Update(float railDistance, float timeScale)
             Lerp(68.0f, 28.0f, attackRate) +
             std::cos(moveTimer_ * 0.030f + phase_) * 1.3f +
             exitRate * 14.0f;
-        translate_.x += exitSide * exitRunRate * 20.0f;
-        translate_.y += exitRunRate * 6.2f;
+        translate_.x += exitSide * exitRunRate * 56.0f;
+        translate_.y += exitRunRate * 30.0f;
         translate_.z += exitRunRate * 18.0f;
         visualScaleTarget =
             Lerp(0.44f, 1.0f, attackRate) +
@@ -353,7 +379,7 @@ void Enemy::Update(float railDistance, float timeScale)
         objectRotate.y = kPi - translate_.x * 0.030f;
         objectRotate.z =
             std::sin(moveTimer_ * 0.032f + phase_) * 0.18f -
-            exitSide * exitRate * 0.35f;
+            exitSide * (exitRate * 0.35f + exitRunRate * 0.55f);
         if (exitRunRate >= 1.0f) {
             Escape();
             return;
@@ -379,13 +405,13 @@ void Enemy::Update(float railDistance, float timeScale)
             weave -
             side * attackArc * 2.9f -
             side * exitRate * 11.0f -
-            side * exitRunRate * 20.0f;
+            side * exitRunRate * 56.0f;
         translate_.y =
             Lerp(baseTranslate_.y + 6.2f, baseTranslate_.y, entryRate) -
             attackArc * 1.55f +
             std::cos(moveTimer_ * 0.044f + phase_) * 0.36f +
             exitRate * 4.4f +
-            exitRunRate * 6.4f;
+            exitRunRate * 30.0f;
         translate_.z =
             railDistance +
             Lerp(78.0f, 32.0f, entryRate) -
@@ -405,7 +431,7 @@ void Enemy::Update(float railDistance, float timeScale)
             side * Lerp(0.42f, -0.24f, attackRate) -
             side * exitRate * 0.44f;
         objectRotate.z =
-            -side * (0.18f + attackArc * 0.46f + exitRunRate * 0.34f);
+            -side * (0.18f + attackArc * 0.46f + exitRunRate * 0.56f);
         if (exitRunRate >= 1.0f) {
             Escape();
             return;
@@ -422,12 +448,12 @@ void Enemy::Update(float railDistance, float timeScale)
         translate_.x =
             Lerp(side * 13.5f, side * 4.25f, entryRate) -
             side * crossRate * 13.8f -
-            side * exitRate * 8.5f;
+            side * exitRate * 60.0f;
         translate_.y =
             Lerp(baseTranslate_.y + 3.8f, baseTranslate_.y, entryRate) +
             crossArc * 1.35f +
             std::sin(moveTimer_ * 0.070f + phase_) * 0.22f +
-            exitRate * 4.8f;
+            exitRate * 34.0f;
         translate_.z =
             railDistance +
             Lerp(72.0f, 32.0f, entryRate) -
@@ -440,10 +466,115 @@ void Enemy::Update(float railDistance, float timeScale)
         objectRotate.x = -crossArc * 0.12f;
         objectRotate.y =
             kPi - side * Lerp(0.34f, 0.62f, crossRate) -
-            side * exitRate * 0.36f;
+            side * exitRate * 0.68f;
         objectRotate.z =
-            -side * (0.24f + crossArc * 0.44f + exitRate * 0.28f);
+            -side * (0.24f + crossArc * 0.44f + exitRate * 0.52f);
         if (exitRate >= 1.0f) {
+            Escape();
+            return;
+        }
+        break;
+    }
+    case Behavior::Sniper: {
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 72.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 304) / 86.0f);
+        const float exitRunRate = SmoothStep(static_cast<float>(age_ - 390) / 72.0f);
+        const float exitSide = SignNonZero(baseTranslate_.x);
+        translate_.x =
+            Lerp(baseTranslate_.x * 1.9f, baseTranslate_.x, entryRate) +
+            std::sin(moveTimer_ * 0.022f + phase_) * 0.62f +
+            exitSide * exitRate * 8.0f +
+            exitSide * exitRunRate * 58.0f;
+        translate_.y =
+            Lerp(baseTranslate_.y + 4.6f, baseTranslate_.y + 1.15f, entryRate) +
+            std::cos(moveTimer_ * 0.026f + phase_) * 0.30f +
+            exitRate * 5.0f +
+            exitRunRate * 30.0f;
+        translate_.z =
+            railDistance +
+            Lerp(82.0f, 42.0f, entryRate) +
+            std::sin(moveTimer_ * 0.018f + phase_) * 1.1f +
+            exitRunRate * 18.0f;
+        visualScaleTarget =
+            Lerp(0.40f, 1.0f, entryRate) +
+            std::sin(entryRate * kPi) * 0.05f;
+        colorAlphaRate = Lerp(0.20f, 1.0f, entryRate);
+        objectRotate.y =
+            kPi - translate_.x * 0.016f - exitSide * exitRunRate * 0.72f;
+        objectRotate.z =
+            std::sin(moveTimer_ * 0.020f + phase_) * 0.08f -
+            exitSide * exitRunRate * 0.58f;
+        if (exitRunRate >= 1.0f) {
+            Escape();
+            return;
+        }
+        break;
+    }
+    case Behavior::Shield: {
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 82.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 338) / 88.0f);
+        const float exitRunRate = SmoothStep(static_cast<float>(age_ - 426) / 72.0f);
+        const float exitSide = SignNonZero(baseTranslate_.x);
+        translate_.x =
+            Lerp(baseTranslate_.x * 0.22f, baseTranslate_.x, entryRate) +
+            std::sin(moveTimer_ * 0.026f + phase_) * 1.10f +
+            exitSide * exitRate * 9.0f +
+            exitSide * exitRunRate * 58.0f;
+        translate_.y =
+            Lerp(baseTranslate_.y + 3.8f, baseTranslate_.y, entryRate) +
+            std::cos(moveTimer_ * 0.024f + phase_) * 0.34f +
+            exitRate * 5.0f +
+            exitRunRate * 30.0f;
+        translate_.z =
+            railDistance +
+            Lerp(84.0f, 34.0f, entryRate) +
+            std::sin(moveTimer_ * 0.016f + phase_) * 1.2f +
+            exitRunRate * 18.0f;
+        visualScaleTarget =
+            Lerp(0.36f, 1.0f, entryRate) +
+            std::sin(entryRate * kPi) * 0.05f;
+        colorAlphaRate = Lerp(0.18f, 1.0f, entryRate);
+        objectRotate.y =
+            kPi - translate_.x * 0.014f - exitSide * exitRunRate * 0.68f;
+        objectRotate.z =
+            std::sin(moveTimer_ * 0.021f + phase_) * 0.07f -
+            exitSide * exitRunRate * 0.54f;
+        if (exitRunRate >= 1.0f) {
+            Escape();
+            return;
+        }
+        break;
+    }
+    case Behavior::Support: {
+        const float entryRate = EaseOutCubic(static_cast<float>(age_) / 76.0f);
+        const float exitRate = SmoothStep(static_cast<float>(age_ - 324) / 84.0f);
+        const float exitRunRate = SmoothStep(static_cast<float>(age_ - 408) / 72.0f);
+        const float exitSide = SignNonZero(baseTranslate_.x);
+        translate_.x =
+            Lerp(baseTranslate_.x * 0.18f, baseTranslate_.x, entryRate) +
+            std::sin(moveTimer_ * 0.024f + phase_) * 0.72f +
+            exitSide * exitRate * 8.0f +
+            exitSide * exitRunRate * 56.0f;
+        translate_.y =
+            Lerp(baseTranslate_.y + 4.2f, baseTranslate_.y + 1.8f, entryRate) +
+            std::cos(moveTimer_ * 0.028f + phase_) * 0.34f +
+            exitRate * 5.0f +
+            exitRunRate * 30.0f;
+        translate_.z =
+            railDistance +
+            Lerp(82.0f, 38.0f, entryRate) +
+            std::sin(moveTimer_ * 0.017f + phase_) * 1.0f +
+            exitRunRate * 18.0f;
+        visualScaleTarget =
+            Lerp(0.38f, 1.0f, entryRate) +
+            std::sin(moveTimer_ * 0.11f + phase_) * 0.035f;
+        colorAlphaRate = Lerp(0.20f, 1.0f, entryRate);
+        objectRotate.y =
+            kPi - translate_.x * 0.014f - exitSide * exitRunRate * 0.64f;
+        objectRotate.z =
+            std::sin(moveTimer_ * 0.026f + phase_) * 0.10f -
+            exitSide * exitRunRate * 0.52f;
+        if (exitRunRate >= 1.0f) {
             Escape();
             return;
         }
@@ -476,8 +607,8 @@ void Enemy::Update(float railDistance, float timeScale)
             Lerp(70.0f, 30.0f, entryRate) -
             holdRate * 0.8f +
             std::sin(moveTimer_ * 0.022f + phase_) * 1.5f;
-        translate_.x += exitSide * exitRunRate * 20.0f;
-        translate_.y += exitRunRate * 5.8f;
+        translate_.x += exitSide * exitRunRate * 56.0f;
+        translate_.y += exitRunRate * 30.0f;
         translate_.z += exitRunRate * 16.0f;
         visualScaleTarget =
             Lerp(0.42f, 1.0f, entryRate) +
@@ -487,7 +618,7 @@ void Enemy::Update(float railDistance, float timeScale)
         objectRotate.z =
             -exitSide * std::sin(entryRate * kPi) * 0.22f +
             std::sin(moveTimer_ * 0.025f + phase_) * 0.10f -
-            exitSide * exitRunRate * 0.38f;
+            exitSide * exitRunRate * 0.56f;
         if (exitRunRate >= 1.0f) {
             Escape();
             return;
@@ -512,6 +643,29 @@ void Enemy::Update(float railDistance, float timeScale)
     visualScaleRate_ = std::clamp(visualScaleTarget, 0.34f, 1.12f);
     Math::Vector4 color = baseColor_;
     color.w *= std::clamp(colorAlphaRate, 0.18f, 1.0f);
+    if (behavior_ == Behavior::Sniper && 58 <= age_ && age_ <= 304) {
+        const float sniperPulse =
+            0.5f + 0.5f * std::sin(moveTimer_ * 0.32f);
+        color.x = Lerp(color.x, 1.65f, 0.16f + sniperPulse * 0.16f);
+        color.y = Lerp(color.y, 0.16f, 0.18f + sniperPulse * 0.12f);
+        color.z = Lerp(color.z, 0.36f, 0.12f + sniperPulse * 0.10f);
+    }
+    if (behavior_ == Behavior::Shield && shieldHp_ > 0) {
+        const float shieldPulse =
+            0.5f + 0.5f * std::sin(moveTimer_ * 0.18f + phase_);
+        color.x = Lerp(color.x, 0.34f, 0.28f + shieldPulse * 0.10f);
+        color.y = Lerp(color.y, 1.16f, 0.28f + shieldPulse * 0.12f);
+        color.z = Lerp(color.z, 1.72f, 0.34f + shieldPulse * 0.14f);
+        visualScaleTarget += shieldPulse * 0.025f;
+    }
+    if (behavior_ == Behavior::Support) {
+        const float supportPulse =
+            0.5f + 0.5f * std::sin(moveTimer_ * 0.20f + phase_);
+        color.x = Lerp(color.x, 0.76f, 0.18f + supportPulse * 0.10f);
+        color.y = Lerp(color.y, 1.58f, 0.30f + supportPulse * 0.14f);
+        color.z = Lerp(color.z, 0.38f, 0.16f + supportPulse * 0.08f);
+        visualScaleTarget += supportPulse * 0.035f;
+    }
     if (behavior_ == Behavior::Crossfire && 62 <= age_ && age_ < 94) {
         const float telegraphPulse =
             0.24f + 0.18f * (std::sin(moveTimer_ * 0.42f) * 0.5f + 0.5f);
@@ -575,13 +729,19 @@ bool Enemy::Damage(int damage)
         return false;
     }
 
-    const int appliedDamage = (std::max)(damage, 0);
+    const int requestedDamage = (std::max)(damage, 0);
+    int appliedDamage = requestedDamage;
+    if (behavior_ == Behavior::Shield && shieldHp_ > 0 && appliedDamage > 0) {
+        const int absorbedDamage = (std::min)(shieldHp_, appliedDamage);
+        shieldHp_ -= absorbedDamage;
+        appliedDamage -= absorbedDamage;
+    }
     hp_ = (std::max)(0, hp_ - appliedDamage);
     hitFlashDuration_ = behavior_ == Behavior::Boss ? 14 :
-        (appliedDamage >= 3 ? 12 : 10);
+        (requestedDamage >= 3 ? 12 : 10);
     hitFlashTimer_ = hitFlashDuration_;
     hitFlashStrength_ = std::clamp(
-        0.84f + static_cast<float>(appliedDamage) * 0.10f,
+        0.84f + static_cast<float>(requestedDamage) * 0.10f,
         0.90f,
         behavior_ == Behavior::Boss ? 1.18f : 1.28f);
     if (hp_ <= 0) {
@@ -626,6 +786,12 @@ bool Enemy::CanShoot() const
         return 58 <= age_ && age_ <= 218;
     case Behavior::Crossfire:
         return 82 <= age_ && age_ <= 182;
+    case Behavior::Sniper:
+        return 72 <= age_ && age_ <= 304;
+    case Behavior::Shield:
+        return 88 <= age_ && age_ <= 318;
+    case Behavior::Support:
+        return false;
     case Behavior::Swoop:
         return 46 <= age_ && age_ <= 160;
     case Behavior::Formation:

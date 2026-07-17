@@ -30,7 +30,8 @@ public:
         float trailOffset = 0.9f,
         Model* sparkleModel = nullptr,
         const Math::Vector4& sparkleColor = { 1.0f, 0.95f, 0.55f, 0.45f },
-        const Math::Vector3& sparkleScale = { 0.12f, 0.12f, 1.0f });
+        const Math::Vector3& sparkleScale = { 0.12f, 0.12f, 1.0f },
+        int damage = 8);
     void Update(float timeScale = 1.0f);
     void Draw();
     void DrawGlow(const Math::Vector3& cameraRotate);
@@ -45,6 +46,7 @@ public:
     const Math::Vector3& GetTranslate() const { return translate_; }
     const Math::Vector3& GetVelocity() const { return velocity_; }
     float GetRadius() const { return collisionRadius_; }
+    int GetDamage() const { return damage_; }
 
 private:
     std::unique_ptr<Object3d> object_;
@@ -71,6 +73,7 @@ private:
     int lifeTimer_ = 180;
     int initialLifeTimer_ = 180;
     float lifeTimerFloat_ = 180.0f;
+    int damage_ = 8;
     int remainingHits_ = 1;
     float homingStrength_ = 0.0f;
     bool homingEnabled_ = false;

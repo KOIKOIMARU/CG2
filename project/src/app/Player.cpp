@@ -88,6 +88,7 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     object_->SetSpecularColor({ 0.66f, 0.78f, 0.88f });
     object_->SetRoughness(0.34f);
     object_->SetMetallic(0.28f);
+
     modelLocalCenterOffset_ = CalculateModelLocalCenterOffset(model);
     UpdateObjectTransform();
 }

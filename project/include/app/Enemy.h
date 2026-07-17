@@ -16,6 +16,9 @@ public:
         StrafeShooter,
         DiveBomber,
         Crossfire,
+        Sniper,
+        Shield,
+        Support,
         Boss
     };
 
@@ -54,6 +57,12 @@ public:
     bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
     bool IsBoss() const { return behavior_ == Behavior::Boss; }
     bool IsCrossfire() const { return behavior_ == Behavior::Crossfire; }
+    bool IsSniper() const { return behavior_ == Behavior::Sniper; }
+    bool IsShield() const { return behavior_ == Behavior::Shield; }
+    bool IsSupport() const { return behavior_ == Behavior::Support; }
+    bool HasShield() const { return shieldHp_ > 0; }
+    int GetShieldHp() const { return shieldHp_; }
+    int GetShieldMaxHp() const { return shieldMaxHp_; }
     bool IsTargetable() const;
     int GetHp() const { return hp_; }
     int GetMaxHp() const { return maxHp_; }
@@ -75,6 +84,8 @@ private:
     float ageTimer_ = 0.0f;
     int hp_ = 1;
     int maxHp_ = 1;
+    int shieldHp_ = 0;
+    int shieldMaxHp_ = 0;
     int hitFlashTimer_ = 0;
     int hitFlashDuration_ = 1;
     float hitFlashStrength_ = 1.0f;

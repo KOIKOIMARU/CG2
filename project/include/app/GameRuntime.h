@@ -187,10 +187,19 @@ private:
         float spawnLeadDistance = 26.0f;
     };
 
+    enum class EnemyBulletStyle {
+        Standard,
+        Crossfire,
+        Sniper,
+        ShieldOrb,
+        BossCannon
+    };
+
     void FirePlayerBullet();
     void FireEnemyBullet(
         const Math::Vector3& position,
-        bool isDangerous = false);
+        EnemyBulletStyle style = EnemyBulletStyle::Standard,
+        Math::Vector2 aimOffset = {});
     void SpawnEnemy();
     void InitializeRewardHearts();
     void SpawnRewardHearts(const Math::Vector3& worldPosition, int count);
@@ -280,6 +289,10 @@ private:
     bool HandleRuntimeShortcuts();
     void UpdateRailProgress();
     void UpdatePlayerAndCamera();
+    void UpdateFever();
+    void ActivateFever();
+    void AddFeverGauge(int amount);
+    void AddScore(int baseScore);
     void UpdatePlayerShooting();
     void UpdateEnemyActions();
     void UpdateWorldEntities();
@@ -298,14 +311,20 @@ private:
     void UpdateAndDrawPlayerExhaustParticles();
     void DrawPlayerFlightAura();
     void DrawEditorOverlayGuiRich();
+    void DrawFeverBackdrop();
+    void DrawEnemyTypeTelegraphs();
     void DrawHud();
     void DrawBossHud();
     void DrawStageCueHud();
+    void DrawFeverHud();
     void DrawLockOnHud();
     void DrawHitConfirmHud();
     void DrawPlayerDamageHud();
     void DrawResultOverlay();
     void DrawPerformanceOverlay();
+#ifdef ENABLE_DEBUG_GUI
+    void DebugJumpToStagePhase(int phaseIndex);
+#endif
     void DrawBulletEffectObjects();
     void DrawHitEffectObjects();
     void GetEffectiveHudViewportRect(Math::Vector2& min, Math::Vector2& size) const;
@@ -410,6 +429,10 @@ private:
     int resultTransitionTimer_ = -1;
     int chargeTimer_ = 0;
     int chargeFlashTimer_ = 0;
+    int feverGauge_ = 0;
+    int feverTimer_ = 0;
+    int feverActivationFlashTimer_ = 0;
+    float feverSpeedEffectRate_ = 0.0f;
     int playerDodgeAfterimageTimer_ = 0;
     int justDodgeFlashTimer_ = 0;
     int justDodgeSlowTimer_ = 0;
