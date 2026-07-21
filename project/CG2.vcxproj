@@ -164,6 +164,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\scene\SceneManager.cpp" />
     <ClCompile Include="src\engine\scene\BaseScene.cpp" />
     <ClCompile Include="src\engine\scene\GameScene.cpp" />
+    <ClCompile Include="src\engine\scene\BonusShowcaseScene.cpp" />
     <ClCompile Include="src\engine\scene\EditorScene.cpp" />
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp" />
     <ClCompile Include="src\engine\editor\EditorManager.cpp" />
@@ -416,6 +417,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\scene\AbstractSceneFactory.h" />
     <ClInclude Include="include\engine\scene\BaseScene.h" />
     <ClInclude Include="include\engine\scene\GameScene.h" />
+    <ClInclude Include="include\engine\scene\BonusShowcaseScene.h" />
     <ClInclude Include="include\engine\scene\EditorScene.h" />
     <ClInclude Include="include\engine\scene\SceneSerializer.h" />
     <ClInclude Include="include\engine\editor\EditorManager.h" />

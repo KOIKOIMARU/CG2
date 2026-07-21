@@ -19,4 +19,5 @@ private:
     std::vector<Sprite> sprites_;
     Math::Vector2 spritePos_{ 200.0f, 120.0f };
     bool startRequested_ = false;
+    bool bonusShowcaseRequested_ = false;
 };

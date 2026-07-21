@@ -7,6 +7,7 @@
 
 #include <dinput.h>
 #include <imgui.h>
+#include <cstdlib>
 
 TitleScene::TitleScene() = default;
 TitleScene::~TitleScene() = default;
@@ -14,10 +15,27 @@ TitleScene::~TitleScene() = default;
 void TitleScene::Initialize()
 {
     startRequested_ = false;
+    bonusShowcaseRequested_ = false;
+    char* startBonus = nullptr;
+    size_t startBonusLength = 0;
+    if (_dupenv_s(
+            &startBonus,
+            &startBonusLength,
+            "CG2_START_BONUS_SHOWCASE") == 0 &&
+        startBonus) {
+        bonusShowcaseRequested_ = startBonus[0] == '1';
+    }
+    std::free(startBonus);
 }
 
 void TitleScene::Update()
 {
+    if (bonusShowcaseRequested_ && sceneManager_) {
+        bonusShowcaseRequested_ = false;
+        sceneManager_->SetNextScene(SceneType::BonusShowcase);
+        return;
+    }
+
     const bool resourcesReady =
         GameScene::PreloadResourcesStep(dxCommon_, srvManager_);
     if (resourcesReady && sceneManager_ &&
@@ -30,6 +48,10 @@ void TitleScene::Update()
     if (input_ && input_->TriggerKey(DIK_RETURN)) {
         startRequested_ = true;
     }
+    if (input_ && input_->TriggerKey(DIK_F1) && sceneManager_) {
+        sceneManager_->SetNextScene(SceneType::BonusShowcase);
+        return;
+    }
     if (startRequested_ && gameReady && sceneManager_) {
         sceneManager_->SetNextScene(SceneType::Game);
     }
@@ -40,6 +62,7 @@ void TitleScene::Update()
     ImGui::TextUnformatted("3Dレールシューティング");
     ImGui::Separator();
     ImGui::TextUnformatted("Enter: ゲーム開始");
+    ImGui::TextUnformatted("F1: 加点要素ショーケース");
     ImGui::TextUnformatted("移動: WASD / 方向キー");
     ImGui::TextUnformatted("ショット: Space");
     ImGui::TextUnformatted("F2: タイトルへ戻る");

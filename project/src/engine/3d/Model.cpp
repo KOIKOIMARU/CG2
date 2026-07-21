@@ -653,7 +653,7 @@ void Model::Initialize(ModelCommon* modelCommon,
     const std::string assetFilename = requestedPath.filename().string();
     const std::string extension = requestedPath.extension().string();
 
-    if (extension == ".gltf" || extension == ".glb") {
+    if (extension == ".gltf" || extension == ".glb" || extension == ".obj") {
         modelData_ = LoadAssimpFile(assetDirectory, assetFilename);
     } else {
         modelData_ = LoadObjFile(assetDirectory, assetFilename);

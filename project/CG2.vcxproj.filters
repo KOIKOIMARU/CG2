@@ -246,6 +246,9 @@
     <ClCompile Include="src\engine\scene\GameScene.cpp">
       <Filter>src\engine\scene</Filter>
     </ClCompile>
+    <ClCompile Include="src\engine\scene\BonusShowcaseScene.cpp">
+      <Filter>src\engine\scene</Filter>
+    </ClCompile>
     <ClCompile Include="src\engine\scene\EditorScene.cpp">
       <Filter>src\engine\scene</Filter>
     </ClCompile>
@@ -519,6 +522,9 @@
       <Filter>include\app</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\GameScene.h">
+      <Filter>include\engine\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\scene\BonusShowcaseScene.h">
       <Filter>include\engine\scene</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\EditorScene.h">
