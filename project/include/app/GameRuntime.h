@@ -192,7 +192,8 @@ private:
         Crossfire,
         Sniper,
         ShieldOrb,
-        BossCannon
+        BossCannon,
+        BossCharge
     };
 
     void FirePlayerBullet();
@@ -242,12 +243,15 @@ private:
     void AddEnemyHitEffect(
         const Math::Vector3& worldPosition,
         float strength = 1.0f);
+    void AddFeverEnemyHitEffect(
+        const Math::Vector3& worldPosition,
+        float strength = 1.0f);
     void AddEnemyImpactEffect(
         const Math::Vector3& worldPosition,
         float strength = 1.0f);
-    void AddEnemyShotTelegraphEffect(
+    void AddFeverEnemyImpactEffect(
         const Math::Vector3& worldPosition,
-        bool isDangerous);
+        float strength = 1.0f);
     void AddEnemyMuzzleFlashEffect(const Math::Vector3& worldPosition);
     void AddMuzzleFlashEffect(
         const Math::Vector3& worldPosition,
@@ -295,6 +299,7 @@ private:
     void AddScore(int baseScore);
     void UpdatePlayerShooting();
     void UpdateEnemyActions();
+    void UpdateBossActions();
     void UpdateWorldEntities();
     void UpdateGameplayCollisions();
     void UpdateResultAndSceneObjects();
@@ -420,6 +425,15 @@ private:
     int bossWarningTimer_ = 0;
     int bossIntroTimer_ = 0;
     int bossDefeatFlashTimer_ = 0;
+    int bossPhaseTransitionTimer_ = 0;
+    int bossAttackCooldown_ = 0;
+    int bossAttackStepTimer_ = 0;
+    int bossAttackStep_ = -1;
+    int bossAttackPattern_ = 0;
+    int bossAttackSequence_ = 0;
+    int bossPhase_ = 1;
+    int bossCounterTimer_ = 0;
+    int bossCounterDuration_ = 1;
     int currentWaveIndex_ = 0;
     int spawnedEnemyCountInWave_ = 0;
     int defeatedEnemyCountInWave_ = 0;
@@ -506,7 +520,6 @@ private:
     bool hitConfirmCharged_ = false;
     bool hitConfirmBoss_ = false;
     bool hitConfirmDestroyed_ = false;
-    bool enemyVolleyTelegraphTriggered_ = false;
     bool stageTimelineWasBlocked_ = false;
     int stageEncounterBreatherTimer_ = 0;
     int postEffectMode_ = 12;

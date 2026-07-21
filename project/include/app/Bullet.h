@@ -39,10 +39,13 @@ public:
     bool IsDead() const { return isDead_; }
     void Kill() { isDead_ = true; }
     void RegisterHit();
+    bool TryRegisterHitTarget(const void* target);
     void EnableHoming(float strength);
     void SetHomingTarget(const Math::Vector3& target);
     void ClearHomingTarget() { hasHomingTarget_ = false; }
     bool CanHome() const { return homingEnabled_; }
+    void SetFeverShot(bool isFeverShot) { isFeverShot_ = isFeverShot; }
+    bool IsFeverShot() const { return isFeverShot_; }
     const Math::Vector3& GetTranslate() const { return translate_; }
     const Math::Vector3& GetVelocity() const { return velocity_; }
     float GetRadius() const { return collisionRadius_; }
@@ -75,9 +78,11 @@ private:
     float lifeTimerFloat_ = 180.0f;
     int damage_ = 8;
     int remainingHits_ = 1;
+    std::array<const void*, 4> hitTargets_{};
     float homingStrength_ = 0.0f;
     bool homingEnabled_ = false;
     bool hasHomingTarget_ = false;
     Math::Vector3 homingTarget_{};
+    bool isFeverShot_ = false;
     bool isDead_ = false;
 };

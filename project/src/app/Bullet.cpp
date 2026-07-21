@@ -136,6 +136,8 @@ void Bullet::Initialize(
     homingEnabled_ = false;
     hasHomingTarget_ = false;
     homingTarget_ = {};
+    hitTargets_.fill(nullptr);
+    isFeverShot_ = false;
     isDead_ = false;
     collisionRadius_ = collisionRadius;
     damage_ = (std::max)(damage, 0);
@@ -414,6 +416,25 @@ void Bullet::RegisterHit()
     if (remainingHits_ <= 0) {
         isDead_ = true;
     }
+}
+
+bool Bullet::TryRegisterHitTarget(const void* target)
+{
+    if (!target) {
+        return false;
+    }
+    for (const void* hitTarget : hitTargets_) {
+        if (hitTarget == target) {
+            return false;
+        }
+    }
+    for (const void*& hitTarget : hitTargets_) {
+        if (!hitTarget) {
+            hitTarget = target;
+            return true;
+        }
+    }
+    return false;
 }
 
 void Bullet::EnableHoming(float strength)
