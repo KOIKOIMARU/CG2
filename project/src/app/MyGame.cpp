@@ -79,7 +79,10 @@ void MyGame::Initialize() {
         input_.get()
     );
 
-    SceneManager::GetInstance()->SetNextScene(SceneType::Title);
+    SceneManager::GetInstance()->SetNextScene(
+        smokeTestOptions_.enabled ?
+            SceneType::Title :
+            SceneType::BonusShowcase);
 }
 
 void MyGame::Update() {

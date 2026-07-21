@@ -79,6 +79,18 @@ void BonusShowcaseScene::Initialize()
         1.0f,
         1.0f,
         "resources/human/white.png");
+    ModelManager::GetInstance()->CreateBox(
+        "bonus_weapon_box",
+        1.0f,
+        1.0f,
+        1.0f,
+        "resources/human/white.png");
+    ModelManager::GetInstance()->CreateSphere(
+        "bonus_hand_particle",
+        8,
+        12,
+        1.0f,
+        "resources/human/white.png");
     ModelManager::GetInstance()->LoadModel("simpleSkin/simpleSkin.gltf");
     ModelManager::GetInstance()->LoadModel("human/walk.gltf");
     ModelManager::GetInstance()->LoadModel("multiMesh.obj");
@@ -95,6 +107,49 @@ void BonusShowcaseScene::Initialize()
         "human/walk.gltf",
         { -2.25f, 0.0f, 0.0f },
         { 1.05f, 1.05f, 1.05f });
+
+    if (humanWalkObject_->HasSkeleton()) {
+        const Skeleton& skeleton = humanWalkObject_->GetSkeleton();
+        const auto rightHand = skeleton.jointMap.find("mixamorig:RightHand");
+        const auto rightForeArm =
+            skeleton.jointMap.find("mixamorig:RightForeArm");
+        const auto leftHand = skeleton.jointMap.find("mixamorig:LeftHand");
+        if (rightHand != skeleton.jointMap.end()) {
+            rightHandJointIndex_ = rightHand->second;
+        }
+        if (rightForeArm != skeleton.jointMap.end()) {
+            rightForeArmJointIndex_ = rightForeArm->second;
+        }
+        if (leftHand != skeleton.jointMap.end()) {
+            leftHandJointIndex_ = leftHand->second;
+        }
+    }
+
+    weaponBladeObject_ = CreateDisplayObject(
+        "bonus_weapon_box",
+        { 0.0f, -100.0f, 0.0f },
+        { 0.055f, 0.12f, 0.90f });
+    weaponBladeObject_->SetLightingMode(0);
+    weaponBladeObject_->SetEnvironmentCoefficient(0.0f);
+    weaponBladeObject_->SetColor({ 0.18f, 0.95f, 1.0f, 1.0f });
+
+    weaponGuardObject_ = CreateDisplayObject(
+        "bonus_weapon_box",
+        { 0.0f, -100.0f, 0.0f },
+        { 0.38f, 0.07f, 0.07f });
+    weaponGuardObject_->SetLightingMode(1);
+    weaponGuardObject_->SetEnvironmentCoefficient(0.22f);
+    weaponGuardObject_->SetColor({ 1.0f, 0.70f, 0.18f, 1.0f });
+
+    weaponGripObject_ = CreateDisplayObject(
+        "bonus_weapon_box",
+        { 0.0f, -100.0f, 0.0f },
+        { 0.09f, 0.09f, 0.28f });
+    weaponGripObject_->SetLightingMode(1);
+    weaponGripObject_->SetEnvironmentCoefficient(0.08f);
+    weaponGripObject_->SetColor({ 0.10f, 0.12f, 0.18f, 1.0f });
+
+    InitializeHandParticles();
 
     multiMeshObject_ = CreateDisplayObject(
         "multiMesh.obj",
@@ -116,6 +171,14 @@ void BonusShowcaseScene::Finalize()
 {
     jointDebugObjects_.clear();
     boneDebugObjects_.clear();
+    for (HandParticle& particle : handParticles_) {
+        particle.object.reset();
+        particle.active = false;
+    }
+    handEmitterCoreObject_.reset();
+    weaponGripObject_.reset();
+    weaponGuardObject_.reset();
+    weaponBladeObject_.reset();
     multiMaterialObject_.reset();
     multiMeshObject_.reset();
     humanWalkObject_.reset();
@@ -154,6 +217,8 @@ void BonusShowcaseScene::Update()
     humanWalkObject_->Update();
     multiMeshObject_->Update();
     multiMaterialObject_->Update();
+    UpdateHeldWeapon();
+    UpdateHandParticles(deltaTime);
     UpdateBoneDebug();
     DrawShowcaseHud();
 }
@@ -164,6 +229,15 @@ void BonusShowcaseScene::Draw()
     object3dCommon_->CommonDrawSetting();
     simpleSkinObject_->Draw();
     humanWalkObject_->Draw();
+    weaponGripObject_->Draw();
+    weaponGuardObject_->Draw();
+    weaponBladeObject_->Draw();
+    handEmitterCoreObject_->Draw();
+    for (HandParticle& particle : handParticles_) {
+        if (particle.active) {
+            particle.object->Draw();
+        }
+    }
     multiMeshObject_->Draw();
     multiMaterialObject_->Draw();
 
@@ -292,10 +366,210 @@ void BonusShowcaseScene::UpdateBoneDebug()
     }
 }
 
+bool BonusShowcaseScene::TryGetJointWorldPosition(
+    int32_t jointIndex,
+    Math::Vector3& position) const
+{
+    if (!humanWalkObject_ || !humanWalkObject_->HasSkeleton() ||
+        jointIndex < 0) {
+        return false;
+    }
+
+    const Skeleton& skeleton = humanWalkObject_->GetSkeleton();
+    if (static_cast<size_t>(jointIndex) >= skeleton.joints.size()) {
+        return false;
+    }
+
+    position = ExtractTranslation(Math::Multiply(
+        skeleton.joints[static_cast<size_t>(jointIndex)].skeletonSpaceMatrix,
+        humanWalkObject_->GetWorldMatrix()));
+    return true;
+}
+
+void BonusShowcaseScene::UpdateHeldWeapon()
+{
+    Math::Vector3 handPosition{};
+    Math::Vector3 foreArmPosition{};
+    if (!TryGetJointWorldPosition(rightHandJointIndex_, handPosition) ||
+        !TryGetJointWorldPosition(rightForeArmJointIndex_, foreArmPosition)) {
+        return;
+    }
+
+    const Math::Vector3 armDirection{
+        handPosition.x - foreArmPosition.x,
+        handPosition.y - foreArmPosition.y,
+        handPosition.z - foreArmPosition.z
+    };
+    const float armLength = std::sqrt(
+        armDirection.x * armDirection.x +
+        armDirection.y * armDirection.y +
+        armDirection.z * armDirection.z);
+    if (armLength <= 0.0001f) {
+        return;
+    }
+
+    const Math::Vector3 direction{
+        armDirection.x / armLength,
+        armDirection.y / armLength,
+        armDirection.z / armLength
+    };
+    const Math::Vector3 rotate = MakeBoneRotate(direction);
+    const auto pointAlongWeapon = [&](float distance) {
+        return Math::Vector3{
+            handPosition.x + direction.x * distance,
+            handPosition.y + direction.y * distance,
+            handPosition.z + direction.z * distance
+        };
+    };
+
+    weaponGripObject_->SetTranslate(pointAlongWeapon(0.08f));
+    weaponGripObject_->SetRotate(rotate);
+    weaponGripObject_->Update();
+
+    weaponGuardObject_->SetTranslate(pointAlongWeapon(0.24f));
+    weaponGuardObject_->SetRotate(rotate);
+    weaponGuardObject_->Update();
+
+    weaponBladeObject_->SetTranslate(pointAlongWeapon(0.72f));
+    weaponBladeObject_->SetRotate(rotate);
+    weaponBladeObject_->Update();
+}
+
+void BonusShowcaseScene::InitializeHandParticles()
+{
+    handParticleSerial_ = 0;
+    handParticleSpawnAccumulator_ = 0.0f;
+    handEmitterCoreObject_ = CreateDisplayObject(
+        "bonus_hand_particle",
+        { 0.0f, -100.0f, 0.0f },
+        { 0.065f, 0.065f, 0.065f });
+    handEmitterCoreObject_->SetLightingMode(0);
+    handEmitterCoreObject_->SetEnvironmentCoefficient(0.0f);
+    handEmitterCoreObject_->SetColor({ 0.26f, 0.92f, 1.0f, 1.0f });
+
+    for (HandParticle& particle : handParticles_) {
+        particle.object = CreateDisplayObject(
+            "bonus_hand_particle",
+            { 0.0f, -100.0f, 0.0f },
+            { 0.025f, 0.025f, 0.025f });
+        particle.object->SetLightingMode(0);
+        particle.object->SetEnvironmentCoefficient(0.0f);
+        particle.object->SetColor({ 0.20f, 0.92f, 1.0f, 1.0f });
+        particle.active = false;
+    }
+}
+
+void BonusShowcaseScene::UpdateHandParticles(float deltaTime)
+{
+    Math::Vector3 emitterPosition{};
+    if (!TryGetJointWorldPosition(leftHandJointIndex_, emitterPosition)) {
+        return;
+    }
+
+    const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
+    const float corePulse =
+        0.060f + 0.012f * std::sin(demonstrationTime_ * 8.0f);
+    handEmitterCoreObject_->SetTranslate(emitterPosition);
+    handEmitterCoreObject_->SetScale({ corePulse, corePulse, corePulse });
+    handEmitterCoreObject_->Update();
+
+    handParticleSpawnAccumulator_ += safeDeltaTime;
+    constexpr float kSpawnInterval = 0.03f;
+    while (handParticleSpawnAccumulator_ >= kSpawnInterval) {
+        handParticleSpawnAccumulator_ -= kSpawnInterval;
+        SpawnHandParticle(emitterPosition);
+    }
+
+    for (HandParticle& particle : handParticles_) {
+        if (!particle.active) {
+            continue;
+        }
+
+        particle.age += safeDeltaTime;
+        if (particle.age >= particle.lifetime) {
+            particle.active = false;
+            particle.object->SetTranslate({ 0.0f, -100.0f, 0.0f });
+            particle.object->Update();
+            continue;
+        }
+
+        Math::Vector3 position = particle.object->GetTranslate();
+        position.x += particle.velocity.x * safeDeltaTime;
+        position.y += particle.velocity.y * safeDeltaTime;
+        position.z += particle.velocity.z * safeDeltaTime;
+        particle.velocity.y += 0.16f * safeDeltaTime;
+
+        const float lifeRate = std::clamp(
+            particle.age / particle.lifetime,
+            0.0f,
+            1.0f);
+        const float pulse =
+            0.85f + 0.15f * std::sin(particle.age * 28.0f);
+        const float scale =
+            (0.058f * (1.0f - lifeRate) + 0.012f) * pulse;
+        particle.object->SetTranslate(position);
+        particle.object->SetScale({ scale, scale, scale });
+        particle.object->SetRotate({
+            demonstrationTime_ * 1.4f,
+            demonstrationTime_ * 1.8f,
+            0.0f
+        });
+        particle.object->Update();
+    }
+}
+
+void BonusShowcaseScene::SpawnHandParticle(
+    const Math::Vector3& emitterPosition)
+{
+    HandParticle* availableParticle = nullptr;
+    for (HandParticle& particle : handParticles_) {
+        if (!particle.active) {
+            availableParticle = &particle;
+            break;
+        }
+    }
+    if (!availableParticle) {
+        return;
+    }
+
+    const uint32_t serial = handParticleSerial_++;
+    const float phase = static_cast<float>(serial) * 2.39996323f;
+    const float variation = static_cast<float>(serial % 5) / 4.0f;
+    const float radius = 0.018f + variation * 0.018f;
+
+    availableParticle->active = true;
+    availableParticle->age = 0.0f;
+    availableParticle->lifetime = 0.78f + variation * 0.20f;
+    availableParticle->velocity = {
+        std::cos(phase) * (0.18f + variation * 0.10f),
+        0.20f + variation * 0.14f,
+        std::sin(phase) * (0.15f + variation * 0.09f)
+    };
+    availableParticle->object->SetTranslate({
+        emitterPosition.x + std::cos(phase) * radius,
+        emitterPosition.y + 0.02f,
+        emitterPosition.z + std::sin(phase) * radius
+    });
+    availableParticle->object->SetScale({ 0.060f, 0.060f, 0.060f });
+
+    switch (serial % 3) {
+    case 0:
+        availableParticle->object->SetColor({ 0.18f, 0.92f, 1.0f, 1.0f });
+        break;
+    case 1:
+        availableParticle->object->SetColor({ 0.72f, 0.36f, 1.0f, 1.0f });
+        break;
+    default:
+        availableParticle->object->SetColor({ 1.0f, 0.38f, 0.82f, 1.0f });
+        break;
+    }
+    availableParticle->object->Update();
+}
+
 void BonusShowcaseScene::DrawShowcaseHud()
 {
     ImGui::SetNextWindowPos(ImVec2(24.0f, 24.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(410.0f, 220.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(430.0f, 260.0f), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.90f);
     ImGui::Begin(
         "Bonus Feature Showcase",
@@ -303,13 +577,15 @@ void BonusShowcaseScene::DrawShowcaseHud()
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
     ImGui::TextColored(
         ImVec4(0.35f, 0.92f, 1.0f, 1.0f),
-        "F1 BONUS SHOWCASE / 50 POINTS");
+        "BONUS SHOWCASE / 70 POINTS");
     ImGui::Separator();
     ImGui::BulletText("Skinning model display (20)");
     ImGui::BulletText("Compute Shader skinning (10)");
     ImGui::BulletText("MultiMesh + MultiMaterial (5)");
     ImGui::BulletText("Animation interpolation: Lerp / Slerp (5)");
     ImGui::BulletText("Animated bone debug display (10)");
+    ImGui::BulletText("Weapon attached to animated hand joint (10)");
+    ImGui::BulletText("Hand particle: fixed CPU object pool (10)");
     ImGui::Separator();
     ImGui::Text("B: bone display %s", showBoneDebug_ ? "ON" : "OFF");
     ImGui::TextUnformatted("F2 / Esc: return to title");
@@ -325,5 +601,7 @@ void BonusShowcaseScene::DrawShowcaseHud()
             ImGuiWindowFlags_NoInputs);
     ImGui::TextUnformatted(
         "SKIN+COMPUTE    ANIM MODEL    BONE DEBUG    MULTI MESH    MULTI MATERIAL");
+    ImGui::TextUnformatted(
+        "HAND-JOINT WEAPON    LEFT-HAND PARTICLE POOL");
     ImGui::End();
 }
