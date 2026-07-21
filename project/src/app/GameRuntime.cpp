@@ -142,11 +142,41 @@ constexpr int kFeverScoreMultiplier = 3;
 constexpr int kFeverEncounterBreatherFrames = 18;
 constexpr float kFeverRailSpeedMultiplier = 2.15f;
 constexpr float kFeverRailAccelerationResponse = 0.15f;
+constexpr int kPostEffectModeCount = 17;
+constexpr int kGrayscalePostEffectMode = 1;
 int gSharedResourcePreloadStep = 0;
 bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
 float gSharedResourceLastStepMs = 0.0f;
 float gSharedResourceTotalMs = 0.0f;
+
+constexpr std::array<const char*, kPostEffectModeCount> kPostEffectModeNames = {
+    "COPY / NONE",
+    "GRAYSCALE",
+    "VIGNETTING",
+    "BOX FILTER 3x3",
+    "BOX FILTER 5x5",
+    "GAUSSIAN FILTER",
+    "LUMINANCE OUTLINE",
+    "DEPTH OUTLINE",
+    "RADIAL BLUR",
+    "DISSOLVE",
+    "RANDOM NOISE",
+    "VIGNETTE + SMOOTHING",
+    "GAME TONE / AUTO",
+    "GAME TONE / LOW HP",
+    "GAME TONE / CLEAR",
+    "GAME TONE / GAME OVER",
+    "MULTI-PASS BLOOM"
+};
+
+const char* GetPostEffectModeName(int mode)
+{
+    if (mode < 0 || mode >= kPostEffectModeCount) {
+        return "UNKNOWN";
+    }
+    return kPostEffectModeNames[mode];
+}
 
 Math::Vector3 RotateLocalOffset(
     const Math::Vector3& offset,
@@ -966,6 +996,22 @@ bool GameRuntime::HandleRuntimeShortcuts()
     }
     if (input_ && input_->TriggerKey(DIK_F5)) {
         showSkybox_ = !showSkybox_;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F6)) {
+        isPostEffectBypassEnabled_ = false;
+        postEffectMode_ =
+            (postEffectMode_ + kPostEffectModeCount - 1) % kPostEffectModeCount;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F7)) {
+        isPostEffectBypassEnabled_ = false;
+        postEffectMode_ = (postEffectMode_ + 1) % kPostEffectModeCount;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F8)) {
+        isPostEffectBypassEnabled_ = false;
+        postEffectMode_ = kGrayscalePostEffectMode;
         return true;
     }
     if (input_ && input_->TriggerKey(DIK_F2)) {
@@ -5139,7 +5185,8 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             ImGui::EndMenu();
         }
         ImGui::Separator();
-        ImGui::TextDisabled("F1 GUI表示切り替え / F2 タイトルへ戻る");
+        ImGui::TextDisabled(
+            "F1 GUI / F2 タイトル / F6-F7 エフェクト切替 / F8 Grayscale");
         ImGui::EndMainMenuBar();
     }
 
@@ -5651,6 +5698,8 @@ void GameRuntime::DrawEditorOverlayGuiRich()
     if (ImGui::Begin(kWindowConsole, nullptr, panelFlags)) {
         ImGui::TextUnformatted("F1: GUI表示切り替え");
         ImGui::TextUnformatted("F2: タイトルへ戻る");
+        ImGui::TextUnformatted("F6 / F7: ポストエフェクト切り替え");
+        ImGui::TextUnformatted("F8: Grayscaleへ戻す / F4: 有効・無効比較");
         ImGui::TextUnformatted("タブをドラッグするとレイアウトを並べ替えできます。");
         ImGui::Separator();
         ImGui::TextWrapped("%s", editorStatusMessage_.c_str());
@@ -6310,6 +6359,53 @@ void GameRuntime::DrawHud()
     DrawHitConfirmHud();
     DrawPlayerDamageHud();
     DrawFeverHud();
+    DrawPostEffectShowcaseOverlay();
+}
+
+void GameRuntime::DrawPostEffectShowcaseOverlay()
+{
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    if (hudSize.x < 540.0f || hudSize.y < 120.0f) {
+        return;
+    }
+
+    const int activeMode = GetPostEffectMode();
+    const char* effectName = GetPostEffectModeName(activeMode);
+    const char* controls = "F6 PREV   F7 NEXT   F8 GRAYSCALE   F4 BYPASS";
+    const float panelWidth = 430.0f;
+    const ImVec2 panelMin(
+        hudMin.x + (hudSize.x - panelWidth) * 0.5f,
+        hudMin.y + 16.0f);
+    const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 58.0f);
+    const ImU32 accentColor = isPostEffectBypassEnabled_
+        ? IM_COL32(255, 116, 116, 235)
+        : IM_COL32(112, 231, 255, 235);
+
+    drawList->AddRectFilled(
+        panelMin,
+        panelMax,
+        IM_COL32(8, 14, 24, 208),
+        5.0f);
+    drawList->AddRect(panelMin, panelMax, accentColor, 5.0f, 0, 1.5f);
+    drawList->AddRectFilled(
+        panelMin,
+        ImVec2(panelMin.x + 5.0f, panelMax.y),
+        accentColor,
+        5.0f);
+
+    const ImVec2 titleSize = ImGui::CalcTextSize(effectName);
+    drawList->AddText(
+        ImVec2(panelMin.x + (panelWidth - titleSize.x) * 0.5f, panelMin.y + 8.0f),
+        IM_COL32(242, 250, 255, 255),
+        effectName);
+    const ImVec2 controlsSize = ImGui::CalcTextSize(controls);
+    drawList->AddText(
+        ImVec2(panelMin.x + (panelWidth - controlsSize.x) * 0.5f, panelMin.y + 33.0f),
+        IM_COL32(164, 191, 211, 225),
+        controls);
 }
 
 void GameRuntime::DrawBossHud()

@@ -319,6 +319,7 @@ private:
     void DrawFeverBackdrop();
     void DrawEnemyTypeTelegraphs();
     void DrawHud();
+    void DrawPostEffectShowcaseOverlay();
     void DrawBossHud();
     void DrawStageCueHud();
     void DrawFeverHud();
@@ -522,7 +523,7 @@ private:
     bool hitConfirmDestroyed_ = false;
     bool stageTimelineWasBlocked_ = false;
     int stageEncounterBreatherTimer_ = 0;
-    int postEffectMode_ = 12;
+    int postEffectMode_ = 1;
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isEditorOverlayVisible_ = false;
