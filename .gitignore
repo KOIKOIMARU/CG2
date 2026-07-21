@@ -17,9 +17,18 @@
 
 # Build results
 generated/
+# Local authoring assets are kept outside the runtime project and submissions.
+assets_source/
 project/imgui.ini
 project/externals/generated/
 project/externals/DirectXTex/x64/
+project/CG2/
+project/*.exe
+project/*.pdb
+project/*.dll
+project/*.ilk
+project/*.lib
+project/*.exp
 tmp_*/
 project/.tmp_*/
 

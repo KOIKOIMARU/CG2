@@ -48,6 +48,8 @@ private:
     void InitializeHandParticles();
     void UpdateHandParticles(float deltaTime);
     void SpawnHandParticle(const Math::Vector3& emitterPosition);
+    void InitializeGpuParticles();
+    void UpdateGpuParticles(float deltaTime);
     void DrawShowcaseHud();
 
 private:
@@ -70,6 +72,9 @@ private:
     int32_t leftHandJointIndex_ = -1;
     uint32_t handParticleSerial_ = 0;
     float handParticleSpawnAccumulator_ = 0.0f;
+    float gpuFountainSpawnAccumulator_ = 0.0f;
+    float gpuSparkSpawnAccumulator_ = 0.0f;
+    bool gpuParticlesEnabled_ = true;
     bool showBoneDebug_ = true;
     float demonstrationTime_ = 0.0f;
 };

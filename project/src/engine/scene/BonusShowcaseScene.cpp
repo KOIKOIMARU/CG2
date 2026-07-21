@@ -9,6 +9,7 @@
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Object3d.h"
 #include "engine/3d/Object3dCommon.h"
+#include "engine/3d/ParticleManager.h"
 #include "engine/3d/Skybox.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/io/Input.h"
@@ -19,6 +20,8 @@ namespace {
 
 constexpr const char* kEnvironmentTexturePath =
     "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
+constexpr const char* kGpuFountainGroup = "bonus_gpu_fountain";
+constexpr const char* kGpuSparkGroup = "bonus_gpu_sparks";
 constexpr Math::Vector3 kBoneDebugOffset = { 1.75f, 0.0f, 0.0f };
 
 Math::Vector3 ExtractTranslation(const Math::Matrix4x4& matrix)
@@ -150,6 +153,7 @@ void BonusShowcaseScene::Initialize()
     weaponGripObject_->SetColor({ 0.10f, 0.12f, 0.18f, 1.0f });
 
     InitializeHandParticles();
+    InitializeGpuParticles();
 
     multiMeshObject_ = CreateDisplayObject(
         "multiMesh.obj",
@@ -200,6 +204,9 @@ void BonusShowcaseScene::Update()
     if (input_ && input_->TriggerKey(DIK_B)) {
         showBoneDebug_ = !showBoneDebug_;
     }
+    if (input_ && input_->TriggerKey(DIK_G)) {
+        gpuParticlesEnabled_ = !gpuParticlesEnabled_;
+    }
 
     const float deltaTime = dxCommon_ ? dxCommon_->GetDeltaTime() : 0.0f;
     demonstrationTime_ += deltaTime;
@@ -219,6 +226,7 @@ void BonusShowcaseScene::Update()
     multiMaterialObject_->Update();
     UpdateHeldWeapon();
     UpdateHandParticles(deltaTime);
+    UpdateGpuParticles(deltaTime);
     UpdateBoneDebug();
     DrawShowcaseHud();
 }
@@ -241,16 +249,18 @@ void BonusShowcaseScene::Draw()
     multiMeshObject_->Draw();
     multiMaterialObject_->Draw();
 
-    if (!showBoneDebug_) {
-        return;
+    if (showBoneDebug_) {
+        for (auto& bone : boneDebugObjects_) {
+            bone->Draw();
+        }
+        for (auto& joint : jointDebugObjects_) {
+            joint->Draw();
+        }
     }
 
-    for (auto& bone : boneDebugObjects_) {
-        bone->Draw();
-    }
-    for (auto& joint : jointDebugObjects_) {
-        joint->Draw();
-    }
+    // ParticleManager switches the graphics root signature, so GPU particles
+    // must be the final 3D draw in this scene.
+    ParticleManager::GetInstance()->Draw();
 }
 
 std::unique_ptr<Object3d> BonusShowcaseScene::CreateDisplayObject(
@@ -566,10 +576,102 @@ void BonusShowcaseScene::SpawnHandParticle(
     availableParticle->object->Update();
 }
 
+void BonusShowcaseScene::InitializeGpuParticles()
+{
+    gpuFountainSpawnAccumulator_ = 0.0f;
+    gpuSparkSpawnAccumulator_ = 0.0f;
+    gpuParticlesEnabled_ = true;
+
+    ParticleManager::EmitSettings fountainSettings{};
+    fountainSettings.radius = 0.14f;
+    fountainSettings.direction = { 0.0f, 1.0f, 0.0f };
+    fountainSettings.spread = 0.28f;
+    fountainSettings.colorMin = { 0.08f, 0.72f, 1.0f, 0.92f };
+    fountainSettings.colorMax = { 0.62f, 0.98f, 1.0f, 1.0f };
+    fountainSettings.scaleMin = { 0.07f, 0.07f };
+    fountainSettings.scaleMax = { 0.16f, 0.16f };
+    fountainSettings.lifeTimeMin = 1.0f;
+    fountainSettings.lifeTimeMax = 1.65f;
+    fountainSettings.speedMin = 0.85f;
+    fountainSettings.speedMax = 1.65f;
+    fountainSettings.endScale = 0.25f;
+
+    ParticleManager::EmitSettings sparkSettings{};
+    sparkSettings.radius = 0.10f;
+    sparkSettings.direction = { 0.0f, 0.75f, 0.0f };
+    sparkSettings.spread = 0.95f;
+    sparkSettings.colorMin = { 1.0f, 0.20f, 0.72f, 1.0f };
+    sparkSettings.colorMax = { 1.0f, 0.88f, 0.20f, 1.0f };
+    sparkSettings.scaleMin = { 0.035f, 0.035f };
+    sparkSettings.scaleMax = { 0.085f, 0.085f };
+    sparkSettings.lifeTimeMin = 0.45f;
+    sparkSettings.lifeTimeMax = 0.85f;
+    sparkSettings.speedMin = 1.15f;
+    sparkSettings.speedMax = 2.25f;
+    sparkSettings.endScale = 0.0f;
+
+    ParticleManager* particleManager = ParticleManager::GetInstance();
+    particleManager->CreateParticleGroup(
+        kGpuFountainGroup,
+        "resources/circle.png",
+        fountainSettings);
+    particleManager->CreateParticleGroup(
+        kGpuSparkGroup,
+        "resources/circle.png",
+        sparkSettings);
+}
+
+void BonusShowcaseScene::UpdateGpuParticles(float deltaTime)
+{
+    ParticleManager* particleManager = ParticleManager::GetInstance();
+    particleManager->Update(
+        camera_->GetViewMatrix(),
+        camera_->GetProjectionMatrix());
+
+    if (!gpuParticlesEnabled_) {
+        return;
+    }
+
+    const float safeDeltaTime = std::clamp(deltaTime, 0.0f, 0.1f);
+    gpuFountainSpawnAccumulator_ += safeDeltaTime;
+    gpuSparkSpawnAccumulator_ += safeDeltaTime;
+
+    constexpr float kFountainInterval = 0.06f;
+    if (gpuFountainSpawnAccumulator_ >= kFountainInterval) {
+        gpuFountainSpawnAccumulator_ =
+            std::fmod(gpuFountainSpawnAccumulator_, kFountainInterval);
+        particleManager->Emit(
+            kGpuFountainGroup,
+            { 0.0f, 0.30f, 0.15f },
+            { 0.0f, 1.0f, 0.0f },
+            12);
+    }
+
+    constexpr float kSparkInterval = 0.10f;
+    if (gpuSparkSpawnAccumulator_ >= kSparkInterval) {
+        gpuSparkSpawnAccumulator_ =
+            std::fmod(gpuSparkSpawnAccumulator_, kSparkInterval);
+        const float orbit = demonstrationTime_ * 1.8f;
+        particleManager->Emit(
+            kGpuSparkGroup,
+            {
+                std::sin(orbit) * 0.42f,
+                1.15f + std::sin(orbit * 0.7f) * 0.18f,
+                0.10f + std::cos(orbit) * 0.16f
+            },
+            {
+                std::cos(orbit) * 0.45f,
+                0.75f,
+                std::sin(orbit) * 0.45f
+            },
+            10);
+    }
+}
+
 void BonusShowcaseScene::DrawShowcaseHud()
 {
     ImGui::SetNextWindowPos(ImVec2(24.0f, 24.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(430.0f, 260.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(470.0f, 310.0f), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.90f);
     ImGui::Begin(
         "Bonus Feature Showcase",
@@ -577,7 +679,7 @@ void BonusShowcaseScene::DrawShowcaseHud()
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
     ImGui::TextColored(
         ImVec4(0.35f, 0.92f, 1.0f, 1.0f),
-        "BONUS SHOWCASE / 70 POINTS");
+        "BONUS SHOWCASE / 100 POINTS");
     ImGui::Separator();
     ImGui::BulletText("Skinning model display (20)");
     ImGui::BulletText("Compute Shader skinning (10)");
@@ -586,8 +688,12 @@ void BonusShowcaseScene::DrawShowcaseHud()
     ImGui::BulletText("Animated bone debug display (10)");
     ImGui::BulletText("Weapon attached to animated hand joint (10)");
     ImGui::BulletText("Hand particle: fixed CPU object pool (10)");
+    ImGui::BulletText("GPU Particle: 2 emitters / 64-thread Emit CS (30)");
     ImGui::Separator();
     ImGui::Text("B: bone display %s", showBoneDebug_ ? "ON" : "OFF");
+    ImGui::Text(
+        "G: GPU particles %s",
+        gpuParticlesEnabled_ ? "ON" : "OFF");
     ImGui::TextUnformatted("F2 / Esc: return to title");
     ImGui::End();
 
@@ -603,5 +709,7 @@ void BonusShowcaseScene::DrawShowcaseHud()
         "SKIN+COMPUTE    ANIM MODEL    BONE DEBUG    MULTI MESH    MULTI MATERIAL");
     ImGui::TextUnformatted(
         "HAND-JOINT WEAPON    LEFT-HAND PARTICLE POOL");
+    ImGui::TextUnformatted(
+        "GPU PARTICLE: 2 EMITTERS / 64-THREAD EMIT CS");
     ImGui::End();
 }

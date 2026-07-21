@@ -55,6 +55,8 @@ public:
     void Update(const Math::Matrix4x4& viewMatrix,
         const Math::Matrix4x4& projectionMatrix);
 
+    // Changes the graphics root signature. Draw this after other 3D objects,
+    // or explicitly restore their pipeline state before continuing.
     void Draw();
 
     // ===== パーティクル発生 =====
@@ -183,6 +185,7 @@ private:
     float totalTime_ = 0.0f;
 
     static constexpr uint32_t kMaxInstanceCount_ = 1024;
+    static constexpr uint32_t kEmitThreadCount_ = 64;
 
     void CreateInitializePipeline();
     void CreateEmitPipeline();

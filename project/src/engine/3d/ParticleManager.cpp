@@ -1,5 +1,6 @@
 #include "engine/3d/ParticleManager.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -460,7 +461,10 @@ void ParticleManager::DispatchEmit(ParticleGroup& group)
     srvManager_->SetComputeRootDescriptorTable(2, group.freeListUavIndex);
     cl->SetComputeRootConstantBufferView(3, group.emitterResource->GetGPUVirtualAddress());
     cl->SetComputeRootConstantBufferView(4, perFrameResource_->GetGPUVirtualAddress());
-    cl->Dispatch(1, 1, 1);
+    const uint32_t dispatchCount =
+        (group.emitterData->count + kEmitThreadCount_ - 1) /
+        kEmitThreadCount_;
+    cl->Dispatch(dispatchCount, 1, 1);
 
     D3D12_RESOURCE_BARRIER uavBarriers[3]{};
     uavBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
@@ -768,7 +772,7 @@ void ParticleManager::Emit(
     if (group.emitterData) {
         group.emitterData->translate = position;
         group.emitterData->direction = direction;
-        group.emitterData->count = count;
+        group.emitterData->count = (std::min)(count, kMaxInstanceCount_);
         group.emitterData->emit = 1;
         group.needsEmit = true;
     }
