@@ -13,6 +13,8 @@ param(
 
     [switch]$CaptureFrames,
 
+    [switch]$CaptureFromGameplay,
+
     [ValidateRange(1, 120)]
     [int]$CaptureFrameCount = 12,
 
@@ -20,7 +22,10 @@ param(
     [double]$CaptureStartSeconds = 6.0,
 
     [ValidateRange(0.1, 10.0)]
-    [double]$CaptureIntervalSeconds = 0.35
+    [double]$CaptureIntervalSeconds = 0.35,
+
+    [ValidateSet('Opening', 'Wave2', 'Wave3', 'Boss')]
+    [string]$StartPhase = 'Opening'
 )
 
 Set-StrictMode -Version Latest
@@ -109,13 +114,21 @@ $arguments =
     "--smoke-log `"$smokeLogPath`""
 
 $diagnosticEnvironmentName = 'CG2_D3D12_DIAGNOSTIC_LOG'
+$startPhaseEnvironmentName = 'CG2_DEBUG_START_PHASE'
 $previousDiagnosticLog = [Environment]::GetEnvironmentVariable(
     $diagnosticEnvironmentName,
+    [EnvironmentVariableTarget]::Process)
+$previousStartPhase = [Environment]::GetEnvironmentVariable(
+    $startPhaseEnvironmentName,
     [EnvironmentVariableTarget]::Process)
 try {
     [Environment]::SetEnvironmentVariable(
         $diagnosticEnvironmentName,
         $diagnosticLogPath,
+        [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable(
+        $startPhaseEnvironmentName,
+        $StartPhase,
         [EnvironmentVariableTarget]::Process)
     $process = Start-Process `
         -FilePath $executablePath `
@@ -127,19 +140,47 @@ try {
         $diagnosticEnvironmentName,
         $previousDiagnosticLog,
         [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable(
+        $startPhaseEnvironmentName,
+        $previousStartPhase,
+        [EnvironmentVariableTarget]::Process)
 }
 
 $hardTimeoutSeconds =
     [Math]::Ceiling($StartupTimeoutSeconds + $GameplaySeconds + 45.0)
 $deadline = (Get-Date).AddSeconds($hardTimeoutSeconds)
 $processStartTime = Get-Date
+$gameplayCaptureStartTime = $null
 $nextCaptureSeconds = $CaptureStartSeconds
 $capturedFrameCount = 0
 
 while (-not $process.HasExited -and (Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 250
     $process.Refresh()
-    $captureElapsedSeconds = ((Get-Date) - $processStartTime).TotalSeconds
+    if ($CaptureFrames -and
+        $CaptureFromGameplay -and
+        $null -eq $gameplayCaptureStartTime -and
+        (Test-Path -LiteralPath $smokeLogPath)) {
+        $currentSmokeLog = Get-Content -LiteralPath $smokeLogPath -Raw
+        if ($currentSmokeLog -match
+            '\[(?<seconds>[0-9.]+)s\] SMOKE_TEST_GAMEPLAY_ENTERED') {
+            $gameplayEnteredSeconds = [double]::Parse(
+                $Matches.seconds,
+                [System.Globalization.CultureInfo]::InvariantCulture)
+            $gameplayCaptureStartTime =
+                $processStartTime.AddSeconds($gameplayEnteredSeconds)
+        }
+    }
+    $captureElapsedSeconds =
+        if ($CaptureFromGameplay) {
+            if ($null -eq $gameplayCaptureStartTime) {
+                -1.0
+            } else {
+                ((Get-Date) - $gameplayCaptureStartTime).TotalSeconds
+            }
+        } else {
+            ((Get-Date) - $processStartTime).TotalSeconds
+        }
     if ($CaptureFrames -and
         $capturedFrameCount -lt $CaptureFrameCount -and
         $captureElapsedSeconds -ge $nextCaptureSeconds -and
