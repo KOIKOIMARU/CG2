@@ -157,6 +157,26 @@ LevelDataLoader::ObjectData ParseObject(
     return objectData;
 }
 
+void CollectPlayerSpawns(
+    const LevelDataLoader::ObjectData& objectData,
+    LevelDataLoader::LevelData& levelData)
+{
+    if (objectData.disabled) {
+        return;
+    }
+
+    if (objectData.type == "PlayerSpawn") {
+        LevelDataLoader::PlayerSpawnData playerSpawn{};
+        playerSpawn.translation = objectData.translation;
+        playerSpawn.rotation = objectData.rotation;
+        levelData.players.push_back(playerSpawn);
+    }
+
+    for (const LevelDataLoader::ObjectData& child : objectData.children) {
+        CollectPlayerSpawns(child, levelData);
+    }
+}
+
 } // namespace
 
 bool LevelDataLoader::LoadFile(
@@ -204,6 +224,9 @@ bool LevelDataLoader::LoadFile(
             levelData.objects.push_back(ParseObject(
                 objectsJson.at(index),
                 "objects[" + std::to_string(index) + "]"));
+        }
+        for (const ObjectData& objectData : levelData.objects) {
+            CollectPlayerSpawns(objectData, levelData);
         }
     } catch (const Json::parse_error& exception) {
         std::ostringstream message;

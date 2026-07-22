@@ -2217,6 +2217,16 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
         loadObject(objectData);
     }
 
+    if (player_ && !levelData.players.empty()) {
+        const LevelDataLoader::PlayerSpawnData& playerSpawn =
+            levelData.players.front();
+        railDistance_ = playerSpawn.translation.z;
+        player_->SetTranslate(playerSpawn.translation);
+        player_->SetRotate(playerSpawn.rotation);
+        player_->SetRailZ(railDistance_);
+        previousPlayerTranslate_ = player_->GetTranslate();
+    }
+
     sceneObjects_ = std::move(loadedObjects);
     sceneObjectRecords_ = std::move(loadedRecords);
     currentSceneFilePath_ = path ? path : "";
@@ -2225,7 +2235,8 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     editorStatusMessage_ =
         "Blenderレベルを読み込みました: " + currentSceneFilePath_ +
         " / 配置 " + std::to_string(sceneObjects_.size()) +
-        " / コライダー " + std::to_string(colliderCount);
+        " / コライダー " + std::to_string(colliderCount) +
+        " / PlayerSpawn " + std::to_string(levelData.players.size());
     if (skippedMeshCount > 0) {
         editorStatusMessage_ +=
             " / モデル未検出 " + std::to_string(skippedMeshCount);

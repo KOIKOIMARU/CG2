@@ -189,7 +189,11 @@ void Player::Update(Input* input, float timeScale)
             kPlayerLowerLimitY,
             kPlayerUpperLimitY);
 
-    objectRotate_ = rotate;
+    objectRotate_ = {
+        baseRotate_.x + rotate.x,
+        baseRotate_.y + rotate.y,
+        baseRotate_.z + rotate.z,
+    };
     object_->SetColor(
         invincibleTimer_ > 0 ?
         Math::Vector4{ 0.55f, 0.95f, 1.0f, 1.0f } :
@@ -208,6 +212,27 @@ void Player::DrawShadow(const Math::Matrix4x4& lightViewProjection)
 {
     if (object_ && !IsDead()) {
         object_->DrawShadow(lightViewProjection);
+    }
+}
+
+void Player::SetTranslate(const Math::Vector3& translate)
+{
+    translate_ = translate;
+    if (object_) {
+        UpdateObjectTransform();
+    }
+}
+
+void Player::SetRotate(const Math::Vector3& rotate)
+{
+    baseRotate_ = rotate;
+    objectRotate_ = {
+        baseRotate_.x + movementRotate_.x,
+        baseRotate_.y + movementRotate_.y,
+        baseRotate_.z + movementRotate_.z,
+    };
+    if (object_) {
+        UpdateObjectTransform();
     }
 }
 

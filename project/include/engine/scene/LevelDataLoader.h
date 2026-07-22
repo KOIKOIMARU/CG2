@@ -26,9 +26,15 @@ struct ObjectData {
     std::vector<ObjectData> children;
 };
 
+struct PlayerSpawnData {
+    Math::Vector3 translation{};
+    Math::Vector3 rotation{};
+};
+
 struct LevelData {
     std::string name;
     std::vector<ObjectData> objects;
+    std::vector<PlayerSpawnData> players;
 };
 
 // Blenderアドオンが出力したレベルJSONを読み込む。

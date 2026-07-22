@@ -15,6 +15,8 @@ public:
     void Update(Input* input, float timeScale = 1.0f);
     void Draw();
     void DrawShadow(const Math::Matrix4x4& lightViewProjection);
+    void SetTranslate(const Math::Vector3& translate);
+    void SetRotate(const Math::Vector3& rotate);
     void SetRailZ(float z);
 
     const Math::Vector3& GetTranslate() const { return translate_; }
@@ -34,6 +36,7 @@ private:
     std::unique_ptr<Object3d> object_;
     Math::Vector3 translate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 objectScale_{ 1.26f, 1.26f, 1.26f };
+    Math::Vector3 baseRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 objectRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 movementRotate_{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 modelLocalCenterOffset_{ 0.0f, 0.0f, 0.0f };
