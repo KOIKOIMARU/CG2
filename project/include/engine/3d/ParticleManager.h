@@ -58,9 +58,10 @@ public:
     void Draw();
 
     // ===== パーティクル発生 =====
-    void CreateParticleGroup(const std::string& name,
+    bool CreateParticleGroup(const std::string& name,
         const std::string& textureFilePath,
         const EmitSettings& settings = {});
+    bool RemoveParticleGroup(const std::string& name);
 
     void Emit(const std::string& name,
         const Math::Vector3& position,
@@ -190,5 +191,7 @@ private:
     void DispatchInitialize(ParticleGroup& group);
     void DispatchEmit(ParticleGroup& group);
     void DispatchUpdate(ParticleGroup& group);
+    bool IsGpuPipelineReady() const;
+    void ReleaseParticleGroupDescriptors(ParticleGroup& group);
 
 };

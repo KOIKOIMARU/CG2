@@ -16,6 +16,7 @@ public:
 
     // ===== 確保 =====
     uint32_t Allocate();
+    bool CanAllocate(uint32_t count) const;
     void Free(uint32_t index);
     void Free(D3D12_CPU_DESCRIPTOR_HANDLE handle);
 

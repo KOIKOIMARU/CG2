@@ -311,6 +311,7 @@ private:
     void DrawPlayerDodgeAfterimages();
     void InitializePlayerFlightAura();
     void InitializePlayerExhaustParticles();
+    void InitializeGpuPlayerExhaustParticles();
     void EmitPlayerExhaustParticles(const Math::Vector3& playerPosition,
         const Math::Vector3& playerRotate);
     void UpdateAndDrawPlayerExhaustParticles();
@@ -488,6 +489,7 @@ private:
     float stageCameraFovBoost_ = 0.0f;
     float playerExhaustThrust_ = 0.0f;
     float playerExhaustParticleTimer_ = 0.0f;
+    bool gpuPlayerExhaustEnabled_ = false;
     float playerImpactSlowScale_ = 1.0f;
     float playerBulletSpeed_ = 1.36f;
     float lockBulletSpeed_ = 1.62f;

@@ -3,6 +3,7 @@
 #include <array>
 #include <cassert>
 #include <cstring>
+#include <utility>
 
 
 #include "engine/base/DirectXCommon.h"
@@ -594,21 +595,8 @@ void ParticleManager::Draw()
 void ParticleManager::Finalize()
 {
     // Particle用SRV/UAVを解放
-    if (srvManager_) {
-        for (auto& [name, group] : particleGroups_) {
-            if (group.particleSrvIndex != UINT32_MAX) {
-                srvManager_->Free(group.particleSrvIndex);
-            }
-            if (group.particleUavIndex != UINT32_MAX) {
-                srvManager_->Free(group.particleUavIndex);
-            }
-            if (group.freeCounterUavIndex != UINT32_MAX) {
-                srvManager_->Free(group.freeCounterUavIndex);
-            }
-            if (group.freeListUavIndex != UINT32_MAX) {
-                srvManager_->Free(group.freeListUavIndex);
-            }
-        }
+    for (auto& [name, group] : particleGroups_) {
+        ReleaseParticleGroupDescriptors(group);
     }
 
     particleGroups_.clear();
@@ -631,14 +619,20 @@ void ParticleManager::Finalize()
     srvManager_ = nullptr;
 }
 
-void ParticleManager::CreateParticleGroup(
+bool ParticleManager::CreateParticleGroup(
     const std::string& name,
     const std::string& textureFilePath,
     const EmitSettings& settings
 ) {
+    if (!IsGpuPipelineReady()) {
+        return false;
+    }
     // ① 既に存在していないかチェック
     if (particleGroups_.find(name) != particleGroups_.end()) {
-        return;
+        return true;
+    }
+    if (!srvManager_->CanAllocate(5)) {
+        return false;
     }
 
     // ② 空のグループを作成
@@ -685,11 +679,21 @@ void ParticleManager::CreateParticleGroup(
 
     // ⑥ Emitter情報をConstantBufferとして作成
     group.emitterResource = dxCommon_->CreateBufferResource(256);
-    group.emitterResource->Map(
+    if (!group.particleResource ||
+        !group.freeCounterResource ||
+        !group.freeListResource ||
+        !group.emitterResource) {
+        return false;
+    }
+
+    const HRESULT mapResult = group.emitterResource->Map(
         0,
         nullptr,
         reinterpret_cast<void**>(&group.emitterData)
     );
+    if (FAILED(mapResult) || !group.emitterData) {
+        return false;
+    }
     group.emitterData->translate = { 0.0f, 0.0f, 0.0f };
     group.emitterData->radius = settings.radius;
     group.emitterData->direction = settings.direction;
@@ -740,7 +744,66 @@ void ParticleManager::CreateParticleGroup(
     );
 
     // ⑨ コンテナに登録
-    particleGroups_.emplace(name, group);
+    try {
+        const auto [it, inserted] =
+            particleGroups_.emplace(name, std::move(group));
+        if (!inserted) {
+            ReleaseParticleGroupDescriptors(group);
+        }
+        return true;
+    } catch (...) {
+        ReleaseParticleGroupDescriptors(group);
+        return false;
+    }
+}
+
+bool ParticleManager::RemoveParticleGroup(const std::string& name)
+{
+    const auto it = particleGroups_.find(name);
+    if (it == particleGroups_.end()) {
+        return false;
+    }
+
+    ReleaseParticleGroupDescriptors(it->second);
+    particleGroups_.erase(it);
+    return true;
+}
+
+bool ParticleManager::IsGpuPipelineReady() const
+{
+    return dxCommon_ &&
+        srvManager_ &&
+        vertexResource_ &&
+        perViewResource_ &&
+        perViewData_ &&
+        perFrameResource_ &&
+        perFrameData_ &&
+        rootSignature_ &&
+        pipelineState_ &&
+        initializeRootSignature_ &&
+        initializePipelineState_ &&
+        emitRootSignature_ &&
+        emitPipelineState_ &&
+        updateRootSignature_ &&
+        updatePipelineState_;
+}
+
+void ParticleManager::ReleaseParticleGroupDescriptors(ParticleGroup& group)
+{
+    if (!srvManager_) {
+        return;
+    }
+
+    const auto release = [this](uint32_t& index) {
+        if (index != UINT32_MAX) {
+            srvManager_->Free(index);
+            index = UINT32_MAX;
+        }
+    };
+    release(group.particleSrvIndex);
+    release(group.particleUavIndex);
+    release(group.freeCounterUavIndex);
+    release(group.freeListUavIndex);
 }
 
 void ParticleManager::Emit(

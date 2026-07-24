@@ -44,6 +44,17 @@ uint32_t SrvManager::Allocate()
     return index;
 }
 
+bool SrvManager::CanAllocate(uint32_t count) const
+{
+    if (useIndex_ > kMaxSRVCount) {
+        return false;
+    }
+
+    const size_t availableCount =
+        freeIndices_.size() + static_cast<size_t>(kMaxSRVCount - useIndex_);
+    return static_cast<size_t>(count) <= availableCount;
+}
+
 void SrvManager::Free(uint32_t index)
 {
     assert(index < useIndex_);

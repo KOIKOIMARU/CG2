@@ -1,6 +1,7 @@
 #include "app/GameRuntime.h"
 
 #include "engine/3d/ModelManager.h"
+#include "engine/3d/ParticleManager.h"
 #include "engine/3d/Skybox.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/base/DirectXCommon.h"
@@ -100,6 +101,14 @@ constexpr float kGameplayCameraEdgeRollMax = 0.055f;
 constexpr float kPlayerExhaustRiseResponse = 0.24f;
 constexpr float kPlayerExhaustFallResponse = 0.075f;
 constexpr float kPlayerExhaustParticleInterval = 1.0f / 38.0f;
+constexpr const char* kPlayerExhaustGpuLeftOuterGroup =
+    "player_exhaust_gpu_left_outer";
+constexpr const char* kPlayerExhaustGpuRightOuterGroup =
+    "player_exhaust_gpu_right_outer";
+constexpr const char* kPlayerExhaustGpuLeftCoreGroup =
+    "player_exhaust_gpu_left_core";
+constexpr const char* kPlayerExhaustGpuRightCoreGroup =
+    "player_exhaust_gpu_right_core";
 constexpr float kJustDodgeCameraClosePushIn = 3.35f;
 constexpr float kJustDodgeCameraPlayerFollowX = 0.115f;
 constexpr float kJustDodgeCameraPlayerFollowY = 0.105f;
@@ -831,7 +840,10 @@ void GameRuntime::Initialize()
     InitializeRewardHearts();
     InitializePlayerDodgeAfterimages();
     InitializePlayerFlightAura();
-    InitializePlayerExhaustParticles();
+    InitializeGpuPlayerExhaustParticles();
+    if (!gpuPlayerExhaustEnabled_) {
+        InitializePlayerExhaustParticles();
+    }
     InitializeContactShadows();
 
 #ifdef ENABLE_DEBUG_GUI
@@ -2740,6 +2752,13 @@ void GameRuntime::Draw()
     }
     DrawBulletEffectObjects();
     DrawHitEffectObjects();
+    if (gpuPlayerExhaustEnabled_ && camera_) {
+        ParticleManager* particleManager = ParticleManager::GetInstance();
+        particleManager->Update(
+            camera_->GetViewMatrix(),
+            camera_->GetProjectionMatrix());
+        particleManager->Draw();
+    }
 }
 
 void GameRuntime::PrewarmBulletPools()
@@ -4476,6 +4495,62 @@ void GameRuntime::InitializePlayerExhaustParticles()
     nextPlayerExhaustParticleIndex_ = 0;
 }
 
+void GameRuntime::InitializeGpuPlayerExhaustParticles()
+{
+    gpuPlayerExhaustEnabled_ = false;
+    ParticleManager* particleManager = ParticleManager::GetInstance();
+    if (!particleManager) {
+        return;
+    }
+
+    ParticleManager::EmitSettings outerSettings{};
+    outerSettings.radius = 0.045f;
+    outerSettings.direction = { 0.0f, -0.06f, -1.0f };
+    outerSettings.spread = 0.13f;
+    outerSettings.colorMin = { 0.04f, 0.34f, 1.0f, 0.20f };
+    outerSettings.colorMax = { 0.24f, 0.78f, 1.0f, 0.55f };
+    outerSettings.scaleMin = { 0.08f, 0.08f };
+    outerSettings.scaleMax = { 0.19f, 0.19f };
+    outerSettings.lifeTimeMin = 0.16f;
+    outerSettings.lifeTimeMax = 0.30f;
+    outerSettings.speedMin = 4.4f;
+    outerSettings.speedMax = 6.8f;
+    outerSettings.endScale = 0.30f;
+
+    ParticleManager::EmitSettings coreSettings = outerSettings;
+    coreSettings.radius = 0.025f;
+    coreSettings.spread = 0.07f;
+    coreSettings.colorMin = { 0.68f, 0.92f, 1.0f, 0.46f };
+    coreSettings.colorMax = { 1.0f, 1.0f, 1.0f, 0.86f };
+    coreSettings.scaleMin = { 0.045f, 0.045f };
+    coreSettings.scaleMax = { 0.11f, 0.11f };
+    coreSettings.lifeTimeMin = 0.10f;
+    coreSettings.lifeTimeMax = 0.18f;
+    coreSettings.speedMin = 6.0f;
+    coreSettings.speedMax = 8.6f;
+    coreSettings.endScale = 0.18f;
+
+    constexpr const char* kTexturePath = "resources/effects/glow_core.png";
+    const bool allGroupsCreated =
+        particleManager->CreateParticleGroup(
+            kPlayerExhaustGpuLeftOuterGroup, kTexturePath, outerSettings) &&
+        particleManager->CreateParticleGroup(
+            kPlayerExhaustGpuRightOuterGroup, kTexturePath, outerSettings) &&
+        particleManager->CreateParticleGroup(
+            kPlayerExhaustGpuLeftCoreGroup, kTexturePath, coreSettings) &&
+        particleManager->CreateParticleGroup(
+            kPlayerExhaustGpuRightCoreGroup, kTexturePath, coreSettings);
+    if (!allGroupsCreated) {
+        particleManager->RemoveParticleGroup(kPlayerExhaustGpuLeftOuterGroup);
+        particleManager->RemoveParticleGroup(kPlayerExhaustGpuRightOuterGroup);
+        particleManager->RemoveParticleGroup(kPlayerExhaustGpuLeftCoreGroup);
+        particleManager->RemoveParticleGroup(kPlayerExhaustGpuRightCoreGroup);
+        return;
+    }
+
+    gpuPlayerExhaustEnabled_ = true;
+}
+
 void GameRuntime::EmitPlayerExhaustParticles(
     const Math::Vector3& playerPosition,
     const Math::Vector3& playerRotate)
@@ -4508,6 +4583,18 @@ void GameRuntime::EmitPlayerExhaustParticles(
         playerPosition.y + rightOffset.y,
         playerPosition.z + rightOffset.z
     };
+    if (gpuPlayerExhaustEnabled_) {
+        ParticleManager* particleManager = ParticleManager::GetInstance();
+        particleManager->Emit(
+            kPlayerExhaustGpuLeftOuterGroup, leftPosition, exhaustDirection, 2);
+        particleManager->Emit(
+            kPlayerExhaustGpuRightOuterGroup, rightPosition, exhaustDirection, 2);
+        particleManager->Emit(
+            kPlayerExhaustGpuLeftCoreGroup, leftPosition, exhaustDirection, 1);
+        particleManager->Emit(
+            kPlayerExhaustGpuRightCoreGroup, rightPosition, exhaustDirection, 1);
+        return;
+    }
     const auto spawnParticle =
         [this, &playerRotate, &exhaustDirection](
             const Math::Vector3& nozzlePosition,
