@@ -230,6 +230,22 @@ void Bullet::Update(float timeScale)
         return;
     }
 
+    if (timeScale <= 0.0f) {
+        object_->Update();
+        if (glowObject_) {
+            glowObject_->Update();
+        }
+        if (trailObject_) {
+            trailObject_->Update();
+        }
+        for (auto& sparkleObject : sparkleObjects_) {
+            if (sparkleObject) {
+                sparkleObject->Update();
+            }
+        }
+        return;
+    }
+
     ++age_;
     const float motionScale = std::clamp(timeScale, 0.05f, 1.0f);
     if (homingEnabled_ && hasHomingTarget_) {

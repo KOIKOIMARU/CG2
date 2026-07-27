@@ -30,7 +30,7 @@ namespace {
 constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
 constexpr const char* kGameEnvironmentTexturePath =
     "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
-constexpr const char* kFreePlayerModelPath = "free_models/kenney_space_kit/craft_speederA.glb";
+constexpr const char* kFreePlayerModelPath = "test_models/furina/furina.gltf";
 constexpr const char* kFreeEnemyModelPath =
     "free_models/quaternius_sci_fi_essentials/Enemy_EyeDrone_Static.gltf";
 constexpr const char* kEnemyFormationModelPath =
@@ -98,6 +98,9 @@ constexpr float kGameplayCameraBaseDistance = 16.10f;
 constexpr float kGameplayCameraEdgeRollStart = 5.25f;
 constexpr float kGameplayCameraEdgeRollRange = 3.65f;
 constexpr float kGameplayCameraEdgeRollMax = 0.055f;
+constexpr float kDebugCameraMoveSpeed = 7.5f;
+constexpr float kDebugCameraFastMoveMultiplier = 4.0f;
+constexpr float kDebugCameraRotateSpeed = 1.8f;
 constexpr float kPlayerExhaustRiseResponse = 0.24f;
 constexpr float kPlayerExhaustFallResponse = 0.075f;
 constexpr float kPlayerExhaustParticleInterval = 1.0f / 38.0f;
@@ -178,6 +181,51 @@ Math::Vector3 RotateLocalOffset(
             offset.y * rotateMatrix.m[1][2] +
             offset.z * rotateMatrix.m[2][2],
     };
+}
+
+Math::Vector3 AddVector(
+    const Math::Vector3& left,
+    const Math::Vector3& right)
+{
+    return {
+        left.x + right.x,
+        left.y + right.y,
+        left.z + right.z,
+    };
+}
+
+Math::Vector3 SubtractVector(
+    const Math::Vector3& left,
+    const Math::Vector3& right)
+{
+    return {
+        left.x - right.x,
+        left.y - right.y,
+        left.z - right.z,
+    };
+}
+
+Math::Vector3 MakeCameraForward(const Math::Vector3& rotate)
+{
+    const float cosPitch = std::cos(rotate.x);
+    const float sinPitch = std::sin(rotate.x);
+    const float cosYaw = std::cos(rotate.y);
+    const float sinYaw = std::sin(rotate.y);
+    return Math::Normalize({
+        sinYaw * cosPitch,
+        -sinPitch,
+        cosYaw * cosPitch,
+    });
+}
+
+Math::Vector3 MakeCameraRight(const Math::Vector3& rotate)
+{
+    const float yaw = rotate.y + std::numbers::pi_v<float> * 0.5f;
+    return Math::Normalize({
+        std::sin(yaw),
+        0.0f,
+        std::cos(yaw),
+    });
 }
 
 struct EnemySpawnPattern {
@@ -670,6 +718,8 @@ void GameRuntime::Initialize()
     bossSpawned_ = false;
     bossDefeated_ = false;
     isPerformanceOverlayVisible_ = false;
+    isDebugCameraEnabled_ = false;
+    isDebugWorldPaused_ = false;
     showSkybox_ = true;
     currentWaveIndex_ = 0;
     spawnedEnemyCountInWave_ = 0;
@@ -935,23 +985,34 @@ void GameRuntime::Update()
         return;
     }
 
+    const bool isDebugWorldPaused =
+        isDebugCameraEnabled_ && isDebugWorldPaused_;
     UpdateBulletPoolWarmup();
     UpdateHitEffectObjectPoolWarmup();
-    UpdateRailProgress();
+    if (!isDebugWorldPaused) {
+        UpdateRailProgress();
+    }
     UpdatePlayerAndCamera();
-    UpdateFever();
+    if (!isDebugWorldPaused) {
+        UpdateFever();
+    }
 
-    if (!isGameOver_ && !isGameClear_) {
+    if (!isDebugWorldPaused && !isGameOver_ && !isGameClear_) {
         UpdatePlayerShooting();
         UpdateEnemyActions();
     }
 
     UpdateWorldEntities();
-    UpdateGameplayCollisions();
-    AdvanceEnemyWaveIfCleared();
+    if (!isDebugWorldPaused) {
+        UpdateGameplayCollisions();
+        AdvanceEnemyWaveIfCleared();
+    }
     UpdateLockOnTarget();
     DrawHud();
     DrawPerformanceOverlay();
+#ifdef ENABLE_DEBUG_GUI
+    DrawDebugCameraOverlay();
+#endif
     DrawResultOverlay();
 #ifdef ENABLE_DEBUG_GUI
     DrawEditorOverlayGuiRich();
@@ -965,6 +1026,19 @@ bool GameRuntime::HandleRuntimeShortcuts()
 #ifdef ENABLE_DEBUG_GUI
     if (input_ && input_->TriggerKey(DIK_F1)) {
         isEditorOverlayVisible_ = !isEditorOverlayVisible_;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F6)) {
+        isDebugCameraEnabled_ = !isDebugCameraEnabled_;
+        if (!isDebugCameraEnabled_ && camera_) {
+            isDebugWorldPaused_ = false;
+            cameraTranslate_ = camera_->GetTranslate();
+            cameraRotate_ = camera_->GetRotate();
+        }
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_F7) && isDebugCameraEnabled_) {
+        isDebugWorldPaused_ = !isDebugWorldPaused_;
         return true;
     }
 #endif
@@ -1104,17 +1178,94 @@ void GameRuntime::UpdateRailProgress()
 
 void GameRuntime::UpdatePlayerAndCamera()
 {
-    player_->Update(input_, GetCinematicWorldTimeScale());
+    if (isDebugCameraEnabled_) {
+        UpdateDebugCamera(dxCommon_->GetDeltaTime());
+    } else {
+        player_->Update(input_, GetCinematicWorldTimeScale());
+    }
     player_->SetRailZ(railDistance_);
-    UpdateGameCamera();
+    if (!isDebugCameraEnabled_) {
+        UpdateGameCamera();
+    }
     if (skybox_) {
         skybox_->Update(camera_.get());
     }
     UpdateLockOnTarget();
 }
 
+void GameRuntime::UpdateDebugCamera(float deltaTime)
+{
+    if (!input_ || !camera_) {
+        return;
+    }
+
+    Math::Vector3 rotate = camera_->GetRotate();
+    Math::Vector3 translate = camera_->GetTranslate();
+    const float rotateStep = kDebugCameraRotateSpeed * deltaTime;
+
+    if (input_->PushKey(DIK_LEFT)) {
+        rotate.y -= rotateStep;
+    }
+    if (input_->PushKey(DIK_RIGHT)) {
+        rotate.y += rotateStep;
+    }
+    if (input_->PushKey(DIK_UP)) {
+        rotate.x -= rotateStep;
+    }
+    if (input_->PushKey(DIK_DOWN)) {
+        rotate.x += rotateStep;
+    }
+    rotate.x = std::clamp(rotate.x, -1.4f, 1.4f);
+
+    const Math::Vector3 forward = MakeCameraForward(rotate);
+    const Math::Vector3 right = MakeCameraRight(rotate);
+    const Math::Vector3 up{ 0.0f, 1.0f, 0.0f };
+    Math::Vector3 move{};
+
+    if (input_->PushKey(DIK_W)) {
+        move = AddVector(move, forward);
+    }
+    if (input_->PushKey(DIK_S)) {
+        move = SubtractVector(move, forward);
+    }
+    if (input_->PushKey(DIK_D)) {
+        move = AddVector(move, right);
+    }
+    if (input_->PushKey(DIK_A)) {
+        move = SubtractVector(move, right);
+    }
+    if (input_->PushKey(DIK_SPACE)) {
+        move = AddVector(move, up);
+    }
+    if (input_->PushKey(DIK_LSHIFT) || input_->PushKey(DIK_RSHIFT)) {
+        move = SubtractVector(move, up);
+    }
+
+    if (move.x != 0.0f || move.y != 0.0f || move.z != 0.0f) {
+        const bool fastMove =
+            input_->PushKey(DIK_LCONTROL) ||
+            input_->PushKey(DIK_RCONTROL);
+        const float moveSpeed =
+            kDebugCameraMoveSpeed *
+            (fastMove ? kDebugCameraFastMoveMultiplier : 1.0f);
+        translate = AddVector(
+            translate,
+            Math::Normalize(move) * (moveSpeed * deltaTime));
+    }
+
+    cameraTranslate_ = translate;
+    cameraRotate_ = rotate;
+    camera_->SetTranslate(translate);
+    camera_->SetRotate(rotate);
+    camera_->Update();
+}
+
 void GameRuntime::UpdatePlayerShooting()
 {
+    if (isDebugCameraEnabled_) {
+        return;
+    }
+
     if (shootCooldown_ > 0) {
         --shootCooldown_;
     }
@@ -1557,9 +1708,29 @@ void GameRuntime::UpdateWorldEntities()
     UpdatePlayerBullets();
     UpdateEnemyBullets();
     UpdateEnemies();
-    UpdateHitEffects();
-    UpdatePlayerDodgeAfterimages();
-    UpdateRewardHearts();
+    if (isDebugCameraEnabled_ && isDebugWorldPaused_) {
+        for (HitEffect& effect : hitEffects_) {
+            for (size_t index = 0; index < effect.visualCount; ++index) {
+                if (effect.visuals[index].object) {
+                    effect.visuals[index].object->Update();
+                }
+            }
+        }
+        for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
+            if (afterimage.isActive && afterimage.object) {
+                afterimage.object->Update();
+            }
+        }
+        for (RewardHeart& heart : rewardHearts_) {
+            if (heart.isActive && heart.object) {
+                heart.object->Update();
+            }
+        }
+    } else {
+        UpdateHitEffects();
+        UpdatePlayerDodgeAfterimages();
+        UpdateRewardHearts();
+    }
     UpdateDepthCueEffects();
     UpdateRailScenery();
 }
@@ -1572,6 +1743,13 @@ void GameRuntime::UpdateGameplayCollisions()
 
 void GameRuntime::UpdateResultAndSceneObjects()
 {
+    if (isDebugCameraEnabled_ && isDebugWorldPaused_) {
+        for (const auto& sceneObject : sceneObjects_) {
+            sceneObject->Update();
+        }
+        return;
+    }
+
     if (bossWarningTimer_ > 0) {
         --bossWarningTimer_;
     }
@@ -7455,6 +7633,57 @@ void GameRuntime::DrawResultOverlay()
         guide);
 }
 
+void GameRuntime::DrawDebugCameraOverlay()
+{
+#ifdef ENABLE_DEBUG_GUI
+    if (!isDebugCameraEnabled_ || !camera_) {
+        return;
+    }
+
+    ImGui::SetNextWindowPos(
+        ImVec2(18.0f, 178.0f),
+        ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.82f);
+    constexpr ImGuiWindowFlags kWindowFlags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoNav;
+
+    if (ImGui::Begin("Debug Camera", nullptr, kWindowFlags)) {
+        const Math::Vector3& position = camera_->GetTranslate();
+        const Math::Vector3& rotate = camera_->GetRotate();
+        ImGui::TextColored(
+            ImVec4(0.50f, 0.92f, 1.0f, 1.0f),
+            "DEBUG CAMERA / F6: EXIT");
+        ImGui::SameLine();
+        ImGui::TextColored(
+            isDebugWorldPaused_ ?
+                ImVec4(1.0f, 0.48f, 0.38f, 1.0f) :
+                ImVec4(0.45f, 1.0f, 0.64f, 1.0f),
+            isDebugWorldPaused_ ? "WORLD PAUSED" : "WORLD LIVE");
+        ImGui::Separator();
+        ImGui::TextUnformatted("WASD: MOVE   ARROWS: LOOK");
+        ImGui::TextUnformatted("SPACE/SHIFT: UP/DOWN");
+        ImGui::TextUnformatted("CTRL: FAST MOVE");
+        ImGui::TextUnformatted(
+            isDebugWorldPaused_ ? "F7: RESUME WORLD" : "F7: PAUSE WORLD");
+        ImGui::Text(
+            "POS  %.2f  %.2f  %.2f",
+            position.x,
+            position.y,
+            position.z);
+        ImGui::Text(
+            "ROT  %.2f  %.2f  %.2f",
+            rotate.x,
+            rotate.y,
+            rotate.z);
+    }
+    ImGui::End();
+#endif
+}
+
 void GameRuntime::DrawPerformanceOverlay()
 {
     if (!isPerformanceOverlayVisible_) {
@@ -7633,6 +7862,7 @@ void GameRuntime::DrawPerformanceOverlay()
 
 void GameRuntime::UpdatePlayerBullets()
 {
+    const float worldTimeScale = GetCinematicWorldTimeScale();
     for (auto iterator = playerBullets_.begin();
         iterator != playerBullets_.end();) {
         if ((*iterator)->CanHome()) {
@@ -7654,7 +7884,7 @@ void GameRuntime::UpdatePlayerBullets()
                 homingBulletTargets_.erase(bullet);
             }
         }
-        (*iterator)->Update();
+        (*iterator)->Update(worldTimeScale);
         if ((*iterator)->IsDead()) {
             homingBulletTargets_.erase(iterator->get());
             playerBulletPool_.push_back(std::move(*iterator));
@@ -7706,6 +7936,10 @@ void GameRuntime::UpdateEnemies()
 
 float GameRuntime::GetCinematicWorldTimeScale() const
 {
+    if (isDebugCameraEnabled_ && isDebugWorldPaused_) {
+        return 0.0f;
+    }
+
     float timeScale = 1.0f;
     if (justDodgeSlowTimer_ > 0) {
         timeScale = (std::min)(timeScale, kJustDodgeRailSlowScale);

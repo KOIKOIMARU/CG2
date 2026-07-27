@@ -244,6 +244,11 @@ void Enemy::Update(float railDistance, float timeScale)
         return;
     }
 
+    if (timeScale <= 0.0f) {
+        object_->Update();
+        return;
+    }
+
     const float motionScale = std::clamp(timeScale, 0.05f, 1.0f);
     const float actionTimeScale =
         behavior_ == Behavior::Boss ?

@@ -82,12 +82,12 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     object_->Initialize(object3dCommon);
     object_->SetModel(model);
     object_->SetScale(objectScale_);
-    object_->SetColor({ 0.75f, 0.95f, 1.0f, 1.0f });
-    object_->SetEnvironmentCoefficient(0.13f);
-    object_->SetShininess(56.0f);
-    object_->SetSpecularColor({ 0.66f, 0.78f, 0.88f });
-    object_->SetRoughness(0.34f);
-    object_->SetMetallic(0.28f);
+    object_->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+    object_->SetEnvironmentCoefficient(0.06f);
+    object_->SetShininess(28.0f);
+    object_->SetSpecularColor({ 0.36f, 0.42f, 0.48f });
+    object_->SetRoughness(0.62f);
+    object_->SetMetallic(0.0f);
 
     modelLocalCenterOffset_ = CalculateModelLocalCenterOffset(model);
     UpdateObjectTransform();
@@ -193,8 +193,8 @@ void Player::Update(Input* input, float timeScale)
     objectRotate_ = rotate;
     object_->SetColor(
         invincibleTimer_ > 0 ?
-        Math::Vector4{ 0.55f, 0.95f, 1.0f, 1.0f } :
-        Math::Vector4{ 0.75f, 0.95f, 1.0f, 1.0f });
+        Math::Vector4{ 0.70f, 0.94f, 1.0f, 1.0f } :
+        Math::Vector4{ 1.0f, 1.0f, 1.0f, 1.0f });
     UpdateObjectTransform();
 }
 

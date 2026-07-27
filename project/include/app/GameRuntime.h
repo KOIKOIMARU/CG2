@@ -293,6 +293,8 @@ private:
     bool HandleRuntimeShortcuts();
     void UpdateRailProgress();
     void UpdatePlayerAndCamera();
+    void UpdateDebugCamera(float deltaTime);
+    void DrawDebugCameraOverlay();
     void UpdateFever();
     void ActivateFever();
     void AddFeverGauge(int amount);
@@ -529,6 +531,8 @@ private:
     bool isGameClear_ = false;
     bool isEditorOverlayVisible_ = false;
     bool isPerformanceOverlayVisible_ = false;
+    bool isDebugCameraEnabled_ = false;
+    bool isDebugWorldPaused_ = false;
     bool isPostEffectBypassEnabled_ = false;
     bool isExitRequested_ = false;
     bool showSkybox_ = true;
