@@ -415,7 +415,10 @@ void ParticleManager::DispatchInitialize(ParticleGroup& group)
 
 void ParticleManager::DispatchEmit(ParticleGroup& group)
 {
-    if (!group.needsEmit || !group.emitterData || group.emitterData->emit == 0) {
+    if (!group.needsEmit ||
+        !group.emitterData ||
+        group.emitterData->emit == 0 ||
+        group.emitterData->count == 0) {
         return;
     }
 
@@ -461,7 +464,10 @@ void ParticleManager::DispatchEmit(ParticleGroup& group)
     srvManager_->SetComputeRootDescriptorTable(2, group.freeListUavIndex);
     cl->SetComputeRootConstantBufferView(3, group.emitterResource->GetGPUVirtualAddress());
     cl->SetComputeRootConstantBufferView(4, perFrameResource_->GetGPUVirtualAddress());
-    cl->Dispatch(1, 1, 1);
+    const uint32_t dispatchCount =
+        (group.emitterData->count + kEmitThreadCount_ - 1) /
+        kEmitThreadCount_;
+    cl->Dispatch(dispatchCount, 1, 1);
 
     D3D12_RESOURCE_BARRIER uavBarriers[3]{};
     uavBarriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;

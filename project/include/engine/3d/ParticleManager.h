@@ -184,6 +184,7 @@ private:
     float totalTime_ = 0.0f;
 
     static constexpr uint32_t kMaxInstanceCount_ = 1024;
+    static constexpr uint32_t kEmitThreadCount_ = 64;
 
     void CreateInitializePipeline();
     void CreateEmitPipeline();

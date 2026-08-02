@@ -17,6 +17,7 @@
 #include <vector>
 
 class DirectXCommon;
+class GameBonusActor;
 class ImGuiManager;
 class Input;
 class Model;
@@ -367,6 +368,7 @@ private:
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Camera> camera_;
     std::unique_ptr<Player> player_;
+    std::unique_ptr<GameBonusActor> bonusActor_;
     std::vector<std::unique_ptr<Object3d>> sceneObjects_;
     std::vector<SceneSerializer::ObjectRecord> sceneObjectRecords_;
     std::list<std::unique_ptr<Bullet>> playerBullets_;
@@ -529,6 +531,7 @@ private:
     bool isGameClear_ = false;
     bool isEditorOverlayVisible_ = false;
     bool isPerformanceOverlayVisible_ = false;
+    bool showBonusBoneDebug_ = false;
     bool isPostEffectBypassEnabled_ = false;
     bool isExitRequested_ = false;
     bool showSkybox_ = true;

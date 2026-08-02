@@ -1,5 +1,6 @@
 #include "app/GameRuntime.h"
 
+#include "app/GameBonusActor.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/ParticleManager.h"
 #include "engine/3d/Skybox.h"
@@ -116,7 +117,7 @@ constexpr float kJustDodgeCameraLowAngle = 0.18f;
 constexpr float kJustDodgeCameraFovTighten = 0.140f;
 constexpr int kPlayerDodgeAfterimageIntervalFrames = 2;
 constexpr float kPlayerDodgeAfterimageDuration = 34.0f;
-constexpr int kSharedResourcePreloadStepCount = 15;
+constexpr int kSharedResourcePreloadStepCount = 17;
 constexpr float kSceneryNearLocalZ = -24.0f;
 constexpr float kSceneryFarLocalZ = 300.0f;
 constexpr float kStageClearDistance = 365.0f;
@@ -608,6 +609,33 @@ bool GameRuntime::PreloadSharedResourceStep(
         gSharedResourcePreloadLabel = "Boss spaceship model";
         modelManager->LoadModel(kBossModelPath);
         break;
+    case 15:
+        gSharedResourcePreloadLabel = "Animated support unit";
+        modelManager->LoadModel("human/walk.gltf");
+        break;
+    case 16:
+        gSharedResourcePreloadLabel = "Bonus feature modules";
+        modelManager->LoadModel("multiMesh.obj");
+        modelManager->LoadModel("multiMaterial.obj");
+        modelManager->CreateBox(
+            "game_bonus_weapon_box",
+            1.0f,
+            1.0f,
+            1.0f,
+            "resources/human/white.png");
+        modelManager->CreateSphere(
+            "game_bonus_joint_sphere",
+            10,
+            18,
+            1.0f,
+            "resources/human/white.png");
+        modelManager->CreateSphere(
+            "game_bonus_hand_particle",
+            8,
+            12,
+            1.0f,
+            "resources/human/white.png");
+        break;
     default:
         gSharedResourcesPreloaded = true;
         gSharedResourcePreloadLabel = "Ready";
@@ -670,6 +698,7 @@ void GameRuntime::Initialize()
     bossSpawned_ = false;
     bossDefeated_ = false;
     isPerformanceOverlayVisible_ = false;
+    showBonusBoneDebug_ = false;
     showSkybox_ = true;
     currentWaveIndex_ = 0;
     spawnedEnemyCountInWave_ = 0;
@@ -831,6 +860,11 @@ void GameRuntime::Initialize()
         skybox_->Update(camera_.get());
     }
 
+    bonusActor_ = std::make_unique<GameBonusActor>();
+    if (!bonusActor_->Initialize(object3dCommon_.get())) {
+        bonusActor_.reset();
+    }
+
     PrewarmBulletPools();
     PrewarmHitEffectObjectPool();
     InitializeRailScenery();
@@ -869,6 +903,10 @@ void GameRuntime::Initialize()
 
 void GameRuntime::Finalize()
 {
+    if (bonusActor_) {
+        bonusActor_->Finalize();
+        bonusActor_.reset();
+    }
     sceneObjects_.clear();
     rewardHearts_.clear();
     for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
@@ -939,6 +977,13 @@ void GameRuntime::Update()
     UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
     UpdatePlayerAndCamera();
+    if (bonusActor_ && player_ && !player_->IsDead()) {
+        bonusActor_->Update(
+            dxCommon_ ? dxCommon_->GetDeltaTime() : 0.0f,
+            player_->GetTranslate(),
+            railDistance_,
+            showBonusBoneDebug_);
+    }
     UpdateFever();
 
     if (!isGameOver_ && !isGameClear_) {
@@ -965,6 +1010,12 @@ bool GameRuntime::HandleRuntimeShortcuts()
 #ifdef ENABLE_DEBUG_GUI
     if (input_ && input_->TriggerKey(DIK_F1)) {
         isEditorOverlayVisible_ = !isEditorOverlayVisible_;
+        return true;
+    }
+    if (input_ && input_->TriggerKey(DIK_B) &&
+        bonusActor_ &&
+        bonusActor_->IsReady()) {
+        showBonusBoneDebug_ = !showBonusBoneDebug_;
         return true;
     }
 #endif
@@ -2738,6 +2789,9 @@ void GameRuntime::Draw()
     }
     if (player_) {
         player_->Draw();
+    }
+    if (bonusActor_) {
+        bonusActor_->Draw();
     }
     DrawPlayerFlightAura();
     DrawPlayerDodgeAfterimages();

@@ -1,4 +1,5 @@
 static const uint kMaxParticles = 1024;
+static const uint kEmitThreadCount = 64;
 
 struct Particle
 {
@@ -77,10 +78,10 @@ RWStructuredBuffer<uint> gFreeList : register(u2);
 ConstantBuffer<EmitterSphere> gEmitter : register(b0);
 ConstantBuffer<PerFrame> gPerFrame : register(b1);
 
-[numthreads(1, 1, 1)]
+[numthreads(kEmitThreadCount, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
-    if (gEmitter.emit == 0)
+    if (gEmitter.emit == 0 || dispatchThreadId.x >= gEmitter.count)
     {
         return;
     }
@@ -90,39 +91,38 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         float3(dispatchThreadId.x + 1.0f, gPerFrame.time, gPerFrame.deltaTime + 1.0f) *
         (gPerFrame.time + 1.0f);
 
-    for (uint countIndex = 0; countIndex < gEmitter.count; ++countIndex)
+    int freeListIndex;
+    InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
+
+    if (0 <= freeListIndex && freeListIndex < kMaxParticles)
     {
-        int freeListIndex;
-        InterlockedAdd(gFreeListIndex[0], -1, freeListIndex);
+        uint particleIndex = gFreeList[freeListIndex];
+        float3 randomPosition = generator.Generate3d() * 2.0f - 1.0f;
+        float2 randomScale =
+            lerp(gEmitter.scaleMin, gEmitter.scaleMax, generator.Generate3d().xy);
+        float3 randomDirection = generator.Generate3d() * 2.0f - 1.0f;
+        float3 emissionDirection =
+            normalize(gEmitter.direction + randomDirection * gEmitter.spread);
+        float speed =
+            lerp(gEmitter.speedMin, gEmitter.speedMax, generator.Generate1d());
+        float colorRate = generator.Generate1d();
 
-        if (0 <= freeListIndex && freeListIndex < kMaxParticles)
-        {
-            uint particleIndex = gFreeList[freeListIndex];
-            float3 randomPosition = generator.Generate3d() * 2.0f - 1.0f;
-            float2 randomScale = lerp(gEmitter.scaleMin, gEmitter.scaleMax, generator.Generate3d().xy);
-            float3 randomDirection = generator.Generate3d() * 2.0f - 1.0f;
-            float3 emissionDirection = normalize(gEmitter.direction + randomDirection * gEmitter.spread);
-            float speed = lerp(gEmitter.speedMin, gEmitter.speedMax, generator.Generate1d());
-            float colorRate = generator.Generate1d();
-
-            gParticles[particleIndex] = (Particle)0;
-            gParticles[particleIndex].translate =
-                gEmitter.translate + randomPosition * gEmitter.radius;
-            gParticles[particleIndex].scale = float3(randomScale, 1.0f);
-            gParticles[particleIndex].initialScale = float3(randomScale, 1.0f);
-            gParticles[particleIndex].endScale = gEmitter.endScale;
-            gParticles[particleIndex].lifeTime =
-                lerp(gEmitter.lifeTimeMin, gEmitter.lifeTimeMax, generator.Generate1d());
-            gParticles[particleIndex].velocity = emissionDirection * speed;
-            gParticles[particleIndex].currentTime = 0.0f;
-            gParticles[particleIndex].color = lerp(gEmitter.colorMin, gEmitter.colorMax, colorRate);
-        }
-        else
-        {
-            // 空きがないのに減らしてしまった分を戻して、このEmitを終える
-            int unused;
-            InterlockedAdd(gFreeListIndex[0], 1, unused);
-            break;
-        }
+        gParticles[particleIndex] = (Particle)0;
+        gParticles[particleIndex].translate =
+            gEmitter.translate + randomPosition * gEmitter.radius;
+        gParticles[particleIndex].scale = float3(randomScale, 1.0f);
+        gParticles[particleIndex].initialScale = float3(randomScale, 1.0f);
+        gParticles[particleIndex].endScale = gEmitter.endScale;
+        gParticles[particleIndex].lifeTime =
+            lerp(gEmitter.lifeTimeMin, gEmitter.lifeTimeMax, generator.Generate1d());
+        gParticles[particleIndex].velocity = emissionDirection * speed;
+        gParticles[particleIndex].currentTime = 0.0f;
+        gParticles[particleIndex].color =
+            lerp(gEmitter.colorMin, gEmitter.colorMax, colorRate);
+    }
+    else
+    {
+        int unused;
+        InterlockedAdd(gFreeListIndex[0], 1, unused);
     }
 }

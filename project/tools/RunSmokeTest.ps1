@@ -72,6 +72,15 @@ public static class CG2SmokeCaptureNative {
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(
+        IntPtr window,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+    [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr window, out RECT rect);
     [DllImport("user32.dll")]
     public static extern bool ClientToScreen(IntPtr window, ref POINT point);
@@ -185,41 +194,67 @@ while (-not $process.HasExited -and (Get-Date) -lt $deadline) {
         $capturedFrameCount -lt $CaptureFrameCount -and
         $captureElapsedSeconds -ge $nextCaptureSeconds -and
         $process.MainWindowHandle -ne 0) {
+        $topmostWindow = [IntPtr](-1)
+        $notTopmostWindow = [IntPtr](-2)
+        $noMoveNoSizeShow = 0x0001 -bor 0x0002 -bor 0x0040
+        [CG2SmokeCaptureNative]::SetWindowPos(
+            $process.MainWindowHandle,
+            $topmostWindow,
+            0,
+            0,
+            0,
+            0,
+            $noMoveNoSizeShow) | Out-Null
         [CG2SmokeCaptureNative]::SetForegroundWindow(
             $process.MainWindowHandle) | Out-Null
-        $rect = New-Object CG2SmokeCaptureNative+RECT
-        if ([CG2SmokeCaptureNative]::GetClientRect(
-                $process.MainWindowHandle,
-                [ref]$rect)) {
-            $origin = New-Object CG2SmokeCaptureNative+POINT
-            $origin.X = 0
-            $origin.Y = 0
-            [CG2SmokeCaptureNative]::ClientToScreen(
-                $process.MainWindowHandle,
-                [ref]$origin) | Out-Null
-            $width = $rect.Right - $rect.Left
-            $height = $rect.Bottom - $rect.Top
-            if ($width -gt 0 -and $height -gt 0) {
-                $bitmap = New-Object System.Drawing.Bitmap $width, $height
-                $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-                try {
-                    $graphics.CopyFromScreen(
-                        $origin.X,
-                        $origin.Y,
-                        0,
-                        0,
-                        $bitmap.Size)
-                } finally {
-                    $graphics.Dispose()
+        try {
+            $rect = New-Object CG2SmokeCaptureNative+RECT
+            if ([CG2SmokeCaptureNative]::GetClientRect(
+                    $process.MainWindowHandle,
+                    [ref]$rect)) {
+                $origin = New-Object CG2SmokeCaptureNative+POINT
+                $origin.X = 0
+                $origin.Y = 0
+                [CG2SmokeCaptureNative]::ClientToScreen(
+                    $process.MainWindowHandle,
+                    [ref]$origin) | Out-Null
+                $width = $rect.Right - $rect.Left
+                $height = $rect.Bottom - $rect.Top
+                if ($width -gt 0 -and $height -gt 0) {
+                    $bitmap = New-Object System.Drawing.Bitmap $width, $height
+                    try {
+                        $graphics =
+                            [System.Drawing.Graphics]::FromImage($bitmap)
+                        try {
+                            $graphics.CopyFromScreen(
+                                $origin.X,
+                                $origin.Y,
+                                0,
+                                0,
+                                $bitmap.Size)
+                        } finally {
+                            $graphics.Dispose()
+                        }
+                        $capturePath = Join-Path $captureDirectory (
+                            'frame-{0:D3}.png' -f $capturedFrameCount)
+                        $bitmap.Save(
+                            $capturePath,
+                            [System.Drawing.Imaging.ImageFormat]::Png)
+                        ++$capturedFrameCount
+                    } finally {
+                        $bitmap.Dispose()
+                    }
                 }
-                $capturePath = Join-Path $captureDirectory (
-                    'frame-{0:D3}.png' -f $capturedFrameCount)
-                $bitmap.Save(
-                    $capturePath,
-                    [System.Drawing.Imaging.ImageFormat]::Png)
-                $bitmap.Dispose()
-                ++$capturedFrameCount
             }
+        } finally {
+            [CG2SmokeCaptureNative]::SetWindowPos(
+                $process.MainWindowHandle,
+                $notTopmostWindow,
+                0,
+                0,
+                0,
+                0,
+                $noMoveNoSizeShow) | Out-Null
         }
         $nextCaptureSeconds += $CaptureIntervalSeconds
     }

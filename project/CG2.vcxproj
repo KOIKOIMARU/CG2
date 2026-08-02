@@ -171,6 +171,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\base\Framework.cpp" />
     <ClCompile Include="src\app\Bullet.cpp" />
     <ClCompile Include="src\app\Enemy.cpp" />
+    <ClCompile Include="src\app\GameBonusActor.cpp" />
     <ClCompile Include="src\app\GameRuntime.cpp" />
     <ClCompile Include="src\app\MyGame.cpp" />
     <ClCompile Include="src\app\Player.cpp" />
@@ -468,6 +469,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
     <ClInclude Include="include\app\Bullet.h" />
     <ClInclude Include="include\app\Enemy.h" />
+    <ClInclude Include="include\app\GameBonusActor.h" />
     <ClInclude Include="include\app\GameRuntime.h" />
     <ClInclude Include="include\app\MyGame.h" />
     <ClInclude Include="include\app\Player.h" />
