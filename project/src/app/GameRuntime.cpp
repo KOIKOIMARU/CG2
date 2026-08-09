@@ -71,13 +71,13 @@ constexpr const char* kCityBuildingMediumModelPath =
 constexpr const char* kCityBuildingLargeModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Building_Large_2.gltf";
-constexpr int kInitialPlayerBulletPoolCount = 24;
-constexpr int kInitialEnemyBulletPoolCount = 24;
+constexpr int kInitialPlayerBulletPoolCount = 8;
+constexpr int kInitialEnemyBulletPoolCount = 8;
 constexpr int kTargetPlayerBulletPoolCount = 24;
 constexpr int kTargetEnemyBulletPoolCount = 24;
 constexpr int kBulletPoolWarmupStartDelayFrames = 6;
 constexpr int kBulletPoolWarmupIntervalFrames = 1;
-constexpr int kInitialHitEffectObjectPoolCount = 120;
+constexpr int kInitialHitEffectObjectPoolCount = 24;
 constexpr int kTargetHitEffectObjectPoolCount = 120;
 constexpr int kHitEffectPoolWarmupStartDelayFrames = 6;
 constexpr int kHitEffectPoolWarmupIntervalFrames = 1;
@@ -840,10 +840,7 @@ void GameRuntime::Initialize()
     InitializeRewardHearts();
     InitializePlayerDodgeAfterimages();
     InitializePlayerFlightAura();
-    InitializeGpuPlayerExhaustParticles();
-    if (!gpuPlayerExhaustEnabled_) {
-        InitializePlayerExhaustParticles();
-    }
+    InitializePlayerExhaustParticles();
     InitializeContactShadows();
 
 #ifdef ENABLE_DEBUG_GUI
