@@ -52,6 +52,7 @@ public:
     void Kill();
     bool Damage(int damage);
     bool CanShoot() const;
+    void SetAttackTelegraphRate(float rate);
     bool IsDead() const { return lifeState_ == LifeState::Destroyed || lifeState_ == LifeState::Escaped; }
     bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
     bool HasEscaped() const { return lifeState_ == LifeState::Escaped; }
@@ -96,6 +97,7 @@ private:
     float collisionRadius_ = 0.8f;
     float aimRadius_ = 0.8f;
     float visualScaleRate_ = 1.0f;
+    float attackTelegraphRate_ = 0.0f;
     Behavior behavior_ = Behavior::Formation;
     EntryStyle entryStyle_ = EntryStyle::Direct;
     LifeState lifeState_ = LifeState::Alive;

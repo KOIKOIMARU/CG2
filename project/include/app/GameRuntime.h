@@ -441,6 +441,12 @@ private:
     int spawnSequenceIndex_ = 0;
     int score_ = 0;
     int defeatedEnemyCount_ = 0;
+    int escapedEnemyCount_ = 0;
+    int playerShotsFired_ = 0;
+    int playerHitCount_ = 0;
+    int playerDamageCount_ = 0;
+    int feverActivationCount_ = 0;
+    int justDodgeCount_ = 0;
     int resultTransitionTimer_ = -1;
     int chargeTimer_ = 0;
     int chargeFlashTimer_ = 0;
@@ -477,6 +483,7 @@ private:
     int enemyShotInterval_ = 64;
     int waveStartDelay_ = 90;
     float cameraTimer_ = 0.0f;
+    float gameplayElapsedSeconds_ = 0.0f;
     float cameraShakePower_ = 0.0f;
     float railDistance_ = 0.0f;
     float railSpeed_ = 0.115f;

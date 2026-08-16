@@ -676,7 +676,14 @@ void GameRuntime::Initialize()
     defeatedEnemyCountInWave_ = 0;
     spawnSequenceIndex_ = 0;
     defeatedEnemyCount_ = 0;
+    escapedEnemyCount_ = 0;
+    playerShotsFired_ = 0;
+    playerHitCount_ = 0;
+    playerDamageCount_ = 0;
+    feverActivationCount_ = 0;
+    justDodgeCount_ = 0;
     score_ = 0;
+    gameplayElapsedSeconds_ = 0.0f;
     enemySpawnTimer_ = 0;
     enemyShotTimer_ = 32;
     bossWarningTimer_ = 0;
@@ -932,6 +939,11 @@ void GameRuntime::Update()
         return;
     }
 
+    if (!isGameOver_ && !isGameClear_ && dxCommon_) {
+        gameplayElapsedSeconds_ +=
+            std::clamp(dxCommon_->GetDeltaTime(), 0.0f, 0.10f);
+    }
+
     UpdateBulletPoolWarmup();
     UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
@@ -1184,6 +1196,7 @@ void GameRuntime::ActivateFever()
     }
 
     feverGauge_ = 0;
+    ++feverActivationCount_;
     feverTimer_ = kFeverDurationFrames;
     feverActivationFlashTimer_ = kFeverActivationFlashFrames;
     chargeTimer_ = kChargeShotMax;
@@ -1264,6 +1277,13 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     defeatedEnemyCountInWave_ = 0;
     spawnSequenceIndex_ = 0;
     defeatedEnemyCount_ = 0;
+    escapedEnemyCount_ = 0;
+    playerShotsFired_ = 0;
+    playerHitCount_ = 0;
+    playerDamageCount_ = 0;
+    feverActivationCount_ = 0;
+    justDodgeCount_ = 0;
+    gameplayElapsedSeconds_ = 0.0f;
     enemySpawnTimer_ = 0;
     enemyShotTimer_ = 32;
     bossSpawned_ = false;
@@ -3086,6 +3106,7 @@ void GameRuntime::FirePlayerBullet()
         homingBulletTargets_[bullet.get()] = homingTarget;
     }
     playerBullets_.push_back(std::move(bullet));
+    ++playerShotsFired_;
     maxActivePlayerBullets_ =
         (std::max)(maxActivePlayerBullets_, playerBullets_.size());
     chargeTimer_ = feverTimer_ > 0 ? kChargeShotMax : 0;
@@ -4129,6 +4150,7 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
         return;
     }
 
+    ++justDodgeCount_;
     AddScore(kJustDodgeScoreBonus);
     AddFeverGauge(22);
     chargeTimer_ = (std::min)(chargeTimer_ + kJustDodgeChargeBonus, kChargeShotMax);
@@ -6054,12 +6076,6 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
     const bool sniperTelegraphActive =
         enemyShotTimer_ > 0 &&
         enemyShotTimer_ <= kSniperTelegraphLeadFrames;
-    Math::Vector2 playerScreen{};
-    Math::Vector3 playerAimPosition = player_->GetTranslate();
-    playerAimPosition.y += 0.12f;
-    const bool hasPlayerScreenPosition =
-        TryProjectToScreen(playerAimPosition, playerScreen);
-
     const float chargeRate = 1.0f - std::clamp(
         static_cast<float>(enemyShotTimer_) /
             static_cast<float>(kSniperTelegraphLeadFrames),
@@ -6069,6 +6085,7 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
         0.5f + 0.5f * std::sin(cameraTimer_ * 0.48f);
     const int lineAlpha = static_cast<int>(
         70.0f + chargeRate * 130.0f + pulse * 35.0f);
+    bool sniperTelegraphDrawn = false;
 
     for (const auto& enemy : enemies_) {
         if (!enemy || enemy->IsDead()) {
@@ -6080,7 +6097,7 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
             continue;
         }
 
-        if (enemy->IsBoss() && hasPlayerScreenPosition &&
+        if (enemy->IsBoss() &&
             bossAttackPattern_ == 2 && bossAttackStep_ >= 0 && bossAttackStepTimer_ > 0) {
             const int chargeDuration = bossPhase_ >= 2 ? 38 : 50;
             const float bossChargeRate = 1.0f - std::clamp(
@@ -6092,24 +6109,47 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
                 0.5f + 0.5f * std::sin(cameraTimer_ * (0.55f + bossChargeRate * 0.65f));
             const int bossLineAlpha = static_cast<int>(
                 85.0f + bossChargeRate * 140.0f + bossChargePulse * 25.0f);
-            const ImVec2 start(enemyScreen.x, enemyScreen.y + 10.0f);
-            const ImVec2 end(playerScreen.x, playerScreen.y);
-            drawList->AddLine(
-                start,
-                end,
-                IM_COL32(22, 0, 0, (std::clamp)(bossLineAlpha / 2, 0, 128)),
-                7.0f);
-            drawList->AddLine(
-                start,
-                end,
-                IM_COL32(255, 62, 26, (std::clamp)(bossLineAlpha, 0, 255)),
-                1.5f + bossChargeRate * 2.5f);
-            drawList->AddCircle(
-                start,
-                34.0f - bossChargeRate * 14.0f,
-                IM_COL32(255, 172, 66, (std::clamp)(bossLineAlpha, 0, 255)),
-                32,
-                2.5f);
+            const ImVec2 muzzle(enemyScreen.x, enemyScreen.y + 12.0f);
+            const float coreRadius = 5.0f + bossChargeRate * 9.0f;
+            drawList->AddCircleFilled(
+                muzzle,
+                coreRadius * 2.2f,
+                IM_COL32(255, 48, 18, (std::clamp)(bossLineAlpha / 5, 0, 58)),
+                32);
+            drawList->AddCircleFilled(
+                muzzle,
+                coreRadius,
+                IM_COL32(255, 104, 38, (std::clamp)(bossLineAlpha, 0, 255)),
+                24);
+            drawList->AddCircleFilled(
+                muzzle,
+                (std::max)(2.0f, coreRadius * 0.34f),
+                IM_COL32(255, 238, 178, (std::clamp)(bossLineAlpha + 20, 0, 255)),
+                18);
+            constexpr int kBossEnergyRayCount = 8;
+            for (int rayIndex = 0; rayIndex < kBossEnergyRayCount; ++rayIndex) {
+                const float angle =
+                    static_cast<float>(rayIndex) * (kTwoPi / kBossEnergyRayCount) +
+                    cameraTimer_ * 0.035f;
+                const float outerRadius = 42.0f - bossChargeRate * 14.0f +
+                    static_cast<float>(rayIndex % 2) * 5.0f;
+                const float innerRadius = 19.0f - bossChargeRate * 5.0f;
+                const ImVec2 outer(
+                    muzzle.x + std::cos(angle) * outerRadius,
+                    muzzle.y + std::sin(angle) * outerRadius);
+                const ImVec2 inner(
+                    muzzle.x + std::cos(angle) * innerRadius,
+                    muzzle.y + std::sin(angle) * innerRadius);
+                drawList->AddLine(
+                    outer,
+                    inner,
+                    IM_COL32(255, 154, 62, (std::clamp)(bossLineAlpha, 0, 255)),
+                    1.5f + bossChargeRate * 1.8f);
+            }
+            drawList->AddText(
+                ImVec2(muzzle.x + 25.0f, muzzle.y - 8.0f),
+                IM_COL32(255, 198, 126, (std::clamp)(bossLineAlpha, 0, 255)),
+                "CANNON CHARGE");
         }
 
         if (enemy->IsShield() && enemy->HasShield()) {
@@ -6197,29 +6237,52 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
             }
         }
 
-        if (!sniperTelegraphActive || !hasPlayerScreenPosition ||
+        if (sniperTelegraphDrawn || !sniperTelegraphActive ||
             !enemy->IsSniper() || !enemy->CanShoot()) {
             continue;
         }
 
-        const ImVec2 start(enemyScreen.x, enemyScreen.y);
-        const ImVec2 end(playerScreen.x, playerScreen.y);
-        drawList->AddLine(
-            start,
-            end,
-            IM_COL32(20, 0, 10, lineAlpha / 2),
-            5.0f);
-        drawList->AddLine(
-            start,
-            end,
-            IM_COL32(255, 42, 92, lineAlpha),
-            1.5f + chargeRate * 1.5f);
-        drawList->AddCircle(
-            start,
-            15.0f + chargeRate * 7.0f,
-            IM_COL32(255, 74, 112, lineAlpha),
-            20,
-            2.0f);
+        sniperTelegraphDrawn = true;
+        const ImVec2 muzzle(enemyScreen.x, enemyScreen.y + 4.0f);
+        const float coreRadius = 3.5f + chargeRate * 5.5f;
+        drawList->AddCircleFilled(
+            muzzle,
+            coreRadius * 2.3f,
+            IM_COL32(255, 28, 82, (std::clamp)(lineAlpha / 5, 0, 52)),
+            24);
+        drawList->AddCircleFilled(
+            muzzle,
+            coreRadius,
+            IM_COL32(255, 60, 106, (std::clamp)(lineAlpha, 0, 255)),
+            20);
+        drawList->AddCircleFilled(
+            muzzle,
+            (std::max)(1.5f, coreRadius * 0.32f),
+            IM_COL32(255, 236, 224, (std::clamp)(lineAlpha + 20, 0, 255)),
+            14);
+        constexpr int kSniperEnergyRayCount = 5;
+        for (int rayIndex = 0; rayIndex < kSniperEnergyRayCount; ++rayIndex) {
+            const float angle =
+                -1.72f + static_cast<float>(rayIndex) * 0.86f +
+                std::sin(cameraTimer_ * 0.07f) * 0.08f;
+            const float outerRadius = 25.0f - chargeRate * 8.0f;
+            const float innerRadius = 11.0f - chargeRate * 2.0f;
+            const ImVec2 outer(
+                muzzle.x + std::cos(angle) * outerRadius,
+                muzzle.y + std::sin(angle) * outerRadius);
+            const ImVec2 inner(
+                muzzle.x + std::cos(angle) * innerRadius,
+                muzzle.y + std::sin(angle) * innerRadius);
+            drawList->AddLine(
+                outer,
+                inner,
+                IM_COL32(255, 82, 124, (std::clamp)(lineAlpha, 0, 255)),
+                1.3f + chargeRate * 1.2f);
+        }
+        drawList->AddText(
+            ImVec2(muzzle.x + 16.0f, muzzle.y - 7.0f),
+            IM_COL32(255, 156, 176, (std::clamp)(lineAlpha, 0, 255)),
+            chargeRate >= 0.72f ? "FIRING" : "CHARGING");
     }
 }
 
@@ -7414,8 +7477,8 @@ void GameRuntime::DrawResultOverlay()
     const ImVec2 drawSize(hudSize.x, hudSize.y);
     const ImVec2 center(
         origin.x + drawSize.x * 0.5f,
-        origin.y + drawSize.y * 0.44f);
-    const ImVec2 panelSize(340.0f, 112.0f);
+        origin.y + drawSize.y * 0.46f);
+    const ImVec2 panelSize(520.0f, 286.0f);
     const ImVec2 panelMin(
         center.x - panelSize.x * 0.5f,
         center.y - panelSize.y * 0.5f);
@@ -7428,6 +7491,23 @@ void GameRuntime::DrawResultOverlay()
     const ImVec2 titleSize = ImGui::CalcTextSize(title);
     const ImVec2 guideSize = ImGui::CalcTextSize(guide);
 
+    const int totalCentiseconds =
+        (std::max)(0, static_cast<int>(gameplayElapsedSeconds_ * 100.0f));
+    const int minutes = totalCentiseconds / 6000;
+    const int seconds = (totalCentiseconds / 100) % 60;
+    const int centiseconds = totalCentiseconds % 100;
+    const int targetCount = GetTotalEnemyTargetCount() + (bossSpawned_ ? 1 : 0);
+    const char* rank = "--";
+    if (isGameClear_) {
+        if (playerDamageCount_ == 0 && escapedEnemyCount_ <= 2) {
+            rank = "S";
+        } else if (playerDamageCount_ <= 2 && escapedEnemyCount_ <= 5) {
+            rank = "A";
+        } else {
+            rank = "B";
+        }
+    }
+
     const ImU32 resultAccent = isGameClear_ ?
         IM_COL32(150, 239, 114, 230) :
         IM_COL32(255, 102, 124, 230);
@@ -7437,7 +7517,7 @@ void GameRuntime::DrawResultOverlay()
         panelMax,
         resultAccent);
     drawList->AddText(
-        ImVec2(panelMin.x + 32.0f, panelMin.y + 9.0f),
+        ImVec2(panelMin.x + 24.0f, panelMin.y + 12.0f),
         IM_COL32(226, 250, 247, 235),
         "SYSTEM RESULT");
     drawList->AddText(
@@ -7446,8 +7526,64 @@ void GameRuntime::DrawResultOverlay()
             IM_COL32(150, 255, 205, 255) :
             IM_COL32(255, 145, 145, 255),
         title);
+
+    drawList->AddLine(
+        ImVec2(panelMin.x + 22.0f, panelMin.y + 76.0f),
+        ImVec2(panelMax.x - 22.0f, panelMin.y + 76.0f),
+        resultAccent,
+        1.5f);
+
+    char valueText[96]{};
+    constexpr float kLeftLabelX = 28.0f;
+    constexpr float kLeftValueX = 148.0f;
+    constexpr float kRightLabelX = 278.0f;
+    constexpr float kRightValueX = 398.0f;
+    constexpr float kFirstRowY = 94.0f;
+    constexpr float kRowStepY = 31.0f;
+    const ImU32 labelColor = IM_COL32(151, 181, 199, 230);
+    const ImU32 valueColor = IM_COL32(236, 249, 250, 250);
+
+    const auto drawResultValue = [drawList, panelMin, labelColor, valueColor](
+                                     float labelX,
+                                     float valueX,
+                                     float y,
+                                     const char* label,
+                                     const char* value) {
+        drawList->AddText(ImVec2(panelMin.x + labelX, panelMin.y + y), labelColor, label);
+        drawList->AddText(ImVec2(panelMin.x + valueX, panelMin.y + y), valueColor, value);
+    };
+
+    std::snprintf(valueText, sizeof(valueText), "%02d:%02d.%02d", minutes, seconds, centiseconds);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY, "TIME", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", score_);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY, "SCORE", valueText);
+
+    std::snprintf(valueText, sizeof(valueText), "%d / %d", defeatedEnemyCount_, targetCount);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY, "DESTROYED", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", escapedEnemyCount_);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY, "ESCAPED", valueText);
+
+    std::snprintf(valueText, sizeof(valueText), "%d", playerShotsFired_);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 2.0f, "SHOTS", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", playerHitCount_);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 2.0f, "HITS", valueText);
+
+    std::snprintf(valueText, sizeof(valueText), "%d", playerDamageCount_);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 3.0f, "DAMAGE", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", justDodgeCount_);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 3.0f, "JUST DODGE", valueText);
+
+    std::snprintf(valueText, sizeof(valueText), "%d", feverActivationCount_);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 4.0f, "FEVER", valueText);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 4.0f, "RANK", rank);
+
+    drawList->AddLine(
+        ImVec2(panelMin.x + 22.0f, panelMax.y - 40.0f),
+        ImVec2(panelMax.x - 22.0f, panelMax.y - 40.0f),
+        IM_COL32(118, 156, 174, 120),
+        1.0f);
     drawList->AddText(
-        ImVec2(center.x - guideSize.x * 0.5f, panelMin.y + 76.0f),
+        ImVec2(center.x - guideSize.x * 0.5f, panelMax.y - 29.0f),
         IM_COL32(225, 235, 245, 225),
         guide);
 }
@@ -7682,9 +7818,40 @@ void GameRuntime::UpdateEnemyBullets()
 void GameRuntime::UpdateEnemies()
 {
     const float worldTimeScale = GetCinematicWorldTimeScale();
+    const bool sniperTelegraphActive =
+        enemyShotTimer_ > 0 &&
+        enemyShotTimer_ <= kSniperTelegraphLeadFrames;
+    const float sniperChargeRate = 1.0f - std::clamp(
+        static_cast<float>(enemyShotTimer_) /
+            static_cast<float>(kSniperTelegraphLeadFrames),
+        0.0f,
+        1.0f);
+    bool sniperTelegraphAssigned = false;
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
+        float attackTelegraphRate = 0.0f;
+        if ((*iterator)->IsBoss() &&
+            bossAttackPattern_ == 2 &&
+            bossAttackStep_ >= 0 &&
+            bossAttackStepTimer_ > 0) {
+            const int chargeDuration = bossPhase_ >= 2 ? 38 : 50;
+            attackTelegraphRate = 1.0f - std::clamp(
+                static_cast<float>(bossAttackStepTimer_) /
+                    static_cast<float>((std::max)(chargeDuration, 1)),
+                0.0f,
+                1.0f);
+        } else if (!sniperTelegraphAssigned &&
+            sniperTelegraphActive &&
+            (*iterator)->IsSniper() &&
+            (*iterator)->CanShoot()) {
+            attackTelegraphRate = sniperChargeRate;
+            sniperTelegraphAssigned = true;
+        }
+        (*iterator)->SetAttackTelegraphRate(attackTelegraphRate);
         (*iterator)->Update(railDistance_, worldTimeScale);
         if ((*iterator)->IsDead()) {
+            if ((*iterator)->HasEscaped()) {
+                ++escapedEnemyCount_;
+            }
             const Enemy* removedEnemy = iterator->get();
             for (auto targetIterator = homingBulletTargets_.begin();
                 targetIterator != homingBulletTargets_.end();) {
@@ -7843,6 +8010,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                         isBossHit ? 1.85f : (isChargedHit ? 1.42f : 1.20f));
                 }
                 bullet->RegisterHit();
+                ++playerHitCount_;
                 const bool isDestroyed = enemy->Damage(damage);
                 AddFeverGauge(
                     isDestroyed ?
@@ -7952,6 +8120,7 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
             const Math::Vector3 incomingVelocity = bullet->GetVelocity();
             const int incomingDamage = bullet->GetDamage();
             bullet->Kill();
+            ++playerDamageCount_;
             player_->Damage(
                 feverTimer_ > 0 ?
                     (std::max)(1, (incomingDamage + 1) / 2) :

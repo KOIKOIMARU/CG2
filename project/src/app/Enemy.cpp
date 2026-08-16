@@ -640,15 +640,20 @@ void Enemy::Update(float railDistance, float timeScale)
         (0.070f * hitRate + 0.038f * hitOscillation) * hitFlashStrength_ :
         0.0f;
     const float flashScale = 1.0f + hitPunch;
-    visualScaleRate_ = std::clamp(visualScaleTarget, 0.34f, 1.12f);
     Math::Vector4 color = baseColor_;
     color.w *= std::clamp(colorAlphaRate, 0.18f, 1.0f);
-    if (behavior_ == Behavior::Sniper && 58 <= age_ && age_ <= 304) {
-        const float sniperPulse =
-            0.5f + 0.5f * std::sin(moveTimer_ * 0.32f);
-        color.x = Lerp(color.x, 1.65f, 0.16f + sniperPulse * 0.16f);
-        color.y = Lerp(color.y, 0.16f, 0.18f + sniperPulse * 0.12f);
-        color.z = Lerp(color.z, 0.36f, 0.12f + sniperPulse * 0.10f);
+    if (attackTelegraphRate_ > 0.0f) {
+        const float telegraphRate = Clamp01(attackTelegraphRate_);
+        const float chargePulse =
+            0.5f + 0.5f * std::sin(moveTimer_ * (0.42f + telegraphRate * 0.38f));
+        const float flashStrength =
+            std::clamp(0.12f + telegraphRate * 0.42f + chargePulse * 0.12f, 0.0f, 0.72f);
+        color.x = Lerp(color.x, 1.86f, flashStrength);
+        color.y = Lerp(color.y, 0.34f + telegraphRate * 0.36f, flashStrength);
+        color.z = Lerp(color.z, 0.20f, flashStrength * 0.82f);
+        visualScaleTarget +=
+            (0.015f + chargePulse * 0.020f) * telegraphRate;
+        objectRotate.x -= telegraphRate * 0.045f;
     }
     if (behavior_ == Behavior::Shield && shieldHp_ > 0) {
         const float shieldPulse =
@@ -685,6 +690,7 @@ void Enemy::Update(float railDistance, float timeScale)
         color.z = Lerp(color.z, flashColor.z, flash);
         objectRotate.z += hitOscillation * 0.055f * hitFlashStrength_;
     }
+    visualScaleRate_ = std::clamp(visualScaleTarget, 0.34f, 1.12f);
     object_->SetScale({
         baseScale_.x * visualScaleRate_ * flashScale,
         baseScale_.y * visualScaleRate_ * flashScale,
@@ -798,4 +804,9 @@ bool Enemy::CanShoot() const
     default:
         return 54 <= age_ && age_ <= 210;
     }
+}
+
+void Enemy::SetAttackTelegraphRate(float rate)
+{
+    attackTelegraphRate_ = std::clamp(rate, 0.0f, 1.0f);
 }

@@ -65,6 +65,7 @@ if ($CaptureFrames) {
 using System;
 using System.Runtime.InteropServices;
 public static class CG2SmokeCaptureNative {
+    public delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)]
@@ -75,6 +76,26 @@ public static class CG2SmokeCaptureNative {
     public static extern bool GetClientRect(IntPtr window, out RECT rect);
     [DllImport("user32.dll")]
     public static extern bool ClientToScreen(IntPtr window, ref POINT point);
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    public static IntPtr FindMainWindow(int processId) {
+        IntPtr result = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr window, IntPtr parameter) {
+            uint windowProcessId;
+            GetWindowThreadProcessId(window, out windowProcessId);
+            if (windowProcessId == processId && IsWindowVisible(window)) {
+                result = window;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
 }
 '@
 }
@@ -181,21 +202,26 @@ while (-not $process.HasExited -and (Get-Date) -lt $deadline) {
         } else {
             ((Get-Date) - $processStartTime).TotalSeconds
         }
+    $windowHandle = if ($CaptureFrames) {
+        [CG2SmokeCaptureNative]::FindMainWindow($process.Id)
+    } else {
+        [IntPtr]::Zero
+    }
     if ($CaptureFrames -and
         $capturedFrameCount -lt $CaptureFrameCount -and
         $captureElapsedSeconds -ge $nextCaptureSeconds -and
-        $process.MainWindowHandle -ne 0) {
+        $windowHandle -ne [IntPtr]::Zero) {
         [CG2SmokeCaptureNative]::SetForegroundWindow(
-            $process.MainWindowHandle) | Out-Null
+            $windowHandle) | Out-Null
         $rect = New-Object CG2SmokeCaptureNative+RECT
         if ([CG2SmokeCaptureNative]::GetClientRect(
-                $process.MainWindowHandle,
+                $windowHandle,
                 [ref]$rect)) {
             $origin = New-Object CG2SmokeCaptureNative+POINT
             $origin.X = 0
             $origin.Y = 0
             [CG2SmokeCaptureNative]::ClientToScreen(
-                $process.MainWindowHandle,
+                $windowHandle,
                 [ref]$origin) | Out-Null
             $width = $rect.Right - $rect.Left
             $height = $rect.Bottom - $rect.Top
