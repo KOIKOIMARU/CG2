@@ -3880,8 +3880,6 @@ void GameRuntime::AddEnemyImpactEffect(
 
     Model* burstModel =
         effectImpactBurstModel_ ? effectImpactBurstModel_ : effectGlowCoreModel_;
-    Model* ringModel =
-        effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_;
     Model* shardModel =
         effectMagicShardModel_ ? effectMagicShardModel_ : effectSparkStarModel_;
 
@@ -3891,11 +3889,11 @@ void GameRuntime::AddEnemyImpactEffect(
         isHeavyImpact ? 0.56f : 0.42f,
         -0.22f, 0.0f, 0.0f, 1.45f, 0.62f, {});
     AddHitEffectVisual(
-        effect, ringModel, worldPosition,
-        { 0.38f, 0.88f, 1.0f, 0.72f },
-        isHeavyImpact ? 0.46f : 0.34f,
-        isHeavyImpact ? 2.30f : 1.82f,
-        0.0f, 0.0f, 1.20f, 0.68f, {});
+        effect, burstModel, worldPosition,
+        { 0.36f, 0.86f, 1.0f, 0.66f },
+        isHeavyImpact ? 0.48f : 0.36f,
+        isHeavyImpact ? 0.82f : 0.62f,
+        -2.6f, 0.0f, 1.62f, 0.34f, {});
 
     constexpr int kImpactShardCount = 5;
     for (int index = 0; index < kImpactShardCount; ++index) {
@@ -4090,11 +4088,13 @@ void GameRuntime::AddPlayerDamageEffect(const Math::Vector3& worldPosition)
         { 1.0f, 0.92f, 0.78f, 0.92f },
         0.48f, -0.16f, 0.0f, 0.0f, 1.38f, 0.62f, {});
     AddHitEffectVisual(
-        effect,
-        effectGlowRingModel_ ? effectGlowRingModel_ : effectGlowCoreModel_,
-        worldPosition,
-        { 1.0f, 0.28f, 0.18f, 0.68f },
-        0.38f, 1.75f, 0.0f, 0.0f, 1.12f, 0.74f, {});
+        effect, burstModel, worldPosition,
+        { 1.0f, 0.24f, 0.12f, 0.74f },
+        0.44f, 0.58f, -2.8f, 0.0f, 1.68f, 0.30f, {});
+    AddHitEffectVisual(
+        effect, burstModel, worldPosition,
+        { 1.0f, 0.58f, 0.22f, 0.58f },
+        0.34f, 0.48f, 2.4f, 0.0f, 0.30f, 1.58f, {});
 
     constexpr std::array<Math::Vector3, 4> kDamageShardVelocities{
         Math::Vector3{ -0.115f, 0.070f, 0.006f },
@@ -4264,7 +4264,7 @@ void GameRuntime::TriggerPlayerDamageFeedback(
         sourceDirection = { 0.0f, -1.0f };
     }
     playerDamageDirection_ = sourceDirection;
-    playerDamageHudDuration_ = 20;
+    playerDamageHudDuration_ = 26;
     playerDamageHudTimer_ = playerDamageHudDuration_;
 }
 
@@ -7329,12 +7329,14 @@ void GameRuntime::DrawHitConfirmHud()
         IM_COL32(255, 64, 192, softAlpha) :
         IM_COL32(64, 198, 255, softAlpha);
 
-    drawList->AddCircle(
-        center,
-        radius + 5.0f,
-        softColor,
-        32,
-        hitConfirmDestroyed_ ? 4.0f : 3.0f);
+    if (hitConfirmDestroyed_) {
+        drawList->AddNgon(
+            center,
+            radius * 0.58f,
+            softColor,
+            4,
+            3.2f);
+    }
     for (int xSign : { -1, 1 }) {
         for (int ySign : { -1, 1 }) {
             const ImVec2 inner(
@@ -7392,27 +7394,74 @@ void GameRuntime::DrawPlayerDamageHud()
     const float elapsed = 1.0f - rate;
     const float pulse = rate * rate;
     const int mainAlpha = static_cast<int>(220.0f * pulse);
-    const int echoAlpha = static_cast<int>(105.0f * pulse);
+    const int edgeAlpha = static_cast<int>(112.0f * pulse);
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 viewportMin(hudMin.x, hudMin.y);
+    const ImVec2 viewportMax(hudMin.x + hudSize.x, hudMin.y + hudSize.y);
+    const ImVec2 viewportCenter(
+        hudMin.x + hudSize.x * 0.5f,
+        hudMin.y + hudSize.y * 0.5f);
+    const float edgeWidth = 74.0f;
+    const ImU32 edgeColor = IM_COL32(255, 32, 24, (std::clamp)(edgeAlpha, 0, 112));
+    const ImU32 clearColor = IM_COL32(255, 32, 24, 0);
+
+    drawList->AddRectFilled(
+        viewportMin,
+        viewportMax,
+        IM_COL32(132, 0, 8, (std::clamp)(static_cast<int>(20.0f * pulse), 0, 20)));
+    if (playerDamageDirection_.x < -0.18f) {
+        drawList->AddRectFilledMultiColor(
+            viewportMin,
+            ImVec2(viewportMin.x + edgeWidth, viewportMax.y),
+            edgeColor, clearColor, clearColor, edgeColor);
+    } else if (playerDamageDirection_.x > 0.18f) {
+        drawList->AddRectFilledMultiColor(
+            ImVec2(viewportMax.x - edgeWidth, viewportMin.y),
+            viewportMax,
+            clearColor, edgeColor, edgeColor, clearColor);
+    }
+    if (playerDamageDirection_.y < -0.18f) {
+        drawList->AddRectFilledMultiColor(
+            viewportMin,
+            ImVec2(viewportMax.x, viewportMin.y + edgeWidth),
+            edgeColor, edgeColor, clearColor, clearColor);
+    } else if (playerDamageDirection_.y > 0.18f) {
+        drawList->AddRectFilledMultiColor(
+            ImVec2(viewportMin.x, viewportMax.y - edgeWidth),
+            viewportMax,
+            clearColor, clearColor, edgeColor, edgeColor);
+    }
+
     const ImVec2 impactCenter(playerDamageScreen_.x, playerDamageScreen_.y);
-    const float impactRadius = 24.0f + elapsed * 22.0f;
-    drawList->AddCircle(
-        impactCenter,
-        impactRadius,
-        IM_COL32(255, 82, 54, (std::clamp)(mainAlpha, 0, 220)),
-        28,
-        2.4f);
-    drawList->AddCircle(
-        impactCenter,
-        impactRadius + 7.0f,
-        IM_COL32(255, 188, 92, (std::clamp)(echoAlpha, 0, 105)),
-        28,
-        1.2f);
-    for (int index = 0; index < 6; ++index) {
+    const float impactRadius = 18.0f + elapsed * 18.0f;
+    const ImU32 impactColor =
+        IM_COL32(255, 116, 72, (std::clamp)(mainAlpha, 0, 220));
+    for (int xSign : { -1, 1 }) {
+        for (int ySign : { -1, 1 }) {
+            const ImVec2 corner(
+                impactCenter.x + static_cast<float>(xSign) * impactRadius,
+                impactCenter.y + static_cast<float>(ySign) * impactRadius);
+            const float segment = 9.0f + 5.0f * rate;
+            drawList->AddLine(
+                corner,
+                ImVec2(corner.x - static_cast<float>(xSign) * segment, corner.y),
+                impactColor,
+                2.6f);
+            drawList->AddLine(
+                corner,
+                ImVec2(corner.x, corner.y - static_cast<float>(ySign) * segment),
+                impactColor,
+                2.6f);
+        }
+    }
+    for (int index = 0; index < 4; ++index) {
         const float angle =
-            kTwoPi * static_cast<float>(index) / 6.0f + 0.24f;
+            kTwoPi * static_cast<float>(index) / 4.0f + 0.785398f;
         const ImVec2 direction(std::cos(angle), std::sin(angle));
-        const float innerRadius = impactRadius + 5.0f;
-        const float outerRadius = innerRadius + 8.0f + 8.0f * rate;
+        const float innerRadius = impactRadius + 3.0f;
+        const float outerRadius = innerRadius + 8.0f + 7.0f * rate;
         drawList->AddLine(
             ImVec2(
                 impactCenter.x + direction.x * innerRadius,
@@ -7420,7 +7469,7 @@ void GameRuntime::DrawPlayerDamageHud()
             ImVec2(
                 impactCenter.x + direction.x * outerRadius,
                 impactCenter.y + direction.y * outerRadius),
-            IM_COL32(255, 126, 72, (std::clamp)(mainAlpha, 0, 220)),
+            impactColor,
             2.0f);
     }
 
@@ -7428,36 +7477,51 @@ void GameRuntime::DrawPlayerDamageHud()
         playerDamageDirection_.x,
         playerDamageDirection_.y);
     const ImVec2 tangent(-direction.y, direction.x);
-    const ImVec2 arrowCenter(
-        playerDamageScreen_.x + direction.x * 62.0f,
-        playerDamageScreen_.y + direction.y * 62.0f);
-    const ImVec2 arrowTip(
-        arrowCenter.x + direction.x * 13.0f,
-        arrowCenter.y + direction.y * 13.0f);
-    const ImVec2 arrowBaseLeft(
-        arrowCenter.x - direction.x * 8.0f + tangent.x * 9.0f,
-        arrowCenter.y - direction.y * 8.0f + tangent.y * 9.0f);
-    const ImVec2 arrowBaseRight(
-        arrowCenter.x - direction.x * 8.0f - tangent.x * 9.0f,
-        arrowCenter.y - direction.y * 8.0f - tangent.y * 9.0f);
-    const ImU32 dangerColor =
-        IM_COL32(255, 116, 72, (std::clamp)(mainAlpha, 0, 220));
-    drawList->AddTriangleFilled(
-        arrowTip,
-        arrowBaseLeft,
-        arrowBaseRight,
-        dangerColor);
+    const float markerMinX = viewportMin.x + 38.0f;
+    const float markerMaxX = viewportMax.x - 38.0f;
+    const float markerMinY = viewportMin.y + 146.0f;
+    const float markerMaxY = viewportMax.y - 54.0f;
+    const float edgeScaleX = direction.x > 0.001f ?
+        (markerMaxX - viewportCenter.x) / direction.x :
+        direction.x < -0.001f ?
+            (markerMinX - viewportCenter.x) / direction.x : 100000.0f;
+    const float edgeScaleY = direction.y > 0.001f ?
+        (markerMaxY - viewportCenter.y) / direction.y :
+        direction.y < -0.001f ?
+            (markerMinY - viewportCenter.y) / direction.y : 100000.0f;
+    const float edgeScale = (std::min)(edgeScaleX, edgeScaleY);
+    const ImVec2 sourceMarker(
+        viewportCenter.x + direction.x * edgeScale,
+        viewportCenter.y + direction.y * edgeScale);
     for (int index = 0; index < 2; ++index) {
-        const float offset = 17.0f + static_cast<float>(index) * 9.0f;
-        const ImVec2 lineCenter(
-            arrowCenter.x - direction.x * offset,
-            arrowCenter.y - direction.y * offset);
+        const float offset = static_cast<float>(index) * 10.0f;
+        const ImVec2 tip(
+            sourceMarker.x - direction.x * offset,
+            sourceMarker.y - direction.y * offset);
         drawList->AddLine(
-            ImVec2(lineCenter.x + tangent.x * 8.0f, lineCenter.y + tangent.y * 8.0f),
-            ImVec2(lineCenter.x - tangent.x * 8.0f, lineCenter.y - tangent.y * 8.0f),
-            dangerColor,
-            2.5f);
+            ImVec2(
+                tip.x + direction.x * 13.0f + tangent.x * 9.0f,
+                tip.y + direction.y * 13.0f + tangent.y * 9.0f),
+            tip,
+            impactColor,
+            3.0f);
+        drawList->AddLine(
+            tip,
+            ImVec2(
+                tip.x + direction.x * 13.0f - tangent.x * 9.0f,
+                tip.y + direction.y * 13.0f - tangent.y * 9.0f),
+            impactColor,
+            3.0f);
     }
+
+    const char* damageLabel = "HULL HIT";
+    const ImVec2 damageLabelSize = ImGui::CalcTextSize(damageLabel);
+    drawList->AddText(
+        ImVec2(
+            impactCenter.x - damageLabelSize.x * 0.5f,
+            impactCenter.y - impactRadius - 22.0f),
+        impactColor,
+        damageLabel);
 }
 
 void GameRuntime::DrawResultOverlay()
