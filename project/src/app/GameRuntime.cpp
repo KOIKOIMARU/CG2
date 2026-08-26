@@ -28,6 +28,13 @@
 
 namespace {
 
+std::filesystem::path FileSystemPathFromUtf8(const std::string& path)
+{
+    const auto* begin = reinterpret_cast<const char8_t*>(path.data());
+    return std::filesystem::path(
+        std::u8string(begin, begin + path.size()));
+}
+
 constexpr const char* kGameSceneFilePath = "resources/game_scene.json";
 constexpr const char* kGameEnvironmentTexturePath =
     "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
@@ -787,9 +794,10 @@ void GameRuntime::Update()
     }
 
     if (isBlenderLevelLoaded_) {
-        // レールシューティングの進行を止め、Blender配置を確認しやすい固定視点にする。
-        cameraTranslate_ = { 0.0f, 2.5f, -13.0f };
-        cameraRotate_ = { 0.12f, 0.0f, 0.0f };
+        UpdateBlenderLevelHotReload();
+        // レールシューティングの進行を止め、Blenderで配置したカメラを使う。
+        cameraTranslate_ = blenderLevelCameraTranslate_;
+        cameraRotate_ = blenderLevelCameraRotate_;
         cameraFovY_ = 0.60f;
         if (camera_) {
             camera_->SetTranslate(cameraTranslate_);
@@ -2123,6 +2131,7 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     size_t skippedMeshCount = 0;
     size_t unsupportedFormatCount = 0;
     size_t colliderCount = 0;
+    size_t gimmickCount = 0;
 
     ModelManager* modelManager = ModelManager::GetInstance();
     std::function<void(const LevelDataLoader::ObjectData&)> loadObject;
@@ -2135,7 +2144,10 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
             ++colliderCount;
         }
 
-        if (objectData.type == "MESH") {
+        if (objectData.type == "MESH" || objectData.type == "Gimmick") {
+            if (objectData.type == "Gimmick") {
+                ++gimmickCount;
+            }
             std::string modelPath = objectData.fileName;
             constexpr const char* kResourcesPrefix = "resources/";
             if (modelPath.starts_with(kResourcesPrefix)) {
@@ -2227,6 +2239,17 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
         previousPlayerTranslate_ = player_->GetTranslate();
     }
 
+    hasBlenderLevelCamera_ = !levelData.cameras.empty();
+    if (hasBlenderLevelCamera_) {
+        const LevelDataLoader::CameraData& levelCamera =
+            levelData.cameras.front();
+        blenderLevelCameraTranslate_ = levelCamera.translation;
+        blenderLevelCameraRotate_ = levelCamera.rotation;
+    } else {
+        blenderLevelCameraTranslate_ = { 0.0f, 2.5f, -13.0f };
+        blenderLevelCameraRotate_ = { 0.12f, 0.0f, 0.0f };
+    }
+
     // 通常のレール進行で生成された敵を、Blenderの配置確認用の敵へ入れ替える。
     enemies_.clear();
     for (const LevelDataLoader::EnemySpawnData& enemySpawn : levelData.enemies) {
@@ -2286,13 +2309,17 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     sceneObjectRecords_ = std::move(loadedRecords);
     currentSceneFilePath_ = path ? path : "";
     isBlenderLevelLoaded_ = true;
+    blenderLevelHotReloadFrameCounter_ = 0;
+    CaptureBlenderLevelWriteTime();
 
     editorStatusMessage_ =
         "Blenderレベルを読み込みました: " + currentSceneFilePath_ +
         " / 配置 " + std::to_string(sceneObjects_.size()) +
         " / コライダー " + std::to_string(colliderCount) +
         " / PlayerSpawn " + std::to_string(levelData.players.size()) +
-        " / EnemySpawn " + std::to_string(levelData.enemies.size());
+        " / EnemySpawn " + std::to_string(levelData.enemies.size()) +
+        " / Camera " + std::to_string(levelData.cameras.size()) +
+        " / Gimmick " + std::to_string(gimmickCount);
     if (skippedMeshCount > 0) {
         editorStatusMessage_ +=
             " / モデル未検出 " + std::to_string(skippedMeshCount);
@@ -2304,6 +2331,61 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
     return true;
 }
 
+void GameRuntime::CaptureBlenderLevelWriteTime()
+{
+    hasBlenderLevelWriteTime_ = false;
+    if (currentSceneFilePath_.empty()) {
+        return;
+    }
+
+    std::error_code error;
+    const auto writeTime = std::filesystem::last_write_time(
+        FileSystemPathFromUtf8(currentSceneFilePath_), error);
+    if (!error) {
+        blenderLevelLastWriteTime_ =
+            static_cast<long long>(writeTime.time_since_epoch().count());
+        hasBlenderLevelWriteTime_ = true;
+    }
+}
+
+void GameRuntime::UpdateBlenderLevelHotReload()
+{
+    constexpr int kCheckIntervalFrames = 30;
+    ++blenderLevelHotReloadFrameCounter_;
+    if (blenderLevelHotReloadFrameCounter_ < kCheckIntervalFrames) {
+        return;
+    }
+    blenderLevelHotReloadFrameCounter_ = 0;
+
+    if (currentSceneFilePath_.empty()) {
+        return;
+    }
+
+    std::error_code error;
+    const auto writeTime = std::filesystem::last_write_time(
+        FileSystemPathFromUtf8(currentSceneFilePath_), error);
+    if (error) {
+        return;
+    }
+
+    const long long currentWriteTime =
+        static_cast<long long>(writeTime.time_since_epoch().count());
+    if (!hasBlenderLevelWriteTime_) {
+        blenderLevelLastWriteTime_ = currentWriteTime;
+        hasBlenderLevelWriteTime_ = true;
+        return;
+    }
+    if (currentWriteTime == blenderLevelLastWriteTime_) {
+        return;
+    }
+
+    const std::string reloadPath = currentSceneFilePath_;
+    if (LoadBlenderLevelObjects(reloadPath.c_str())) {
+        editorStatusMessage_ =
+            "ホットリロードしました: " + currentSceneFilePath_;
+    }
+}
+
 bool GameRuntime::LoadSceneObjects(const char* path)
 {
     std::vector<SceneSerializer::ObjectRecord> records;
@@ -2312,6 +2394,8 @@ bool GameRuntime::LoadSceneObjects(const char* path)
         return LoadBlenderLevelObjects(path);
     }
     isBlenderLevelLoaded_ = false;
+    hasBlenderLevelCamera_ = false;
+    hasBlenderLevelWriteTime_ = false;
 
     sceneObjects_.clear();
     sceneObjectRecords_.clear();

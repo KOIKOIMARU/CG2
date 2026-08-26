@@ -37,11 +37,17 @@ struct EnemySpawnData {
     Math::Vector3 rotation{};
 };
 
+struct CameraData {
+    Math::Vector3 translation{};
+    Math::Vector3 rotation{};
+};
+
 struct LevelData {
     std::string name;
     std::vector<ObjectData> objects;
     std::vector<PlayerSpawnData> players;
     std::vector<EnemySpawnData> enemies;
+    std::vector<CameraData> cameras;
 };
 
 // Blenderアドオンが出力したレベルJSONを読み込む。

@@ -314,6 +314,8 @@ private:
     std::unique_ptr<Bullet> AcquireBullet(std::vector<std::unique_ptr<Bullet>>& pool);
     std::vector<SceneSerializer::ObjectRecord> BuildRuntimeSceneRecords() const;
     SceneSerializer::SceneSettings BuildRuntimeSceneSettings() const;
+    void UpdateBlenderLevelHotReload();
+    void CaptureBlenderLevelWriteTime();
     bool LoadBlenderLevelObjects(const char* path);
     bool LoadSceneObjects(const char* path);
     bool SaveSceneObjects(const char* path);
@@ -444,6 +446,8 @@ private:
     size_t nextPlayerExhaustParticleIndex_ = 0;
     Math::Vector3 cameraTranslate_{ 0.0f, 2.65f, -15.8f };
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
+    Math::Vector3 blenderLevelCameraTranslate_{ 0.0f, 2.5f, -13.0f };
+    Math::Vector3 blenderLevelCameraRotate_{ 0.12f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
     const Enemy* lockedEnemy_ = nullptr;
     const char* stageSectionName_ = "Opening";
@@ -452,7 +456,11 @@ private:
     Math::Vector2 reticleScreen_{ 0.0f, 0.0f };
     std::string currentSceneFilePath_{ "resources/game_scene.json" };
     std::string editorStatusMessage_{ "Ready." };
+    long long blenderLevelLastWriteTime_ = 0;
+    int blenderLevelHotReloadFrameCounter_ = 0;
     bool isBlenderLevelLoaded_ = false;
+    bool hasBlenderLevelCamera_ = false;
+    bool hasBlenderLevelWriteTime_ = false;
     bool hasLockTarget_ = false;
     bool isReticleOnTarget_ = false;
     int postEffectMode_ = 12;

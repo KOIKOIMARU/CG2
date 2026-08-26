@@ -176,6 +176,14 @@ void CollectSpawnPoints(
         enemySpawn.translation = objectData.translation;
         enemySpawn.rotation = objectData.rotation;
         levelData.enemies.push_back(enemySpawn);
+    } else if (objectData.type == "CAMERA") {
+        LevelDataLoader::CameraData camera{};
+        camera.translation = objectData.translation;
+        camera.rotation = objectData.rotation;
+        // Blenderのカメラはローカル-Z方向、ゲーム側はローカル+Z方向を見る。
+        // 座標軸変換後にX軸へ90度を足して、見ている方向を揃える。
+        camera.rotation.x += std::numbers::pi_v<float> * 0.5f;
+        levelData.cameras.push_back(camera);
     }
 
     for (const LevelDataLoader::ObjectData& child : objectData.children) {
