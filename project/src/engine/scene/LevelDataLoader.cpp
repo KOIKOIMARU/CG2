@@ -157,7 +157,7 @@ LevelDataLoader::ObjectData ParseObject(
     return objectData;
 }
 
-void CollectPlayerSpawns(
+void CollectSpawnPoints(
     const LevelDataLoader::ObjectData& objectData,
     LevelDataLoader::LevelData& levelData)
 {
@@ -170,10 +170,16 @@ void CollectPlayerSpawns(
         playerSpawn.translation = objectData.translation;
         playerSpawn.rotation = objectData.rotation;
         levelData.players.push_back(playerSpawn);
+    } else if (objectData.type == "EnemySpawn") {
+        LevelDataLoader::EnemySpawnData enemySpawn{};
+        enemySpawn.fileName = objectData.fileName;
+        enemySpawn.translation = objectData.translation;
+        enemySpawn.rotation = objectData.rotation;
+        levelData.enemies.push_back(enemySpawn);
     }
 
     for (const LevelDataLoader::ObjectData& child : objectData.children) {
-        CollectPlayerSpawns(child, levelData);
+        CollectSpawnPoints(child, levelData);
     }
 }
 
@@ -226,7 +232,7 @@ bool LevelDataLoader::LoadFile(
                 "objects[" + std::to_string(index) + "]"));
         }
         for (const ObjectData& objectData : levelData.objects) {
-            CollectPlayerSpawns(objectData, levelData);
+            CollectSpawnPoints(objectData, levelData);
         }
     } catch (const Json::parse_error& exception) {
         std::ostringstream message;

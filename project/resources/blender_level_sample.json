@@ -47,6 +47,26 @@
                 "rotation": [0.0, 0.0, 0.0],
                 "scaling": [1.0, 1.0, 1.0]
             }
+        },
+        {
+            "type": "EnemySpawn",
+            "name": "EnemySpawn",
+            "file_name": "free_models/quaternius_sci_fi_essentials/Enemy_EyeDrone_Static.gltf",
+            "transform": {
+                "translation": [3.0, 8.0, 1.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scaling": [1.0, 1.0, 1.0]
+            }
+        },
+        {
+            "type": "EnemySpawn",
+            "name": "EnemySpawn.001",
+            "file_name": "free_models/quaternius_sci_fi_essentials/Enemy_EyeDrone_Static.gltf",
+            "transform": {
+                "translation": [-3.0, 12.0, 2.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scaling": [1.0, 1.0, 1.0]
+            }
         }
     ]
 }

@@ -534,6 +534,15 @@ void Enemy::Draw()
     }
 }
 
+void Enemy::SetRotate(const Math::Vector3& rotate)
+{
+    if (!object_) {
+        return;
+    }
+    object_->SetRotate(rotate);
+    object_->Update();
+}
+
 void Enemy::DrawShadow(const Math::Matrix4x4& lightViewProjection)
 {
     if (lifeState_ != LifeState::Destroyed &&

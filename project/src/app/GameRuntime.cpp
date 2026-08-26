@@ -2227,6 +2227,61 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
         previousPlayerTranslate_ = player_->GetTranslate();
     }
 
+    // 通常のレール進行で生成された敵を、Blenderの配置確認用の敵へ入れ替える。
+    enemies_.clear();
+    for (const LevelDataLoader::EnemySpawnData& enemySpawn : levelData.enemies) {
+        std::string modelPath = enemySpawn.fileName;
+        constexpr const char* kResourcesPrefix = "resources/";
+        if (modelPath.starts_with(kResourcesPrefix)) {
+            modelPath.erase(0, std::char_traits<char>::length(kResourcesPrefix));
+        }
+
+        Model* enemyModel = nullptr;
+        if (!modelPath.empty()) {
+            enemyModel = modelManager->FindModel(modelPath);
+            if (!enemyModel) {
+                std::string extension =
+                    std::filesystem::path(modelPath).extension().string();
+                std::transform(
+                    extension.begin(),
+                    extension.end(),
+                    extension.begin(),
+                    [](unsigned char character) {
+                        return static_cast<char>(std::tolower(character));
+                    });
+                const bool supportedFormat =
+                    extension == ".obj" ||
+                    extension == ".gltf" ||
+                    extension == ".glb";
+                if (supportedFormat) {
+                    std::error_code error;
+                    const std::filesystem::path resourcePath =
+                        std::filesystem::path("resources") / modelPath;
+                    if (std::filesystem::is_regular_file(resourcePath, error)) {
+                        modelManager->LoadModel(modelPath);
+                        enemyModel = modelManager->FindModel(modelPath);
+                    }
+                }
+            }
+        }
+        if (!enemyModel) {
+            enemyModel = GetEnemyModelForBehavior(Enemy::Behavior::Formation);
+        }
+        if (!enemyModel || !object3dCommon_) {
+            continue;
+        }
+
+        auto enemy = std::make_unique<Enemy>();
+        enemy->Initialize(
+            object3dCommon_.get(),
+            enemyModel,
+            enemySpawn.translation,
+            Enemy::Behavior::Formation,
+            Enemy::EntryStyle::Direct);
+        enemy->SetRotate(enemySpawn.rotation);
+        enemies_.push_back(std::move(enemy));
+    }
+
     sceneObjects_ = std::move(loadedObjects);
     sceneObjectRecords_ = std::move(loadedRecords);
     currentSceneFilePath_ = path ? path : "";
@@ -2236,7 +2291,8 @@ bool GameRuntime::LoadBlenderLevelObjects(const char* path)
         "Blenderレベルを読み込みました: " + currentSceneFilePath_ +
         " / 配置 " + std::to_string(sceneObjects_.size()) +
         " / コライダー " + std::to_string(colliderCount) +
-        " / PlayerSpawn " + std::to_string(levelData.players.size());
+        " / PlayerSpawn " + std::to_string(levelData.players.size()) +
+        " / EnemySpawn " + std::to_string(levelData.enemies.size());
     if (skippedMeshCount > 0) {
         editorStatusMessage_ +=
             " / モデル未検出 " + std::to_string(skippedMeshCount);

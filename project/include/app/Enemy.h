@@ -55,6 +55,7 @@ public:
     bool IsBoss() const { return behavior_ == Behavior::Boss; }
     bool IsCrossfire() const { return behavior_ == Behavior::Crossfire; }
     bool IsTargetable() const;
+    void SetRotate(const Math::Vector3& rotate);
     int GetHp() const { return hp_; }
     int GetMaxHp() const { return maxHp_; }
     const Math::Vector3& GetTranslate() const { return translate_; }
