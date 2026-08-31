@@ -8,6 +8,8 @@
 
 namespace {
 
+// 本シリアライザーはエディタが生成する限定形式のJSONを対象とする。
+// 汎用JSONパーサーではないため、キー追加時は保存側と読込側を同時に更新する。
 bool ExtractJsonVector3(
     const std::string& source,
     const char* key,
@@ -144,6 +146,7 @@ bool SceneSerializer::SaveScene(
         return false;
     }
 
+    // 親フォルダが未作成でも、エディタから初回保存できるように生成する。
     std::filesystem::path filePath(path);
     if (filePath.has_parent_path()) {
         std::filesystem::create_directories(filePath.parent_path());
@@ -227,6 +230,7 @@ bool SceneSerializer::LoadScene(
     std::vector<ObjectRecord>& records,
     SceneSettings& settings)
 {
+    // 読み込み失敗時に前回データが残らないよう、出力を先に既定値へ戻す。
     records.clear();
     settings = SceneSettings{};
 
@@ -284,6 +288,7 @@ bool SceneSerializer::LoadScene(
         settings.hasLighting = loadedLighting;
     }
 
+    // オブジェクト要素は入れ子を持たないという保存形式の前提で抽出する。
     const std::regex objectPattern("\\{[^{}]*\"name\"[^{}]*\\}");
     const auto begin =
         std::sregex_iterator(json.begin(), json.end(), objectPattern);

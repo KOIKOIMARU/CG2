@@ -2,6 +2,8 @@
 
 bool EditorManager::playOnNextEditorOpen_ = false;
 
+// EditorManagerはUI状態だけを管理し、ファイル保存やオブジェクト操作そのものは行わない。
+
 void EditorManager::SetSceneFilePath(const char* path)
 {
     sceneFilePaths_[0] = path;
@@ -45,6 +47,7 @@ ImGuiManager::ObjectInspectorSettings EditorManager::CreateInspectorSettings(
     ImGuiManager::InspectableObject* objects,
     int objectCount)
 {
+    // ImGuiが変更した要求フラグは、EditorSceneがConsume系関数で一度だけ処理する。
     return {
         objects,
         objectCount,
@@ -132,6 +135,7 @@ void EditorManager::RequestPlayOnNextEditorOpen()
 
 bool EditorManager::ConsumePlayOnNextEditorOpenRequest()
 {
+    // 読み取りと解除を同時に行い、画面を開き直した際の誤再生を防ぐ。
     const bool requested = playOnNextEditorOpen_;
     playOnNextEditorOpen_ = false;
     return requested;

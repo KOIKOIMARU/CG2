@@ -5,6 +5,8 @@
 #include "engine/base/Math.h"
 #include "engine/2d/Sprite.h"
 
+// レールシューティングサンプル専用のタイトル画面。
+// 通常のチームエンジン起動では使用せず、自動スモークテスト時だけ経由する。
 class TitleScene : public BaseScene {
 public:
     TitleScene();

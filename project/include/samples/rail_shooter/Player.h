@@ -9,8 +9,11 @@ class Input;
 class Model;
 class Object3dCommon;
 
+// レールシューティングサンプル専用の自機制御。
+// チーム作品のエンジンAPIではなく、入力・回避・被弾処理の使用例として残している。
 class Player {
 public:
+    // 描画基盤とModelは借用。GameRuntimeが両方を本クラスより長く保持する。
     void Initialize(Object3dCommon* object3dCommon, Model* model);
     void Update(Input* input, float timeScale = 1.0f);
     void Draw();

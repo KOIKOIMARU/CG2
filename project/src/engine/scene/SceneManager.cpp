@@ -4,6 +4,7 @@
 #include <cassert>
 
 SceneManager* SceneManager::GetInstance() {
+    // シーン遷移の管理元を一つに限定する。所有シーンはunique_ptrで保持する。
     static SceneManager instance;
     return &instance;
 }
@@ -40,6 +41,7 @@ void SceneManager::SetNextScene(SceneType sceneType) {
 }
 
 void SceneManager::PrepareScene(SceneType sceneType) {
+    // タイトル画面などで次シーンを先に初期化し、遷移時の読み込み待ちを減らす。
     if (hasPreparedScene_ && preparedSceneType_ == sceneType) {
         return;
     }
@@ -79,9 +81,11 @@ void SceneManager::FinalizeCurrentScene()
 
 void SceneManager::Update() {
     if (hasNextScene_) {
+        // シーンのFinalizeとInitializeが同じフレームで重複しないよう、ここで遷移を確定する。
         FinalizeCurrentScene();
 
         if (hasPreparedScene_ && preparedSceneType_ == nextSceneType_) {
+            // 準備済みシーンは再初期化せず、そのまま所有権を現在シーンへ移す。
             scene_ = std::move(preparedScene_);
             hasPreparedScene_ = false;
         } else {

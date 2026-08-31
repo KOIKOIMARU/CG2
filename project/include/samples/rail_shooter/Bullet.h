@@ -9,8 +9,11 @@
 class Model;
 class Object3dCommon;
 
+// レールシューティングサンプル専用の弾丸。
+// 本体・発光・軌跡の表示と寿命、貫通、追尾、当たり済み対象をまとめて管理する。
 class Bullet {
 public:
+    // 描画に使用するModel群はすべて借用し、GameRuntime側が所有する。
     void Initialize(
         Object3dCommon* object3dCommon,
         Model* model,
@@ -39,6 +42,7 @@ public:
     bool IsDead() const { return isDead_; }
     void Kill() { isDead_ = true; }
     void RegisterHit();
+    // 同じ対象への多重ヒットを防ぐ。初回登録時だけtrueを返す。
     bool TryRegisterHitTarget(const void* target);
     void EnableHoming(float strength);
     void SetHomingTarget(const Math::Vector3& target);

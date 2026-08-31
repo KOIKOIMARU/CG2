@@ -1,5 +1,7 @@
 #include "samples/rail_shooter/Bullet.h"
 
+// レールシューティングサンプルの弾丸実装。表示部品はObject3dで構成する。
+
 #include <algorithm>
 #include <cmath>
 

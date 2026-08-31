@@ -1,5 +1,7 @@
 #include "app/TitleScene.h"
 
+// サンプル素材を段階的に先読みし、準備完了後にGameSceneへ遷移する。
+
 #include "engine/io/Input.h"
 #include "app/GameScene.h"
 #include "engine/scene/SceneManager.h"

@@ -8,6 +8,8 @@
 #include <memory>
 
 #include "app/MyGame.h"
+
+// Windowsエントリーポイント。引数解析後、MyGameへ処理を移譲する。
 #include "engine/base/Logger.h"
 
 namespace {

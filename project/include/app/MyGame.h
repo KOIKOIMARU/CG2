@@ -8,6 +8,7 @@
 
 class AbstractSceneFactory;
 
+// 自動実行検証に使用する設定。通常起動ではenabledをfalseにする。
 struct SmokeTestOptions {
     bool enabled = false;
     double gameplaySeconds = 15.0;
@@ -15,6 +16,7 @@ struct SmokeTestOptions {
     std::filesystem::path logPath;
 };
 
+// 実行ファイル側の構成ルート。Frameworkへシーン生成規則を接続する。
 class MyGame : public Framework {
 public:
     explicit MyGame(SmokeTestOptions smokeTestOptions = {});

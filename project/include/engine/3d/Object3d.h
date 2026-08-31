@@ -12,6 +12,8 @@ using namespace Math;
 class Object3dCommon;
 class Camera;
 
+// Object3dと各シェーダー間で共有する定数・構造化バッファのレイアウト。
+// メンバー順やpaddingを変更する場合は対応するHLSL構造体も同時に変更する。
 struct TransformationMatrix {
     Matrix4x4 WVP;
     Matrix4x4 World;
@@ -88,7 +90,9 @@ struct SkinningInformationForCompute {
 // Modelの所有権は持たない。Initialize後にSetModelを行い、毎フレームUpdateしてからDrawする。
 class Object3d {
 public:
+    // Object3dCommonは借用。Initialize後にモデルとカメラを設定する。
     void Initialize(Object3dCommon* object3dCommon);
+    // CPU状態をGPU定数へ反映する。Drawより先に毎フレーム呼ぶ。
     void Update();
     void Draw();
     void DrawShadow(const Matrix4x4& lightViewProjection);
@@ -96,7 +100,7 @@ public:
 
     void SetModel(Model* model);
 
-    // setter
+    // 変換・ライト・マテリアルの上書き値を設定する。
     void SetScale(const Vector3& scale);
     void SetRotate(const Vector3& rotate);
     void SetQuaternionRotate(const Quaternion& rotate);
@@ -123,7 +127,7 @@ public:
     const Skeleton& GetSkeleton() const { return skeleton_; }
     const Matrix4x4& GetWorldMatrix() const { return worldMatrix_; }
 
-    // getter
+    // 現在のCPU側設定値を返す。
     Vector3 GetScale() const;
     Vector3 GetRotate() const;
     Vector3 GetTranslate() const;
@@ -140,10 +144,12 @@ public:
 
     void SetModel(const std::string& filePath);
 
+    // カメラは借用。Object3dの描画中まで生存させる。
     void SetCamera(Camera* camera) { this->camera_ = camera; }
 
 
 private:
+    // 初期化時のGPU資源生成と、スキニング更新処理。
     void CreateTransformationMatrix();
     void CreateDirectionalLight();
     void CreateCameraResource();

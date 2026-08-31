@@ -2,8 +2,11 @@
 #include <array>
 #include "engine/base/ImGuiManager.h"
 
+// エディタUIの選択状態と、UIから発生した一回限りの操作要求を保持する。
+// シーンやObject3d自体は所有せず、EditorSceneが実処理を担当する。
 class EditorManager {
 public:
+    // Editはシーン編集、Playは注入されたゲームランタイムの実行状態。
     enum class EditorMode {
         Edit,
         Play
@@ -16,6 +19,7 @@ public:
     int GetPrefabFileIndex() const;
     void SetSceneFileIndex(int index);
     void SetPrefabFileIndex(int index);
+    // ImGuiへ渡す設定を現在状態から組み立てる。objectsの所有権は移動しない。
     ImGuiManager::ObjectInspectorSettings CreateInspectorSettings(
         ImGuiManager::InspectableObject* objects,
         int objectCount);
@@ -30,6 +34,7 @@ public:
     bool IsEditorGuiVisible() const;
     void SetEditorGuiVisible(bool isVisible);
     void ToggleEditorGuiVisible();
+    // 別シーンからエディタへ戻った直後にプレイを開始するための一回限りの要求。
     static void RequestPlayOnNextEditorOpen();
     static bool ConsumePlayOnNextEditorOpenRequest();
 
@@ -37,6 +42,7 @@ public:
     int GetGizmoMode() const;
     void SetGizmoMode(int mode);
 
+    // Consume系は要求を返すと同時にフラグを消費し、同じ操作の二重実行を防ぐ。
     bool ConsumeAddObjectRequest();
     bool ConsumeStartPlayModeRequest();
     bool ConsumeStopPlayModeRequest();
@@ -50,6 +56,7 @@ public:
     bool ConsumeRedoRequest();
 
 private:
+    // 先頭要素はチーム用の既定シーン。UIのコンボボックスから切り替える。
     std::array<const char*, 3> sceneFilePaths_{
         "resources/editor_default_scene.json",
         "resources/scene_01.json",

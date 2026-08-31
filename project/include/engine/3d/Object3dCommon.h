@@ -11,6 +11,7 @@ class DirectXCommon;
 class Camera;
 class SrvManager;
 
+// 3Dオブジェクトの色合成方法。Countは配列確保用の終端値。
 enum class BlendMode : uint32_t {
     None,
     Normal,
@@ -21,6 +22,7 @@ enum class BlendMode : uint32_t {
     Count,
 };
 
+// 深度バッファの参照・書き込み方法。Overlayは前景演出向け。
 enum class DepthDrawMode : uint32_t {
     Normal,
     ReadOnly,
@@ -28,8 +30,11 @@ enum class DepthDrawMode : uint32_t {
     Count,
 };
 
+// Object3d間で共有するルートシグネチャ、PSO、影描画資源を管理する。
+// 各Object3dを初期化する前に本クラスを初期化し、描画直前にCommonDrawSettingを呼ぶ。
 class Object3dCommon {
 public:
+    // 引数は借用。呼び出し側が本クラスより長く生存させる。
     void Initialize(
         DirectXCommon* dxCommon,
         SrvManager* srvManager
@@ -44,8 +49,11 @@ public:
     DirectXCommon* GetDxCommon() const { return dxCommon_; }
     SrvManager* GetSrvManager() const { return srvManager_; }
 
+    // 通常描画用PSOとルートシグネチャをコマンドリストへ設定する。
     void CommonDrawSetting();
+    // 影マップ生成用PSOとルートシグネチャを設定する。
     void CommonShadowDrawSetting();
+    // 影パスを開始する。trueのときだけ影描画を行い、最後にEndShadowPassを呼ぶ。
     bool BeginShadowPass(const Math::Vector3& focusCenter);
     void EndShadowPass();
     const Math::Matrix4x4& GetShadowLightViewProjection() const {
@@ -63,6 +71,7 @@ public:
     }
     DepthDrawMode GetDepthDrawMode() const { return depthDrawMode_; }
 
+    // カメラは借用。描画中に破棄しないこと。
     void SetDefaultCamera(Camera* camera) {
         defaultCamera_ = camera;
     }
@@ -71,6 +80,7 @@ public:
         return defaultCamera_;
     }
 
+    // Object3dへ既定値として渡す環境マップのパスを設定する。
     void SetEnvironmentTexturePath(const std::string& texturePath) {
         environmentTexturePath_ = texturePath;
     }
@@ -80,6 +90,7 @@ public:
     }
 
 private:
+    // 影マップは描画先とシェーダー入力で状態を切り替えるため、遷移をこのクラスへ集約する。
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
     void CreateShadowMap();

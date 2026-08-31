@@ -7,6 +7,7 @@ EditorPlayController::~EditorPlayController() = default;
 
 void EditorPlayController::SetRuntimeFactory(RuntimeFactory runtimeFactory)
 {
+    // 具体的なゲーム型をengine層へ持ち込まず、生成処理だけをapp層から受け取る。
     runtimeFactory_ = std::move(runtimeFactory);
 }
 
@@ -26,6 +27,7 @@ void EditorPlayController::SetSystems(
 
 bool EditorPlayController::Start()
 {
+    // 多重起動と未設定ファクトリを拒否し、ランタイムを常に一つだけ所有する。
     if (runtime_ || !runtimeFactory_) {
         return false;
     }
@@ -50,6 +52,7 @@ void EditorPlayController::Stop()
         return;
     }
 
+    // GPU資源などを明示的に解放してから所有権を破棄する。
     runtime_->Finalize();
     runtime_.reset();
 }

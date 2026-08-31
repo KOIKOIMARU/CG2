@@ -4,6 +4,7 @@
 #include "samples/rail_shooter/GameRuntime.h"
 #include "engine/scene/EditorScene.h"
 
+// app層だけが具体シーンとサンプルランタイムを知り、engine層へは抽象型を返す。
 std::unique_ptr<BaseScene> AppSceneFactory::CreateScene(SceneType sceneType) {
     switch (sceneType) {
     case SceneType::Title:

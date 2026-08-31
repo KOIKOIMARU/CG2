@@ -1,9 +1,11 @@
-// engine/base/Math.h
 #pragma once
 #include <cmath>
 
+// エンジン内で使用する行ベクトル・左手座標系の数学型と基本演算。
+// 行列の平行移動成分はm[3][0..2]に格納し、角度の単位はラジアンとする。
 namespace Math {
 
+    // GPU定数バッファとも共有するため、単純なfloat集合として定義する。
     struct Vector2 {
         float x, y;
     };
@@ -56,6 +58,7 @@ namespace Math {
 
 
 
+    // 基本的な行列生成・合成。Multiply(m1, m2)はm1の後にm2を適用する。
     inline Matrix4x4 MakeIdentity4x4() {
         Matrix4x4 result{};
         for (int i = 0; i < 4; ++i) {
@@ -230,6 +233,7 @@ namespace Math {
     }
 
 
+    // 長さ0のベクトルはゼロベクトルとして返し、NaNの伝播を防ぐ。
     inline Vector3 Normalize(const Vector3& v) {
         float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
         if (len == 0.0f) return { 0.0f, 0.0f, 0.0f };
@@ -244,6 +248,7 @@ namespace Math {
         return { q.x / len, q.y / len, q.z / len, q.w / len };
     }
 
+    // DirectXの深度範囲0～1に対応した透視投影行列を生成する。
     inline Matrix4x4 MakePerspectiveFovMatrix(
         float fovY, float aspectRatio, float nearClip, float farClip)
     {
@@ -272,8 +277,9 @@ namespace Math {
         return result;
     }
 
-    // 4x4行列の逆行列
+    // 逆行列を求める。特異行列を渡さないこと。
     Matrix4x4 Inverse(const Matrix4x4& m);
+    // 2つのクォータニオンを最短経路で球面線形補間する。tの想定範囲は0～1。
     Quaternion Slerp(const Quaternion& q0, const Quaternion& q1, float t);
 
 } // namespace Math

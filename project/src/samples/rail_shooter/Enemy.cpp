@@ -1,5 +1,7 @@
 #include "samples/rail_shooter/Enemy.h"
 
+// レールシューティングサンプルの敵実装。行動種別ごとの移動をここで更新する。
+
 #include "engine/3d/Model.h"
 
 #include <algorithm>

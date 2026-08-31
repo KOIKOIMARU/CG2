@@ -10,13 +10,17 @@ class Camera;
 class DirectXCommon;
 class SrvManager;
 
+// キューブマップをカメラの周囲へ描画する背景オブジェクト。
+// Initialize後、毎フレームUpdateでカメラ行列を反映してからDrawする。
 class Skybox {
 public:
+    // DirectXCommonとSrvManagerは借用。texturePathは読み込み済みキューブマップを指定する。
     void Initialize(
         DirectXCommon* dxCommon,
         SrvManager* srvManager,
         const std::string& texturePath);
 
+    // 平行移動を除いたビュー行列を生成し、空がカメラ移動に追従するようにする。
     void Update(const Camera* camera);
     void Draw();
 
@@ -29,6 +33,7 @@ private:
         Math::Matrix4x4 viewProjection;
     };
 
+    // Skybox固有の描画資源を初期化時にまとめて生成する。
     void CreateRootSignature();
     void CreateGraphicsPipelineState();
     void CreateVertexBuffer();

@@ -15,9 +15,8 @@ using namespace Math;
 
 constexpr uint32_t kNumMaxInfluence = 4;
 
-// ===========================
-//  モデル用データ構造
-// ===========================
+// CPU側で保持する頂点、マテリアル、アニメーション、スケルトンの読み込み結果。
+// VertexDataの配置は頂点シェーダーおよびCompute Skinningの入力定義と一致させる。
 struct VertexData {
     Vector4 position;
     Vector2 texcoord;
@@ -117,8 +116,11 @@ struct Material {
 
 class ModelCommon;
 
+// 1つのモデル資源を所有し、頂点・インデックス・マテリアルを描画する。
+// ModelManagerが生成と寿命を管理し、Object3dはこのクラスを借用する。
 class Model {
 public:
+    // ファイルまたは生成済みデータからGPU資源を構築する。どちらか一方を一度だけ呼ぶ。
     void Initialize(ModelCommon* modelCommon, const std::string& directoryPath, const std::string& filename);
     void Initialize(ModelCommon* modelCommon, const ModelData& modelData);
     void Draw(
@@ -149,7 +151,7 @@ public:
         return !modelData_.skinClusterData.jointWeights.empty();
     }
 
-    // Object3d が必要になったら使う用（次段階用）
+    // Object3dとCompute Skinningが使用するGPUビューおよびCPU側データを借用して返す。
     const D3D12_VERTEX_BUFFER_VIEW& GetVBV() const { return vertexBufferView_; }
     const D3D12_INDEX_BUFFER_VIEW& GetIBV() const { return indexBufferView_; }
     ID3D12Resource* GetMaterialResource() const { return materialResource_.Get(); }
@@ -157,6 +159,7 @@ public:
     size_t GetIndexCount() const { return modelData_.indices.size(); }
     const std::vector<VertexData>& GetVertices() const { return modelData_.vertices; }
 
+    // ファイル読込、アニメーション計算、組み込みプリミティブ生成を行う共有処理。
     static MaterialData LoadMaterialTemplate(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadObjFile(const std::string& directoryPath, const std::string& filename);
     static ModelData LoadAssimpFile(const std::string& directoryPath, const std::string& filename);

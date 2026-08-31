@@ -1,5 +1,7 @@
 #include "app/GameScene.h"
 
+// サンプルランタイムをSceneManagerのライフサイクルへ接続する。
+
 #include "engine/scene/SceneManager.h"
 #include "engine/scene/SceneType.h"
 

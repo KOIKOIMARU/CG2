@@ -24,6 +24,8 @@
 #include <sstream>
 #include <utility>
 
+// 汎用エディタシーンの実装。編集用オブジェクトの所有、JSON入出力、
+// プレイモードへの切り替え、デバッグカメラをこのクラスで調停する。
 namespace {
 
 constexpr const char* kInspectorModelItems[] = {
@@ -211,6 +213,7 @@ const Math::Matrix4x4& EditorScene::GetProjectionMatrix() const
 }
 
 void EditorScene::Initialize() {
+    // 共通描画基盤を先に作り、その後に編集対象とUI状態を復元する。
     const std::string environmentTexturePath =
         "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
 
@@ -366,6 +369,7 @@ void EditorScene::Initialize() {
 }
 
 bool EditorScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
+    // 読み込みに成功した場合だけ現在の編集対象を置き換える。
     std::vector<SceneSerializer::ObjectRecord> records;
     SceneSerializer::SceneSettings settings{};
     if (!SceneSerializer::LoadScene(path, records, settings)) {
@@ -1041,6 +1045,7 @@ void EditorScene::ApplyPlayModeRequests(bool& startedPlayModeThisFrame)
 }
 
 void EditorScene::Update() {
+    // Edit中は編集操作を、Play中は注入されたランタイムを更新する。
     const float deltaTime = dxCommon_->GetDeltaTime();
 
     HandleEditorShortcuts();
@@ -1248,6 +1253,7 @@ void EditorScene::UpdateDebugCamera(float deltaTime)
 }
 
 void EditorScene::Draw() {
+    // Play中とEdit中で描画先を分けつつ、ImGuiのゲームビューへ結果を渡す。
     if (editorManager_.IsPlayMode() && playController_.IsRunning()) {
         Math::Vector2 hudViewportMin{};
         Math::Vector2 hudViewportSize{};

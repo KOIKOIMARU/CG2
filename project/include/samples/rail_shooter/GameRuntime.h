@@ -25,11 +25,15 @@ class Skybox;
 class SpriteCommon;
 class SrvManager;
 
+// 個人制作レールシューティングを動作例として保存したサンプルランタイム。
+// エンジン本体ではなく、チーム作品はIEditorPlayRuntimeを別クラスで実装する。
+// ゲーム進行、敵・弾、HUD、演出を一括管理しているため、新規設計の雛形にはしないこと。
 class GameRuntime final : public IEditorPlayRuntime {
 public:
     GameRuntime();
     ~GameRuntime() override;
 
+    // タイトル中に1段階ずつ共有素材を読み込み、開始時の停止時間を分散する。
     static bool PreloadSharedResourceStep(DirectXCommon* dxCommon, SrvManager* srvManager);
     static bool AreSharedResourcesPreloaded();
     static int GetSharedResourcePreloadStep();

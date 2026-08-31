@@ -8,8 +8,11 @@
 class Model;
 class Object3dCommon;
 
+// レールシューティングサンプル専用の敵1体分の状態と移動規則。
+// 敵種別による挙動差はBehavior、登場経路はEntryStyleで切り替える。
 class Enemy {
 public:
+    // 更新処理で使用する行動パターン。
     enum class Behavior {
         Formation,
         Swoop,
@@ -22,6 +25,7 @@ public:
         Boss
     };
 
+    // 画面内へ入るまでの演出経路。
     enum class EntryStyle {
         Direct,
         VFormation,
@@ -30,6 +34,7 @@ public:
         PopShooter
     };
 
+    // 撃破と画面外離脱を区別し、スコア判定へ伝える。
     enum class LifeState {
         Alive,
         Destroyed,

@@ -3,6 +3,8 @@
 #include "samples/rail_shooter/GameRuntime.h"
 #include "engine/scene/BaseScene.h"
 
+// レールシューティングサンプルをBaseSceneへ接続する薄いアダプター。
+// チーム作品用シーンを作る際は、このクラスを流用せず別のappシーンを追加する。
 class GameScene : public BaseScene {
 public:
     GameScene();

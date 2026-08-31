@@ -1,5 +1,7 @@
 #include "samples/rail_shooter/Player.h"
 
+// レールシューティングサンプルの自機実装。エンジン層からは参照されない。
+
 #include "engine/3d/Model.h"
 #include "engine/io/Input.h"
 
