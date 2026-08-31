@@ -1,4 +1,4 @@
-#include "app/Bullet.h"
+#include "samples/rail_shooter/Bullet.h"
 
 #include <algorithm>
 #include <cmath>

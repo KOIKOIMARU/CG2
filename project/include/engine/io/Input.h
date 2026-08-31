@@ -6,7 +6,8 @@
 #include "engine/base/Math.h"
 #include "engine/base/WinApp.h"
 
-// 入力
+// DirectInputのキーボード状態とWin32のマウス位置をフレーム単位で保持する。
+// TriggerKeyは押した瞬間だけ、PushKeyは押している間継続してtrueを返す。
 class Input {
 public:
 	template <class T> using ComPtr = Microsoft::WRL::ComPtr<T>;

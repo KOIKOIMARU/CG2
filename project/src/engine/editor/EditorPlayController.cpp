@@ -1,9 +1,14 @@
 #include "engine/editor/EditorPlayController.h"
 
-#include "app/GameRuntime.h"
+#include <utility>
 
 EditorPlayController::EditorPlayController() = default;
 EditorPlayController::~EditorPlayController() = default;
+
+void EditorPlayController::SetRuntimeFactory(RuntimeFactory runtimeFactory)
+{
+    runtimeFactory_ = std::move(runtimeFactory);
+}
 
 void EditorPlayController::SetSystems(
     DirectXCommon* dxCommon,
@@ -21,11 +26,14 @@ void EditorPlayController::SetSystems(
 
 bool EditorPlayController::Start()
 {
-    if (runtime_) {
+    if (runtime_ || !runtimeFactory_) {
         return false;
     }
 
-    runtime_ = std::make_unique<GameRuntime>();
+    runtime_ = runtimeFactory_();
+    if (!runtime_) {
+        return false;
+    }
     runtime_->SetSystems(
         dxCommon_,
         srvManager_,

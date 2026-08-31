@@ -11,12 +11,14 @@ class SrvManager;
 class Object3d;
 
 #ifdef USE_IMGUI
-// 縺薙％縺ｯ蜷帙・繝励Ο繧ｸ繧ｧ繧ｯ繝医・螳滄圀縺ｮ繝代せ縺ｫ蜷医ｏ縺帙ｋ
+// ImGui本体はproject/externals/imguiに統一し、別バージョンとの混在を避ける。
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx12.h"
 #endif
 
+// ImGuiのフレーム処理とエディタ用パネルを管理する。
+// BeginとEndはUpdate中、Drawは3D描画とポストエフェクトの後に呼ぶ。
 class ImGuiManager {
 public:
     struct RenderingDebugSettings {

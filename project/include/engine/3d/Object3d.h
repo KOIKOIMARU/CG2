@@ -84,6 +84,8 @@ struct SkinningInformationForCompute {
     float padding[3];
 };
 
+// 3Dモデル1個分の変換、マテリアル、ライト、アニメーション状態を保持する描画単位。
+// Modelの所有権は持たない。Initialize後にSetModelを行い、毎フレームUpdateしてからDrawする。
 class Object3d {
 public:
     void Initialize(Object3dCommon* object3dCommon);

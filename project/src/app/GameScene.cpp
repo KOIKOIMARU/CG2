@@ -1,4 +1,4 @@
-#include "engine/scene/GameScene.h"
+#include "app/GameScene.h"
 
 #include "engine/scene/SceneManager.h"
 #include "engine/scene/SceneType.h"

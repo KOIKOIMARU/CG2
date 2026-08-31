@@ -22,6 +22,7 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <utility>
 
 namespace {
 
@@ -42,7 +43,7 @@ constexpr const char* kInspectorModelItems[] = {
 };
 
 constexpr const char* kSceneFilePath =
-"resources/game_scene.json";
+"resources/editor_default_scene.json";
 constexpr const char* kEditorSettingsPath =
 "resources/game_editor_settings.json";
 constexpr size_t kMaxTransformHistoryCount = 64;
@@ -183,6 +184,12 @@ Math::Vector3 MakeBoneRotate(const Math::Vector3& direction)
 EditorScene::EditorScene() = default;
 EditorScene::~EditorScene() = default;
 
+void EditorScene::SetPlayRuntimeFactory(
+    EditorPlayController::RuntimeFactory runtimeFactory)
+{
+    playController_.SetRuntimeFactory(std::move(runtimeFactory));
+}
+
 int EditorScene::GetPostEffectMode() const
 {
     if (editorManager_.IsPlayMode() && playController_.IsRunning()) {
@@ -305,14 +312,14 @@ void EditorScene::Initialize() {
         "resources/uvChecker.png"
     );
     ModelManager::GetInstance()->CreateBox(
-        "game_player",
+        "editor_preview_box",
         1.0f,
         0.45f,
         1.3f,
         "resources/uvChecker.png"
     );
     ModelManager::GetInstance()->CreateSphere(
-        "game_enemy",
+        "editor_preview_sphere",
         16,
         32,
         0.9f,
@@ -402,16 +409,16 @@ bool EditorScene::LoadPrimitiveObjectsFromSceneFile(const char* path) {
         editorObjects_.push_back(std::move(editorObject));
     }
 
-    AddGameplayPreviewObjects();
+    AddDefaultPreviewObjects();
     editorManager_.ResetSelectedObjectIndex();
     return true;
 }
 
-void EditorScene::AddGameplayPreviewObjects()
+void EditorScene::AddDefaultPreviewObjects()
 {
-    AddGameplayPreviewObject(
-        "Player Preview",
-        "game_player",
+    AddDefaultPreviewObject(
+        "Box Preview",
+        "editor_preview_box",
         { 0.0f, 0.0f, 0.0f },
         { 0.8f, 0.35f, 1.0f },
         { 0.25f, 0.65f, 1.0f, 1.0f });
@@ -422,16 +429,16 @@ void EditorScene::AddGameplayPreviewObjects()
         { 4.0f, 1.5f, 26.0f }
     };
     for (int index = 0; index < 3; ++index) {
-        AddGameplayPreviewObject(
-            ("Enemy Preview " + std::to_string(index + 1)).c_str(),
-            "game_enemy",
+        AddDefaultPreviewObject(
+            ("Sphere Preview " + std::to_string(index + 1)).c_str(),
+            "editor_preview_sphere",
             enemyPositions[index],
             { 0.9f, 0.9f, 0.9f },
             { 1.0f, 0.25f, 0.25f, 1.0f });
     }
 }
 
-void EditorScene::AddGameplayPreviewObject(
+void EditorScene::AddDefaultPreviewObject(
     const char* name,
     const char* modelName,
     const Math::Vector3& translate,
@@ -447,7 +454,7 @@ void EditorScene::AddGameplayPreviewObject(
     previewObject->SetEnvironmentCoefficient(0.0f);
 
     EditorObject editorObject{};
-    editorObject.name = name ? name : "Gameplay Preview";
+    editorObject.name = name ? name : "Editor Preview";
     editorObject.modelIndex = 0;
     editorObject.visible = true;
     editorObject.runtimePreview = true;

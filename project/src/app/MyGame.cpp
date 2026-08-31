@@ -1,6 +1,8 @@
 #include "app/MyGame.h"
+#include "app/AppSceneFactory.h"
+#include "app/GameScene.h"
+#include "app/TitleScene.h"
 #include "engine/scene/SceneManager.h"
-#include "engine/scene/SceneFactory.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
 #include "engine/2d/SpriteCommon.h"
@@ -8,9 +10,7 @@
 #include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
 #include "engine/scene/EditorScene.h"
-#include "engine/scene/GameScene.h"
 #include "engine/scene/SceneType.h"
-#include "engine/scene/TitleScene.h"
 
 #include <chrono>
 #include <fstream>
@@ -68,7 +68,7 @@ void MyGame::Initialize() {
         WriteSmokeLog("SMOKE_TEST_ENGINE_INITIALIZED");
     }
 
-    sceneFactory_ = std::make_unique<SceneFactory>();
+    sceneFactory_ = std::make_unique<AppSceneFactory>();
 
     SceneManager::GetInstance()->SetSceneFactory(sceneFactory_.get());
     SceneManager::GetInstance()->SetSystems(
@@ -79,7 +79,10 @@ void MyGame::Initialize() {
         input_.get()
     );
 
-    SceneManager::GetInstance()->SetNextScene(SceneType::Title);
+    // 通常起動ではゲーム固有サンプルを経由せず、汎用エディタを開く。
+    // 自動スモークテストだけはレールシューティングサンプルを検証する。
+    SceneManager::GetInstance()->SetNextScene(
+        smokeTestOptions_.enabled ? SceneType::Title : SceneType::Editor);
 }
 
 void MyGame::Update() {

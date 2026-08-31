@@ -1,4 +1,4 @@
-#include "app/GameRuntime.h"
+#include "samples/rail_shooter/GameRuntime.h"
 
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/ParticleManager.h"

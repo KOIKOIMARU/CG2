@@ -11,16 +11,18 @@
 #include "engine/base/WinApp.h"
 #include "engine/base/Math.h"
 #include "DirectXTex.h"
-#include <chrono>   // ← 必須
-#include <thread>   // ← sleep_for に必要
+#include <chrono>
+#include <thread>
 
-// DirectX基盤
 class SrvManager;
 
+// DirectX 12デバイスとフレーム描画を管理する低レベル基盤。
+// 利用順は Initialize -> 毎フレーム PreDraw / 描画 / PostDraw。
+// 取得できるD3D12オブジェクトは本クラス所有のため、呼び出し側で解放しないこと。
 class DirectXCommon
 {
 public:
-    // ★ バックバッファ数
+    // スワップチェーンと内部レンダーターゲットで使用するRTV配置。
     static constexpr UINT kBackBufferCount = 2;
     static constexpr UINT kRenderTextureRTVIndex = kBackBufferCount;
     static constexpr UINT kPostEffectTextureRTVIndex = kBackBufferCount + 1;
@@ -30,7 +32,6 @@ public:
     static constexpr UINT kBloomQuarterBRTVIndex = kBackBufferCount + 5;
     static constexpr UINT kRTVDescriptorCount = kBackBufferCount + 6;
 
-    // 初期化（全部まとめ）
     ~DirectXCommon();
     void Initialize(WinApp* winApp);
 
@@ -89,7 +90,7 @@ public:
     void BeginTextureUploadBatch();
     void EndTextureUploadBatch();
 
-    // 描画前処理
+    // PreDraw でコマンド記録を開始し、PostDraw でPresentとGPU同期を行う。
 	void PreDraw();
     void DrawRenderTextureToSwapChain(int postEffectMode);
     void SetPostEffectProjectionMatrix(const Math::Matrix4x4& projectionMatrix);

@@ -1,11 +1,12 @@
 #pragma once
 
-#include "app/Bullet.h"
-#include "app/Enemy.h"
-#include "app/Player.h"
+#include "samples/rail_shooter/Bullet.h"
+#include "samples/rail_shooter/Enemy.h"
+#include "samples/rail_shooter/Player.h"
 #include "engine/3d/Camera.h"
 #include "engine/3d/Object3d.h"
 #include "engine/3d/Object3dCommon.h"
+#include "engine/editor/IEditorPlayRuntime.h"
 #include "engine/scene/SceneSerializer.h"
 
 #include <array>
@@ -24,10 +25,10 @@ class Skybox;
 class SpriteCommon;
 class SrvManager;
 
-class GameRuntime {
+class GameRuntime final : public IEditorPlayRuntime {
 public:
     GameRuntime();
-    ~GameRuntime();
+    ~GameRuntime() override;
 
     static bool PreloadSharedResourceStep(DirectXCommon* dxCommon, SrvManager* srvManager);
     static bool AreSharedResourcesPreloaded();
@@ -42,16 +43,16 @@ public:
         SrvManager* srvManager,
         SpriteCommon* spriteCommon,
         ImGuiManager* imguiManager,
-        Input* input);
-    void Initialize();
-    void Finalize();
-    void Update();
-    void Draw();
-    void SetHudViewportRect(bool isEnabled, const Math::Vector2& min, const Math::Vector2& size);
-    void SetRenderingOptions(bool showSkybox, int postEffectMode);
-    int GetPostEffectMode() const;
-    const Math::Matrix4x4& GetProjectionMatrix() const;
-    bool IsExitRequested() const { return isExitRequested_; }
+        Input* input) override;
+    void Initialize() override;
+    void Finalize() override;
+    void Update() override;
+    void Draw() override;
+    void SetHudViewportRect(bool isEnabled, const Math::Vector2& min, const Math::Vector2& size) override;
+    void SetRenderingOptions(bool showSkybox, int postEffectMode) override;
+    int GetPostEffectMode() const override;
+    const Math::Matrix4x4& GetProjectionMatrix() const override;
+    bool IsExitRequested() const override { return isExitRequested_; }
     int GetPlayerHp() const;
     int GetPlayerMaxHp() const { return 100; }
 

@@ -6,6 +6,8 @@
 
 class DirectXCommon;
 
+// シェーダー可視SRV/UAVディスクリプタヒープの割り当てを管理する。
+// Allocateで得たインデックスは所有者が保持し、不要になった時点で一度だけFreeする。
 class SrvManager {
 public:
     // 最大SRV数

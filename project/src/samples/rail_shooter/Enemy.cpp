@@ -1,4 +1,4 @@
-#include "app/Enemy.h"
+#include "samples/rail_shooter/Enemy.h"
 
 #include "engine/3d/Model.h"
 

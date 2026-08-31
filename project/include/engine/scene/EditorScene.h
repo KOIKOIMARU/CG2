@@ -24,7 +24,8 @@ struct SkeletonDebugSet {
     Math::Vector4 color{ 1.0f, 1.0f, 1.0f, 1.0f };
 };
 
-// 郢ｧ・ｨ郢昴・縺・ｹｧ・ｿ闕ｳ鄙ｫ縲定ｬ・ｽｱ邵ｺ繝ｻ・ｿ・ｽ陷会｣ｰ郢ｧ・ｪ郢晄じ縺夂ｹｧ・ｧ郢ｧ・ｯ郢昴・
+// エディタ上で扱う1オブジェクト分のデータ。
+// Object3d の所有権はこの構造体が持ち、一覧表示用の名前や可視状態もまとめて管理する。
 struct EditorObject {
     std::string name;
     std::unique_ptr<Object3d> object;
@@ -42,6 +43,9 @@ public:
     void Finalize() override;
     void Update() override;
     void Draw() override;
+
+    // プレイモードで起動するゲームランタイムはアプリケーション側から注入する。
+    void SetPlayRuntimeFactory(EditorPlayController::RuntimeFactory runtimeFactory);
 
     int GetPostEffectMode() const;
     const Math::Matrix4x4& GetProjectionMatrix() const;
@@ -65,8 +69,8 @@ private:
     void UpdateSkeletonDebugSet(SkeletonDebugSet& debugSet);
     bool LoadPrimitiveObjectsFromSceneFile(const char* path);
     bool SaveSceneToFile(const char* path) const;
-    void AddGameplayPreviewObjects();
-    void AddGameplayPreviewObject(
+    void AddDefaultPreviewObjects();
+    void AddDefaultPreviewObject(
         const char* name,
         const char* modelName,
         const Math::Vector3& translate,

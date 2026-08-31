@@ -1,4 +1,4 @@
-#include "app/Player.h"
+#include "samples/rail_shooter/Player.h"
 
 #include "engine/3d/Model.h"
 #include "engine/io/Input.h"

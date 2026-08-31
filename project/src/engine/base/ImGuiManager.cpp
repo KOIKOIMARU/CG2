@@ -202,7 +202,7 @@ void FreeImGuiSrvDescriptor(
     auto* srvManager = static_cast<SrvManager*>(info->UserData);
     assert(srvManager);
 
-    // ImGui縺御ｸ崎ｦ√↓縺ｪ縺｣縺欖RV繧偵∵ｬ｡縺ｮ遒ｺ菫昴〒蜀榊茜逕ｨ縺ｧ縺阪ｋ繧医≧縺ｫ謌ｻ縺・
+    // ImGuiが不要になったSRVを解放し、次回Allocateで再利用できるようにする。
     srvManager->Free(cpuHandle);
 }
 
@@ -664,7 +664,7 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
     ImGui::SetNextItemOpen(panels.renderingOpen, ImGuiCond_Always);
     panels.renderingOpen = ImGui::CollapsingHeader("描画");
     if (panels.renderingOpen) {
-    // 3D繝｢繝・Ν縺ｮBlendMode繧貞・繧頑崛縺・
+    // 3Dモデルへ適用するブレンドモードを切り替える。
     const char* blendItems[] = {
         "なし", "通常", "加算", "減算", "乗算", "スクリーン"
     };
@@ -1021,7 +1021,7 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
     panels.lightingOpen = ImGui::CollapsingHeader("ライティング");
     if (panels.lightingOpen) {
     ImGui::BeginDisabled(inspector.isPlayMode);
-    // DirectionalLight縺ｮ蜷代″縺ｨ蠑ｷ縺輔ｒ隱ｿ謨ｴ
+    // 平行光源の向きと強さを調整する。
     ImGui::Text("平行光源");
     ImGui::SliderFloat("光向き X", &lighting.lightDirection.x, -1.0f, 1.0f);
     ImGui::SliderFloat("光向き Y", &lighting.lightDirection.y, -1.0f, 1.0f);
@@ -1030,7 +1030,7 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 
     ImGui::Separator();
 
-    // PointLight縺ｮ菴咲ｽｮ縺ｨ蠑ｷ縺輔ｒ隱ｿ謨ｴ
+    // 点光源の位置と強さを調整する。
     ImGui::Text("点光源");
     ImGui::SliderFloat("点光源 X", &lighting.pointLightPosition.x, -10.0f, 10.0f);
     ImGui::SliderFloat("点光源 Y", &lighting.pointLightPosition.y, -10.0f, 10.0f);
@@ -1039,7 +1039,7 @@ void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 
     ImGui::Separator();
 
-    // SpotLight縺ｮ菴咲ｽｮ縲∝髄縺阪∝ｼｷ縺輔ｒ隱ｿ謨ｴ
+    // スポットライトの位置、向き、強さを調整する。
     ImGui::Text("スポットライト");
     ImGui::SliderFloat("スポット X", &lighting.spotLightPosition.x, -10.0f, 10.0f);
     ImGui::SliderFloat("スポット Y", &lighting.spotLightPosition.y, -10.0f, 10.0f);

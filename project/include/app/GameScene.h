@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/GameRuntime.h"
+#include "samples/rail_shooter/GameRuntime.h"
 #include "engine/scene/BaseScene.h"
 
 class GameScene : public BaseScene {

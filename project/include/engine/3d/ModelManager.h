@@ -8,6 +8,8 @@ class ModelCommon;
 class DirectXCommon;
 class SrvManager;
 
+// 読み込み済みモデルと組み込みプリミティブを名前で共有するキャッシュ。
+// 同じキーを再度要求しても重複ロードせず、返すModelポインタの所有権は本クラスが持つ。
 class ModelManager {
 public:
     static ModelManager* GetInstance();
@@ -15,7 +17,7 @@ public:
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
     void Finalize();
 
-    // モデル読み込み
+    // resources直下からモデルを読み込む。filePathがキャッシュキーになる。
     void LoadModel(const std::string& filePath);
     void CreateTriangle(
         const std::string& name,

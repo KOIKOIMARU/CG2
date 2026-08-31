@@ -1,11 +1,12 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "engine/base/Math.h"
+#include "engine/editor/IEditorPlayRuntime.h"
 
 class DirectXCommon;
-class GameRuntime;
 class ImGuiManager;
 class Input;
 class SpriteCommon;
@@ -13,9 +14,15 @@ class SrvManager;
 
 class EditorPlayController {
 public:
+    using RuntimeFactory =
+        std::function<std::unique_ptr<IEditorPlayRuntime>()>;
+
     EditorPlayController();
     ~EditorPlayController();
 
+    // アプリケーション側が実行ランタイムの生成方法を注入する。
+    // 未設定の場合、Start は false を返しプレイモードを開始しない。
+    void SetRuntimeFactory(RuntimeFactory runtimeFactory);
     void SetSystems(
         DirectXCommon* dxCommon,
         SrvManager* srvManager,
@@ -38,5 +45,6 @@ private:
     SpriteCommon* spriteCommon_ = nullptr;
     ImGuiManager* imguiManager_ = nullptr;
     Input* input_ = nullptr;
-    std::unique_ptr<GameRuntime> runtime_;
+    RuntimeFactory runtimeFactory_;
+    std::unique_ptr<IEditorPlayRuntime> runtime_;
 };

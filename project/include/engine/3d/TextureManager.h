@@ -9,11 +9,13 @@
 class DirectXCommon;
 class SrvManager;
 
+// テクスチャのGPU転送とSRV割り当てを共有管理するキャッシュ。
+// LoadTexture完了後、同じパスをObject3dやSpriteから安全に参照できる。
 class TextureManager {
 public:
     static TextureManager* GetInstance();
 
-    // ★ SRVマネージャを受け取る
+    // 引数はいずれも借用。Frameworkより先に破棄してはいけない。
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
 
     void LoadTexture(const std::string& filePath, bool forceSrgb = true);
