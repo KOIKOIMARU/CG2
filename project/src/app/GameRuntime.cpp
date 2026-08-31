@@ -2607,9 +2607,6 @@ int GameRuntime::GetPostEffectMode() const
     if (isGameClear_) {
         return 14;
     }
-    if (GetPlayerHp() <= 35) {
-        return 13;
-    }
     return 12;
 }
 
@@ -6342,12 +6339,41 @@ void GameRuntime::DrawHud()
     };
     if (hpRate <= 0.34f && !isGameOver_) {
         const int alertAlpha = static_cast<int>(
-            28.0f + (0.34f - hpRate) * 170.0f +
-            18.0f * (0.5f + 0.5f * std::sin(cameraTimer_ * 8.0f)));
-        drawList->AddRectFilled(
+            14.0f + (0.34f - hpRate) * 60.0f +
+            8.0f * (0.5f + 0.5f * std::sin(cameraTimer_ * 8.0f)));
+        const int clampedAlertAlpha = (std::clamp)(alertAlpha, 0, 32);
+        const float alertWidth = 44.0f;
+        const ImU32 alertColor = IM_COL32(230, 42, 58, clampedAlertAlpha);
+        const ImU32 clearAlertColor = IM_COL32(230, 42, 58, 0);
+        const ImVec2 viewportMax(origin.x + drawSize.x, origin.y + drawSize.y);
+        drawList->AddRectFilledMultiColor(
             origin,
-            ImVec2(origin.x + drawSize.x, origin.y + drawSize.y),
-            IM_COL32(210, 34, 58, (std::clamp)(alertAlpha, 0, 86)));
+            ImVec2(viewportMax.x, origin.y + alertWidth),
+            alertColor,
+            alertColor,
+            clearAlertColor,
+            clearAlertColor);
+        drawList->AddRectFilledMultiColor(
+            ImVec2(origin.x, viewportMax.y - alertWidth),
+            viewportMax,
+            clearAlertColor,
+            clearAlertColor,
+            alertColor,
+            alertColor);
+        drawList->AddRectFilledMultiColor(
+            origin,
+            ImVec2(origin.x + alertWidth, viewportMax.y),
+            alertColor,
+            clearAlertColor,
+            clearAlertColor,
+            alertColor);
+        drawList->AddRectFilledMultiColor(
+            ImVec2(viewportMax.x - alertWidth, origin.y),
+            viewportMax,
+            clearAlertColor,
+            alertColor,
+            alertColor,
+            clearAlertColor);
     }
 
     const ImVec2 playerPanelMin(origin.x + 18.0f, origin.y + 18.0f);
