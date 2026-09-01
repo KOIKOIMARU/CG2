@@ -1,10 +1,10 @@
 #pragma once
 #include <string>
 
-// 文字コードユーティリティ
+// Windows API境界で使用するUTF-8とUTF-16の相互変換。
 namespace StringUtility {
-	// stringをwstringに変換する関数
+	// UTF-8のstringをUTF-16のwstringへ変換する。
 	std::wstring ConvertString(const std::string& str);
-	// wstringをstringに変換する関数
+	// UTF-16のwstringをUTF-8のstringへ変換する。
 	std::string ConvertString(const std::wstring& str);
 }

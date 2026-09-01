@@ -28,13 +28,13 @@ public:
     virtual bool IsEndRequst() { return endRequst_; }
 
 protected:
-    bool endRequst_ = false;
-    int exitCode_ = 0;
+    bool endRequst_ = false; // ウィンドウ終了またはテスト終了が要求されたか
+    int exitCode_ = 0;       // Runが呼び出し元へ返すプロセス終了コード
 
-    std::unique_ptr<WinApp> winApp_;
-    std::unique_ptr<DirectXCommon> dxCommon_;
-    std::unique_ptr<SrvManager> srvManager_;
-    std::unique_ptr<ImGuiManager> imguiManager_;
-    std::unique_ptr<Input> input_;
-    std::unique_ptr<SpriteCommon> spriteCommon_;
+    std::unique_ptr<WinApp> winApp_;             // Win32ウィンドウとメッセージ処理
+    std::unique_ptr<DirectXCommon> dxCommon_;    // DirectX 12描画基盤
+    std::unique_ptr<SrvManager> srvManager_;     // SRV/UAVディスクリプタ管理
+    std::unique_ptr<ImGuiManager> imguiManager_; // デバッグ・編集UI基盤
+    std::unique_ptr<Input> input_;               // キーボードとマウス入力
+    std::unique_ptr<SpriteCommon> spriteCommon_; // 2Dスプライトの共有描画設定
 };

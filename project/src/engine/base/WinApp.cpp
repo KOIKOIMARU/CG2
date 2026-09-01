@@ -2,97 +2,178 @@
 
 #ifdef USE_IMGUI
 #include "imgui_impl_win32.h"
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
+    HWND hwnd,
+    UINT message,
+    WPARAM wparam,
+    LPARAM lparam);
 #endif
 
-// ウィンドウプロシージャ
-LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+LRESULT CALLBACK WinApp::WindowProc(
+    HWND hwnd,
+    UINT message,
+    WPARAM wparam,
+    LPARAM lparam)
+{
+    // CreateWindowへ渡したWinAppをHWNDへ記録し、以後のイベントから取得する。
+    if (message == WM_NCCREATE) {
+        const auto* create = reinterpret_cast<const CREATESTRUCT*>(lparam);
+        SetWindowLongPtr(
+            hwnd,
+            GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(create->lpCreateParams));
+    }
+    auto* winApp = reinterpret_cast<WinApp*>(
+        GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
+    // 表示切り替えはImGuiの入力キャプチャ中でも常に利用できるよう先に処理する。
+    const bool isFirstKeyDown =
+        (static_cast<uint64_t>(lparam) & (1ull << 30)) == 0;
+    const bool isF11 =
+        message == WM_KEYDOWN && wparam == VK_F11 && isFirstKeyDown;
+    const bool isAltEnter =
+        message == WM_SYSKEYDOWN &&
+        wparam == VK_RETURN &&
+        (static_cast<uint64_t>(lparam) & (1ull << 29)) != 0 &&
+        isFirstKeyDown;
+    if ((isF11 || isAltEnter) && winApp) {
+        winApp->ToggleFullscreen();
+        return 0;
+    }
 
 #ifdef USE_IMGUI
-	// ImGuiのウィンドウプロシージャを呼び出す（処理したらここで終了）
-	if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam)) {
-		return 1; // LRESULTなので true より 1 の方が安全
-	}
+    // ImGuiが使用したマウス・キーボードイベントは、通常の処理へ重複して渡さない。
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wparam, lparam)) {
+        return 1;
+    }
 #endif
 
-	switch (msg) {
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0;
-	}
+    switch (message) {
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
 
-	return DefWindowProc(hwnd, msg, wparam, lparam);
+    case WM_NCDESTROY:
+        SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);
+        break;
+    }
+
+    return DefWindowProc(hwnd, message, wparam, lparam);
 }
-
 
 void WinApp::Initialize()
 {
-	CoInitializeEx(0, COINIT_MULTITHREADED);
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
+    windowClass_.lpfnWndProc = WindowProc;
+    windowClass_.lpszClassName = L"CG2WindowClass";
+    windowClass_.hInstance = GetModuleHandle(nullptr);
+    windowClass_.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    RegisterClass(&windowClass_);
 
-	// ウィンドウプロシージャ
-	wc.lpfnWndProc = WindowProc;
-	// ウィンドウクラス名
-	wc.lpszClassName = L"CG2WindowClass";
-	// インスタンスハンドル
-	wc.hInstance = GetModuleHandle(nullptr);
-	// カーソル
-	wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    // 固定サイズの通常ウィンドウを作り、F11時には同じHWNDの枠だけを外す。
+    windowedStyle_ =
+        WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX;
+    RECT windowRect{ 0, 0, kClientWidth, kClientHeight };
+    AdjustWindowRect(&windowRect, windowedStyle_, FALSE);
 
-	// ウィンドウクラスの登録
-	RegisterClass(&wc);
+    hwnd_ = CreateWindow(
+        windowClass_.lpszClassName,
+        L"CG2",
+        windowedStyle_,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        windowRect.right - windowRect.left,
+        windowRect.bottom - windowRect.top,
+        nullptr,
+        nullptr,
+        windowClass_.hInstance,
+        this);
 
-
-	// ウィンドウサイズを表す構造体にクライアント領域を入れる
-	RECT wrc = { 0, 0, kClientWidth, kClientHeight };
-	const DWORD windowStyle =
-		WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX;
-
-	// クライアント領域を元に実際のサイズにwrcを変更してもらう
-	AdjustWindowRect(&wrc, windowStyle, false);
-
-
-	// ウィンドウの作成
-	hwnd = CreateWindow(
-		wc.lpszClassName, // ウィンドウクラス名
-		L"CG2", // ウィンドウ名
-		windowStyle, // ウィンドウスタイル
-		CW_USEDEFAULT, // 表示X座標(Windowsに任せる
-		CW_USEDEFAULT, // 表示Y座標
-		wrc.right - wrc.left, // ウィンドウ横幅
-		wrc.bottom - wrc.top, // ウィンドウ縦幅
-		nullptr, // 親ウィンドウハンドル
-		nullptr, // メニューハンドル
-		wc.hInstance, // インスタンスハンドル
-		nullptr); // オプション
-
-	// ウィンドウを表示する
-	ShowWindow(hwnd, SW_SHOW);
-
+    ShowWindow(hwnd_, SW_SHOW);
 }
 
 void WinApp::Finalize()
 {
-
-	CloseWindow(hwnd);
-
-	// COMの終了処理
-	CoUninitialize();
+    if (hwnd_) {
+        DestroyWindow(hwnd_);
+        hwnd_ = nullptr;
+    }
+    if (windowClass_.lpszClassName && windowClass_.hInstance) {
+        UnregisterClass(
+            windowClass_.lpszClassName,
+            windowClass_.hInstance);
+    }
+    CoUninitialize();
 }
 
 bool WinApp::ProcessMessage()
 {
-	MSG msg{};
-	if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-		// メッセージがあったら処理する
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
-	}
+    MSG message{};
+    // 1フレームでキューを空にし、入力やリサイズが描画に遅れて反映されるのを防ぐ。
+    while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE)) {
+        if (message.message == WM_QUIT) {
+            return true;
+        }
+        TranslateMessage(&message);
+        DispatchMessage(&message);
+    }
+    return false;
+}
 
-	// ウィンドウの×ボタンが押されたらtrueを返す
-	if (msg.message == WM_QUIT) {
-		return true;
-	}
+void WinApp::ToggleFullscreen()
+{
+    if (!hwnd_) {
+        return;
+    }
 
-	return false;
+    if (!isFullscreen_) {
+        MONITORINFO monitorInfo{ sizeof(MONITORINFO) };
+        const HMONITOR monitor =
+            MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+        if (!GetMonitorInfo(monitor, &monitorInfo)) {
+            return;
+        }
+
+        // 通常表示へ戻すため、枠を変更する前の状態を保存する。
+        windowedStyle_ = static_cast<DWORD>(
+            GetWindowLongPtr(hwnd_, GWL_STYLE));
+        windowedPlacement_.length = sizeof(WINDOWPLACEMENT);
+        GetWindowPlacement(hwnd_, &windowedPlacement_);
+
+        SetWindowLongPtr(
+            hwnd_,
+            GWL_STYLE,
+            static_cast<LONG_PTR>(
+                windowedStyle_ & ~WS_OVERLAPPEDWINDOW));
+        SetWindowPos(
+            hwnd_,
+            HWND_TOP,
+            monitorInfo.rcMonitor.left,
+            monitorInfo.rcMonitor.top,
+            monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left,
+            monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        isFullscreen_ = true;
+        return;
+    }
+
+    SetWindowLongPtr(
+        hwnd_,
+        GWL_STYLE,
+        static_cast<LONG_PTR>(windowedStyle_));
+    SetWindowPlacement(hwnd_, &windowedPlacement_);
+    SetWindowPos(
+        hwnd_,
+        nullptr,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE |
+        SWP_NOSIZE |
+        SWP_NOZORDER |
+        SWP_NOOWNERZORDER |
+        SWP_FRAMECHANGED);
+    isFullscreen_ = false;
 }

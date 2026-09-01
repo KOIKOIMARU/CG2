@@ -22,14 +22,14 @@ Camera::Camera()
 
 void Camera::Update()
 {
-    // ★ 資料通り：まず worldMatrix
+    // カメラの姿勢からワールド行列を組み立てる。
     worldMatrix = MakeAffineMatrix(
         transform.scale,
         transform.rotate,
         transform.translate
     );
 
-    // ★ view は world の逆行列
+    // カメラのワールド変換を逆にしてビュー変換を求める。
     viewMatrix = Inverse(worldMatrix);
 
     // ゲームの見せ方に応じて透視投影と正投影を切り替える。
@@ -51,7 +51,7 @@ void Camera::Update()
             farClip);
     }
 
-    // ★ VP
+    // 描画側が直接利用できるようビューと投影を合成する。
     viewProjectionMatrix =
         Multiply(viewMatrix, projectionMatrix);
 }

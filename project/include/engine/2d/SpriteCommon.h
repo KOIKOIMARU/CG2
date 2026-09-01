@@ -6,12 +6,13 @@ class DirectXCommon;   // 前方宣言
 class TextureManager;
 class SrvManager;
 
+// すべての2Dスプライトで共有する描画パイプラインを管理する。
 class SpriteCommon {
 public:
-    // 共通部の初期化（スライドの Initialize 相当）
+    // 描画デバイスとテクスチャ管理機構を借用して初期化する。
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
 
-    // 3D側や Sprite クラスから参照できるように getter だけ用意
+    // Spriteが描画コマンドを設定するための共有オブジェクトを返す。
     ID3D12RootSignature* GetRootSignature() const { return rootSignature_.Get(); }
     ID3D12PipelineState* GetPipelineState() const { return pipelineState_.Get(); }
 
@@ -21,21 +22,18 @@ public:
     void CommonDrawSetting();
 
 private:
-    // スライドの「ルートシグネチャの作成」
+    // スプライト描画用のルートシグネチャを生成する。
     void CreateRootSignature();
 
-    // スライドの「グラフィックスパイプラインの生成」
+    // スプライト描画用のパイプラインを生成する。
     void CreateGraphicsPipelineState();
 
 private:
-    // スライドの「DirectXCommon のポインタ」
-    DirectXCommon* dxCommon_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr; // デバイスとコマンドリストの借用先
 
-    // ルートシグネチャ
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; // スプライト用ルート引数定義
 
-    // グラフィックスパイプラインステート
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_; // スプライト用PSO
 
-    SrvManager* srvManager_ = nullptr;
+    SrvManager* srvManager_ = nullptr; // テクスチャSRVを設定する借用先
 };

@@ -22,8 +22,8 @@ class SrvManager;
 // チーム作品はこの責務分離を参考にし、ゲーム固有処理をengine層へ入れない。
 class SideScrollRuntime final : public IEditorPlayRuntime {
 public:
-    SideScrollRuntime() = default;
-    ~SideScrollRuntime() override = default;
+    SideScrollRuntime();
+    ~SideScrollRuntime() override;
 
     void SetSystems(
         DirectXCommon* dxCommon,
@@ -47,21 +47,21 @@ public:
 
 private:
     enum class Action : uint32_t {
-        MoveLeft,
-        MoveRight,
-        Jump,
-        Reset,
-        ToggleProjection,
+        MoveLeft,         // 左へ移動
+        MoveRight,        // 右へ移動
+        Jump,             // 接地中にジャンプ
+        Reset,            // 初期位置へ戻す
+        ToggleProjection, // 透視投影と平行投影を切り替える
     };
 
     struct Platform {
-        std::unique_ptr<Object3d> object;
-        Math::Vector3 center{};
-        Math::Vector3 halfExtents{};
+        std::unique_ptr<Object3d> object; // 足場の描画オブジェクト
+        Math::Vector3 center{};           // 当たり判定のワールド中心
+        Math::Vector3 halfExtents{};      // 当たり判定の各軸半サイズ
     };
 
-    static constexpr size_t kPlatformCount = 4;
-    static constexpr size_t kBackdropCount = 7;
+    static constexpr size_t kPlatformCount = 4; // サンプルに固定配置する足場数
+    static constexpr size_t kBackdropCount = 7; // 背景を構成する箱の数
 
     void InitializeInputActions();
     void InitializeModels();
@@ -84,28 +84,27 @@ private:
 
     static InputActionMap::ActionId ToActionId(Action action);
 
-    // Frameworkが所有するシステムへの非所有ポインタ。
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
-    SpriteCommon* spriteCommon_ = nullptr;
-    ImGuiManager* imguiManager_ = nullptr;
-    Input* input_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;     // 描画基盤の借用先
+    SrvManager* srvManager_ = nullptr;      // SRV管理の借用先
+    SpriteCommon* spriteCommon_ = nullptr;  // 2D共通描画の借用先
+    ImGuiManager* imguiManager_ = nullptr;  // ガイドUI描画の借用先
+    Input* input_ = nullptr;                // 操作入力の借用先
 
-    InputActionMap inputActions_;
-    std::unique_ptr<Object3dCommon> object3dCommon_;
-    std::unique_ptr<Camera> camera_;
-    std::unique_ptr<Object3d> playerObject_;
-    std::array<Platform, kPlatformCount> platforms_{};
-    std::array<std::unique_ptr<Object3d>, kBackdropCount> backdropObjects_{};
+    InputActionMap inputActions_;                    // サンプル操作と物理キーの対応表
+    std::unique_ptr<Object3dCommon> object3dCommon_; // 3Dオブジェクトの共有描画設定
+    std::unique_ptr<Camera> camera_;                  // サンプル空間を映すカメラ
+    std::unique_ptr<Object3d> playerObject_;          // 操作対象の箱モデル
+    std::array<Platform, kPlatformCount> platforms_{};// 描画と判定を持つ全足場
+    std::array<std::unique_ptr<Object3d>, kBackdropCount> backdropObjects_{}; // 背景用オブジェクト
 
-    Math::Vector3 playerPosition_{ -10.5f, 0.9f, 0.0f };
-    Math::Vector3 playerVelocity_{};
-    Math::Vector3 playerHalfExtents_{ 0.5f, 0.9f, 0.5f };
-    float cameraX_ = -8.5f;
-    bool isGrounded_ = false;
-    bool isOrthographic_ = false;
-    bool hasHudViewportRect_ = false;
-    Math::Vector2 hudViewportMin_{};
-    Math::Vector2 hudViewportSize_{};
-    int postEffectMode_ = 0;
+    Math::Vector3 playerPosition_{ -10.5f, 0.9f, 0.0f }; // プレイヤー中心のワールド位置
+    Math::Vector3 playerVelocity_{};                      // 重力を含む1秒あたりの移動量
+    Math::Vector3 playerHalfExtents_{ 0.5f, 0.9f, 0.5f };// プレイヤーAABBの各軸半サイズ
+    float cameraX_ = -8.5f;                               // プレイヤーを追従するカメラのX座標
+    bool isGrounded_ = false;                             // 足場上でジャンプ可能か
+    bool isOrthographic_ = false;                         // 現在、平行投影を使っているか
+    bool hasHudViewportRect_ = false;                     // エディター内の描画範囲が指定済みか
+    Math::Vector2 hudViewportMin_{};                       // 描画範囲の左上スクリーン座標
+    Math::Vector2 hudViewportSize_{};                      // 描画範囲の幅と高さ
+    int postEffectMode_ = 0;                              // DirectXCommonへ渡すポストエフェクト番号
 };

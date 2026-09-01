@@ -31,7 +31,7 @@ void ParticleEmitter::Update(float deltaTime)
     // 発生間隔を超えている間、発生し続ける
     while (elapsedTime_ >= emitInterval_) {
         Emit();
-        elapsedTime_ -= emitInterval_; // ★余った時間を繰り越す（資料の重要ポイント）
+        elapsedTime_ -= emitInterval_; // 余剰時間を残し、フレーム時間が揺れても平均発生間隔を保つ。
     }
 }
 

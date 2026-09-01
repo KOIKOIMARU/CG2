@@ -12,6 +12,7 @@ class Input;
 class SpriteCommon;
 class SrvManager;
 
+// エディターとゲーム側ランタイムの生成・終了境界を管理する。
 class EditorPlayController {
 public:
     using RuntimeFactory =
@@ -40,11 +41,11 @@ public:
     bool IsExitRequested() const;
 
 private:
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
-    SpriteCommon* spriteCommon_ = nullptr;
-    ImGuiManager* imguiManager_ = nullptr;
-    Input* input_ = nullptr;
-    RuntimeFactory runtimeFactory_;
-    std::unique_ptr<IEditorPlayRuntime> runtime_;
+    DirectXCommon* dxCommon_ = nullptr;     // ランタイムへ渡す描画基盤
+    SrvManager* srvManager_ = nullptr;      // ランタイムへ渡すSRV管理
+    SpriteCommon* spriteCommon_ = nullptr;  // ランタイムへ渡す2D描画基盤
+    ImGuiManager* imguiManager_ = nullptr;  // ランタイムへ渡すUI基盤
+    Input* input_ = nullptr;                // ランタイムへ渡す入力
+    RuntimeFactory runtimeFactory_;         // アプリ側から注入された生成関数
+    std::unique_ptr<IEditorPlayRuntime> runtime_; // Play中だけ所有する実行ランタイム
 };

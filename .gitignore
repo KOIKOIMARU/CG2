@@ -19,7 +19,17 @@
 generated/
 # Local authoring assets are kept outside the runtime project and submissions.
 assets_source/
+# 各開発PCで再生成されるローカル状態と旧出力先。
+/CG2/
+/x64/
+/outputs/
+/externals/DirectXTex/Bin/
+/externals/assimp/lib/Debug/*.pdb
+/tools/*.exe
+/tools/*.obj
+/*週間報告*.txt
 project/imgui.ini
+project/NodeEditor.json
 project/externals/generated/
 project/externals/DirectXTex/x64/
 project/CG2/

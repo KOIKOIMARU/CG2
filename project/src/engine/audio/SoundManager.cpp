@@ -6,7 +6,7 @@
 using Microsoft::WRL::ComPtr;
 
 void SoundManager::Initialize() {
-    // ★ Media Foundation 初期化（ローカルファイル版）
+    // 音声ファイルのデコードに使用するMedia Foundationを初期化する。
     HRESULT result = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
     assert(SUCCEEDED(result));
 
@@ -28,7 +28,7 @@ void SoundManager::Finalize() {
     }
     sounds_.clear();
 
-    // ★ Media Foundation 終了
+    // Initializeと対応するMedia Foundationの終了処理。
     HRESULT result = MFShutdown();
     assert(SUCCEEDED(result));
 }
@@ -59,8 +59,8 @@ void SoundManager::Play(const std::string& key) {
     assert(SUCCEEDED(result));
 
     XAUDIO2_BUFFER buf{};
-    buf.pAudioData = soundData.buffer.data();                 // ★ここ
-    buf.AudioBytes = static_cast<UINT32>(soundData.buffer.size()); // ★ここ
+    buf.pAudioData = soundData.buffer.data();
+    buf.AudioBytes = static_cast<UINT32>(soundData.buffer.size());
     buf.Flags = XAUDIO2_END_OF_STREAM;
 
     result = pSourceVoice->SubmitSourceBuffer(&buf);
@@ -71,16 +71,15 @@ void SoundManager::Play(const std::string& key) {
 
 
 SoundData SoundManager::LoadFile(const std::string& filename) {
-    // フルパス化（必要なら）
-    // すでに resources/xxx.mp3 みたいに渡すならそのままでもOK
+    // 呼び出し側から受け取った相対パスまたは絶対パスをそのまま解決する。
     std::string fullpath = filename;
 
-    // ワイド文字列に変換（MFはURL引数がwchar前提）
+    // Media FoundationのURL引数へ渡すためUTF-16へ変換する。
     std::wstring filePathW = StringUtility::ConvertString(fullpath);
 
     HRESULT result{};
 
-    // SourceReader 作成
+    // ファイル形式を問わずPCMへ変換できるSource Readerを生成する。
     ComPtr<IMFSourceReader> pReader;
     result = MFCreateSourceReaderFromURL(filePathW.c_str(), nullptr, &pReader);
     assert(SUCCEEDED(result));
@@ -152,7 +151,7 @@ SoundData SoundManager::LoadFile(const std::string& filename) {
             result = pBuffer->Lock(&pData, &maxLength, &currentLength);
             assert(SUCCEEDED(result));
 
-            // ★末尾に追加
+            // 複数サンプルに分割された音声を再生順に連結する。
             soundData.buffer.insert(soundData.buffer.end(), pData, pData + currentLength);
 
             pBuffer->Unlock();

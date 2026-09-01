@@ -14,7 +14,7 @@ public:
     ID3D12Resource* Get() const;
 
 private:
-    ID3D12Resource* resource_;
+    ID3D12Resource* resource_; // 本クラスがRelease責任を持つDirectX 12資源
 };
 
 #endif // RESOURCEOBJECT_H

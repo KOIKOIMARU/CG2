@@ -22,10 +22,7 @@ param(
     [double]$CaptureStartSeconds = 6.0,
 
     [ValidateRange(0.1, 10.0)]
-    [double]$CaptureIntervalSeconds = 0.35,
-
-    [ValidateSet('Opening', 'Wave2', 'Wave3', 'Boss')]
-    [string]$StartPhase = 'Opening'
+    [double]$CaptureIntervalSeconds = 0.35
 )
 
 Set-StrictMode -Version Latest
@@ -135,21 +132,13 @@ $arguments =
     "--smoke-log `"$smokeLogPath`""
 
 $diagnosticEnvironmentName = 'CG2_D3D12_DIAGNOSTIC_LOG'
-$startPhaseEnvironmentName = 'CG2_DEBUG_START_PHASE'
 $previousDiagnosticLog = [Environment]::GetEnvironmentVariable(
     $diagnosticEnvironmentName,
-    [EnvironmentVariableTarget]::Process)
-$previousStartPhase = [Environment]::GetEnvironmentVariable(
-    $startPhaseEnvironmentName,
     [EnvironmentVariableTarget]::Process)
 try {
     [Environment]::SetEnvironmentVariable(
         $diagnosticEnvironmentName,
         $diagnosticLogPath,
-        [EnvironmentVariableTarget]::Process)
-    [Environment]::SetEnvironmentVariable(
-        $startPhaseEnvironmentName,
-        $StartPhase,
         [EnvironmentVariableTarget]::Process)
     $process = Start-Process `
         -FilePath $executablePath `
@@ -160,10 +149,6 @@ try {
     [Environment]::SetEnvironmentVariable(
         $diagnosticEnvironmentName,
         $previousDiagnosticLog,
-        [EnvironmentVariableTarget]::Process)
-    [Environment]::SetEnvironmentVariable(
-        $startPhaseEnvironmentName,
-        $previousStartPhase,
         [EnvironmentVariableTarget]::Process)
 }
 

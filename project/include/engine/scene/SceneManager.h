@@ -44,18 +44,18 @@ private:
     SceneManager() = default;
 
 private:
-    std::unique_ptr<BaseScene> scene_;
-    std::unique_ptr<BaseScene> preparedScene_;
-    SceneType preparedSceneType_{};
-    bool hasPreparedScene_ = false;
-    SceneType nextSceneType_{};
-    bool hasNextScene_ = false;
+    std::unique_ptr<BaseScene> scene_;         // 現在、更新と描画を行う所有シーン
+    std::unique_ptr<BaseScene> preparedScene_; // 遷移前に初期化済みの所有シーン
+    SceneType preparedSceneType_{};            // preparedScene_の種類
+    bool hasPreparedScene_ = false;            // 事前生成済みシーンが利用可能か
+    SceneType nextSceneType_{};                // 次回Updateで切り替えるシーン種類
+    bool hasNextScene_ = false;                // シーン遷移の予約があるか
 
-    AbstractSceneFactory* sceneFactory_ = nullptr;
+    AbstractSceneFactory* sceneFactory_ = nullptr; // シーン生成規則の借用先
 
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
-    SpriteCommon* spriteCommon_ = nullptr;
-    ImGuiManager* imguiManager_ = nullptr;
-    Input* input_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr;    // 新しいシーンへ渡す描画基盤
+    SrvManager* srvManager_ = nullptr;     // 新しいシーンへ渡すSRV管理
+    SpriteCommon* spriteCommon_ = nullptr; // 新しいシーンへ渡す2D描画基盤
+    ImGuiManager* imguiManager_ = nullptr; // 新しいシーンへ渡すUI基盤
+    Input* input_ = nullptr;               // 新しいシーンへ渡す入力
 };

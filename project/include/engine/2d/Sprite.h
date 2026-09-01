@@ -10,7 +10,7 @@ class SpriteCommon;
 
 class Sprite {
 public:
-    // ★ 画像ファイルパスで初期化
+    // SpriteCommonは借用し、filePathのテクスチャを使う描画資源を生成する。
     void Initialize(SpriteCommon* spriteCommon, const std::string& filePath);
 
     void Update();
@@ -42,21 +42,21 @@ public:
 
 private:
     struct VertexData {
-        Math::Vector4 position;
-        Math::Vector2 texcoord;
-        Math::Vector3 normal;
+        Math::Vector4 position; // ローカル座標。wは位置を表す1。
+        Math::Vector2 texcoord; // テクスチャ上のUV座標。
+        Math::Vector3 normal;   // 2D描画では画面手前を向く固定法線。
     };
 
     struct Material {
-        Math::Vector4  color;
-        int32_t        enableLighting;
-        float          padding[3];
-        Math::Matrix4x4 uvTransform;
+        Math::Vector4 color;         // テクスチャへ乗算するRGBA。
+        int32_t enableLighting;      // Spriteでは0固定のライティング有効値。
+        float padding[3];            // HLSLの16バイト境界へ合わせる予約領域。
+        Math::Matrix4x4 uvTransform; // UVの拡縮・平行移動・反転行列。
     };
 
     struct TransformData {
-        Math::Matrix4x4 WVP;
-        Math::Matrix4x4 World;
+        Math::Matrix4x4 WVP;   // ローカル座標から画面へ変換する行列。
+        Math::Matrix4x4 World; // ローカル座標からワールドへ変換する行列。
     };
 
     void CreateVertexData();
@@ -67,8 +67,10 @@ private:
     void AdjustTextureSize();
 
 private:
+    // ルートシグネチャ、PSO、DirectX基盤を提供する非所有ポインタ。
     SpriteCommon* spriteCommon_ = nullptr;
 
+    // 四角形の頂点／インデックスと、それらを参照する描画ビュー。
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexResource_;
     VertexData* vertexData_ = nullptr;
@@ -76,23 +78,23 @@ private:
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView_{};
     D3D12_INDEX_BUFFER_VIEW  indexBufferView_{};
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_;
-    Material* materialData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_; // マテリアル定数バッファ。
+    Material* materialData_ = nullptr; // materialResource_をCPUから更新するマップ先。
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> transformResource_;
-    TransformData* transformData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> transformResource_; // 座標変換定数バッファ。
+    TransformData* transformData_ = nullptr; // transformResource_の永続マップ先。
 
-    Math::Transform transform_{};
+    Math::Transform transform_{}; // Update中に組み立てる3D形式の内部変換。
 
-    Math::Vector2 position_{ 0.0f, 0.0f };
-    float rotation_ = 0.0f;
-    Math::Vector2 size_{ 640.0f, 360.0f };
-
-
-    std::string textureFilePath_;
+    Math::Vector2 position_{ 0.0f, 0.0f }; // クライアント領域上の表示位置。
+    float rotation_ = 0.0f; // Z軸回りの回転角度（ラジアン）。
+    Math::Vector2 size_{ 640.0f, 360.0f }; // ピクセル単位の表示幅と高さ。
 
 
-    // AnchorPoint（0～1）
+    std::string textureFilePath_; // TextureManagerへ問い合わせるキャッシュキー。
+
+
+    // 画像内の回転・配置基準。左上が(0,0)、右下が(1,1)。
     Math::Vector2 anchorPoint_{ 0.0f, 0.0f };
 
     // UV 切り出し（スケール / 平行移動）

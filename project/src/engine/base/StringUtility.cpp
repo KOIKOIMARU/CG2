@@ -3,7 +3,6 @@
 
 namespace StringUtility {
 
-    // stringをwstringに変換する関数
     std::wstring ConvertString(const std::string& str) {
         if (str.empty()) {
             return std::wstring();
@@ -29,7 +28,6 @@ namespace StringUtility {
         return result;
     }
 
-    // wstringをstringに変換する関数
     std::string ConvertString(const std::wstring& str) {
         if (str.empty()) {
             return std::string();

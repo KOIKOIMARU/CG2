@@ -12,7 +12,7 @@ void Sprite::Initialize(SpriteCommon* spriteCommon, const std::string& filePath)
     assert(spriteCommon);
     spriteCommon_ = spriteCommon;
 
-    // ★ これを必ず最初に
+    // 後続のテクスチャ参照と頂点調整で使用するパスを先に確定する。
     textureFilePath_ = filePath;
 
     // 1) 必ず読み込む

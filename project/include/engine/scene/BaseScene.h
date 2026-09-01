@@ -39,11 +39,10 @@ public:
     }
 
 protected:
-    SceneManager* sceneManager_ = nullptr;
-
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
-    SpriteCommon* spriteCommon_ = nullptr;
-    ImGuiManager* imguiManager_ = nullptr;
-    Input* input_ = nullptr;
+    SceneManager* sceneManager_ = nullptr;   // 遷移要求を受け付ける管理元
+    DirectXCommon* dxCommon_ = nullptr;      // DirectX 12描画基盤の借用先
+    SrvManager* srvManager_ = nullptr;       // SRV/UAV管理の借用先
+    SpriteCommon* spriteCommon_ = nullptr;   // 2D共通描画の借用先
+    ImGuiManager* imguiManager_ = nullptr;   // エディターUI基盤の借用先
+    Input* input_ = nullptr;                 // 入力状態の借用先
 };

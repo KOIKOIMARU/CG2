@@ -3,15 +3,11 @@
 #include <string>
 #include "engine/base/Math.h"
 
-/// <summary>
-/// パーティクル発生器（Emitter）
-/// </summary>
+// 一定間隔で指定グループのパーティクルを発生させるタイマー。
 class ParticleEmitter
 {
 public:
-    // =========================
-    // コンストラクタ
-    // =========================
+    // groupNameはParticleManagerに事前登録したグループ名を指定する。
     ParticleEmitter(
         const std::string& groupName, // ParticleGroup 名
         const Math::Vector3& position,
@@ -19,29 +15,19 @@ public:
         uint32_t emitCount             // 1回の発生数
     );
 
-    // =========================
-    // 更新
-    // =========================
+    // 経過時間を進め、発生間隔に達した分だけEmitする。
     void Update(float deltaTime);
 
-    // =========================
-    // 手動発生
-    // =========================
+    // 現在位置へ設定数のパーティクルを即時発生させる。
     void Emit();
 
-    // =========================
-    // 位置操作（必要なら）
-    // =========================
+    // 次回の発生位置を変更する。
     void SetPosition(const Math::Vector3& pos) { position_ = pos; }
 
 private:
-    // ===== 設定 =====
-    std::string groupName_;   // ParticleGroup名
-    Math::Vector3 position_; // 発生位置
-
-    float emitInterval_ = 0.1f; // 発生間隔
-    uint32_t emitCount_ = 1;    // 発生数
-
-    // ===== 内部状態 =====
-    float elapsedTime_ = 0.0f;  // 経過時間
+    std::string groupName_;       // ParticleManagerへ渡す発生グループ名
+    Math::Vector3 position_;      // ワールド空間上の発生中心
+    float emitInterval_ = 0.1f;   // 自動発生の間隔（秒）
+    uint32_t emitCount_ = 1;      // 1回に発生させる粒数
+    float elapsedTime_ = 0.0f;    // 前回の自動発生からの経過秒数
 };

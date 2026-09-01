@@ -163,19 +163,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\app\AppSceneFactory.cpp" />
     <ClCompile Include="src\engine\scene\SceneManager.cpp" />
     <ClCompile Include="src\engine\scene\BaseScene.cpp" />
-    <ClCompile Include="src\app\GameScene.cpp" />
     <ClCompile Include="src\engine\scene\EditorScene.cpp" />
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp" />
     <ClCompile Include="src\engine\collision\Collision.cpp" />
     <ClCompile Include="src\engine\editor\EditorManager.cpp" />
     <ClCompile Include="src\engine\editor\EditorPlayController.cpp" />
     <ClCompile Include="src\engine\base\Framework.cpp" />
-    <ClCompile Include="src\samples\rail_shooter\Bullet.cpp" />
-    <ClCompile Include="src\samples\rail_shooter\Enemy.cpp" />
-    <ClCompile Include="src\samples\rail_shooter\GameRuntime.cpp" />
     <ClCompile Include="src\samples\side_scroller\SideScrollRuntime.cpp" />
     <ClCompile Include="src\app\MyGame.cpp" />
-    <ClCompile Include="src\samples\rail_shooter\Player.cpp" />
     <ClCompile Include="src\engine\audio\SoundManager.cpp" />
     <ClCompile Include="src\engine\base\ImGuiManager.cpp" />
     <ClCompile Include="src\engine\3d\ParticleEmitter.cpp" />
@@ -225,7 +220,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\base\SrvManager.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
     </ClCompile>
-    <ClCompile Include="src\app\TitleScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\Sprite.PS.hlsl">
@@ -418,7 +412,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   <ItemGroup>
     <ClInclude Include="include\engine\scene\AbstractSceneFactory.h" />
     <ClInclude Include="include\engine\scene\BaseScene.h" />
-    <ClInclude Include="include\app\GameScene.h" />
     <ClInclude Include="include\engine\scene\EditorScene.h" />
     <ClInclude Include="include\engine\scene\SceneSerializer.h" />
     <ClInclude Include="include\engine\collision\Collision.h" />
@@ -472,12 +465,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\Particle.h" />
     <ClInclude Include="include\engine\3d\ParticleManager.h" />
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
-    <ClInclude Include="include\samples\rail_shooter\Bullet.h" />
-    <ClInclude Include="include\samples\rail_shooter\Enemy.h" />
-    <ClInclude Include="include\samples\rail_shooter\GameRuntime.h" />
     <ClInclude Include="include\samples\side_scroller\SideScrollRuntime.h" />
     <ClInclude Include="include\app\MyGame.h" />
-    <ClInclude Include="include\samples\rail_shooter\Player.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\base\StringUtility.h" />
     <ClInclude Include="include\engine\2d\Sprite.h" />
@@ -485,7 +474,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\TextureManager.h" />
     <ClInclude Include="include\engine\base\SrvManager.h" />
     <ClInclude Include="include\engine\audio\SoundManager.h" />
-    <ClInclude Include="include\app\TitleScene.h" />
     <ClInclude Include="include\engine\scene\SceneManager.h" />
     <ClInclude Include="include\engine\scene\SceneType.h" />
     <ClInclude Include="include\app\AppSceneFactory.h" />

@@ -27,6 +27,9 @@ constexpr float kCameraLookAhead = 1.8f;
 
 } // namespace
 
+SideScrollRuntime::SideScrollRuntime() = default;
+SideScrollRuntime::~SideScrollRuntime() = default;
+
 void SideScrollRuntime::SetSystems(
     DirectXCommon* dxCommon,
     SrvManager* srvManager,

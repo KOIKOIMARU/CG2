@@ -309,7 +309,7 @@ void Object3dCommon::CreateRootSignature() {
 		0,
 		signatureBlob->GetBufferPointer(),
 		signatureBlob->GetBufferSize(),
-		IID_PPV_ARGS(&rootSignature_) // ★ メンバに保存
+		IID_PPV_ARGS(&rootSignature_)
 	);
 	assert(SUCCEEDED(hr));
 

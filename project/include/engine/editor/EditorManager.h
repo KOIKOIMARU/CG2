@@ -67,23 +67,23 @@ private:
         "resources/prefab_01.json",
         "resources/prefab_02.json"
     };
-    int sceneFileIndex_ = 0;
-    int prefabFileIndex_ = 0;
-    int selectedObjectIndex_ = 0;
-    int addModelIndex_ = 2;
-    int gizmoMode_ = 0;
-    EditorMode mode_ = EditorMode::Edit;
-    bool isEditorGuiVisible_ = true;
-    static bool playOnNextEditorOpen_;
-    bool requestStartPlayMode_ = false;
-    bool requestStopPlayMode_ = false;
-    bool requestAddObject_ = false;
-    bool requestRemoveObject_ = false;
-    bool requestDuplicateObject_ = false;
-    bool requestSavePrefab_ = false;
-    bool requestInstantiatePrefab_ = false;
-    bool requestSaveObjects_ = false;
-    bool requestLoadObjects_ = false;
-    bool requestUndo_ = false;
-    bool requestRedo_ = false;
+    int sceneFileIndex_ = 0;               // 選択中のシーンファイル番号
+    int prefabFileIndex_ = 0;              // 選択中のプレハブファイル番号
+    int selectedObjectIndex_ = 0;          // オブジェクト一覧で選択中の番号
+    int addModelIndex_ = 2;                // 新規追加に使うモデル一覧番号
+    int gizmoMode_ = 0;                    // 移動・回転・拡縮ギズモの選択番号
+    EditorMode mode_ = EditorMode::Edit;   // 現在の編集・実行モード
+    bool isEditorGuiVisible_ = true;        // エディターパネルを表示するか
+    static bool playOnNextEditorOpen_;      // 次回起動直後にPlayへ入る一回限りの要求
+    bool requestStartPlayMode_ = false;     // UIから届いたPlay開始要求
+    bool requestStopPlayMode_ = false;      // UIから届いたPlay停止要求
+    bool requestAddObject_ = false;         // UIから届いたオブジェクト追加要求
+    bool requestRemoveObject_ = false;      // UIから届いた選択物削除要求
+    bool requestDuplicateObject_ = false;   // UIから届いた選択物複製要求
+    bool requestSavePrefab_ = false;        // UIから届いたプレハブ保存要求
+    bool requestInstantiatePrefab_ = false; // UIから届いたプレハブ生成要求
+    bool requestSaveObjects_ = false;       // UIから届いたシーン保存要求
+    bool requestLoadObjects_ = false;       // UIから届いたシーン読込要求
+    bool requestUndo_ = false;              // UIから届いた操作取消要求
+    bool requestRedo_ = false;              // UIから届いた操作再実行要求
 };

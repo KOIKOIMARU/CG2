@@ -1,7 +1,5 @@
 #include "app/MyGame.h"
 #include "app/AppSceneFactory.h"
-#include "app/GameScene.h"
-#include "app/TitleScene.h"
 #include "engine/scene/SceneManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
@@ -80,14 +78,9 @@ void MyGame::Initialize() {
         input_.get()
     );
 
-    // 通常起動ではゲーム固有サンプルを経由せず、汎用エディタを開く。
-    // 自動スモークテストだけはレールシューティングサンプルを検証する。
-    if (!smokeTestOptions_.enabled) {
-        // チーム起動時は横スクロール基準シーンをすぐ確認できるようプレイを予約する。
-        EditorManager::RequestPlayOnNextEditorOpen();
-    }
-    SceneManager::GetInstance()->SetNextScene(
-        smokeTestOptions_.enabled ? SceneType::Title : SceneType::Editor);
+    // 通常起動と自動検証の両方で、チーム用2.5Dランタイムをプレイ状態にする。
+    EditorManager::RequestPlayOnNextEditorOpen();
+    SceneManager::GetInstance()->SetNextScene(SceneType::Editor);
 }
 
 void MyGame::Update() {
@@ -136,10 +129,6 @@ void MyGame::Draw() {
             dynamic_cast<EditorScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
         postEffectMode = editorScene->GetPostEffectMode();
         dxCommon_->SetPostEffectProjectionMatrix(editorScene->GetProjectionMatrix());
-    } else if (auto* gameScene =
-            dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
-        postEffectMode = gameScene->GetPostEffectMode();
-        dxCommon_->SetPostEffectProjectionMatrix(gameScene->GetProjectionMatrix());
     }
 
     sectionBegin = std::chrono::steady_clock::now();
@@ -185,17 +174,14 @@ void MyGame::UpdateSmokeTest()
     const auto now = std::chrono::steady_clock::now();
     auto* sceneManager = SceneManager::GetInstance();
 
+    auto* editorScene =
+        dynamic_cast<EditorScene*>(sceneManager->GetCurrentScene());
+
     if (!smokeGameplayStarted_) {
-        if (dynamic_cast<GameScene*>(sceneManager->GetCurrentScene())) {
+        if (editorScene && editorScene->IsPlayModeRunning()) {
             smokeGameplayStarted_ = true;
             smokeGameplayStartTime_ = now;
             WriteSmokeLog("SMOKE_TEST_GAMEPLAY_ENTERED");
-        } else if (!smokeAutoStartRequested_ &&
-                   dynamic_cast<TitleScene*>(sceneManager->GetCurrentScene()) &&
-                   sceneManager->IsScenePrepared(SceneType::Game)) {
-            smokeAutoStartRequested_ = true;
-            sceneManager->SetNextScene(SceneType::Game);
-            WriteSmokeLog("SMOKE_TEST_AUTO_START_REQUESTED");
         }
 
         const double startupElapsedSeconds =
@@ -207,7 +193,7 @@ void MyGame::UpdateSmokeTest()
         return;
     }
 
-    if (!dynamic_cast<GameScene*>(sceneManager->GetCurrentScene())) {
+    if (!editorScene || !editorScene->IsPlayModeRunning()) {
         FailSmokeTest("gameplay_scene_exited_early", 5);
         return;
     }

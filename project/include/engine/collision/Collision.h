@@ -6,8 +6,8 @@ namespace Collision {
 
 // 軸に平行な直方体。当たり判定の境界はワールド座標で保持する。
 struct Aabb {
-    Math::Vector3 min{};
-    Math::Vector3 max{};
+    Math::Vector3 min{}; // X/Y/Z各軸の最小境界
+    Math::Vector3 max{}; // X/Y/Z各軸の最大境界
 };
 
 // 中心位置と各軸の半分の大きさからAABBを生成する。

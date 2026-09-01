@@ -37,9 +37,6 @@
     <Filter Include="src\samples">
       <UniqueIdentifier>{6d33bf53-e970-4bcb-a156-0f31f7bc49b1}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\samples\rail_shooter">
-      <UniqueIdentifier>{60a8c8f5-45dc-4ea8-a7fb-c397996b55de}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\samples\side_scroller">
       <UniqueIdentifier>{26f9959d-f06c-47f2-aa26-482595380ad0}</UniqueIdentifier>
     </Filter>
@@ -111,9 +108,6 @@
     </Filter>
     <Filter Include="include\samples">
       <UniqueIdentifier>{6077435e-7415-4d4c-98df-e3dcdce54e68}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="include\samples\rail_shooter">
-      <UniqueIdentifier>{dbe8d65b-0a13-4a4e-bd49-c528370009df}</UniqueIdentifier>
     </Filter>
     <Filter Include="include\samples\side_scroller">
       <UniqueIdentifier>{4210f755-5811-4538-8973-90549fd4d988}</UniqueIdentifier>
@@ -255,23 +249,8 @@
     <ClCompile Include="src\app\MyGame.cpp">
       <Filter>src\app</Filter>
     </ClCompile>
-    <ClCompile Include="src\samples\rail_shooter\Bullet.cpp">
-      <Filter>src\samples\rail_shooter</Filter>
-    </ClCompile>
-    <ClCompile Include="src\samples\rail_shooter\Enemy.cpp">
-      <Filter>src\samples\rail_shooter</Filter>
-    </ClCompile>
-    <ClCompile Include="src\samples\rail_shooter\GameRuntime.cpp">
-      <Filter>src\samples\rail_shooter</Filter>
-    </ClCompile>
     <ClCompile Include="src\samples\side_scroller\SideScrollRuntime.cpp">
       <Filter>src\samples\side_scroller</Filter>
-    </ClCompile>
-    <ClCompile Include="src\samples\rail_shooter\Player.cpp">
-      <Filter>src\samples\rail_shooter</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\GameScene.cpp">
-      <Filter>src\app</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\scene\EditorScene.cpp">
       <Filter>src\engine\scene</Filter>
@@ -293,9 +272,6 @@
     </ClCompile>
     <ClCompile Include="src\engine\scene\BaseScene.cpp">
       <Filter>src\engine\scene</Filter>
-    </ClCompile>
-    <ClCompile Include="src\app\TitleScene.cpp">
-      <Filter>src\app</Filter>
     </ClCompile>
     <ClCompile Include="src\app\AppSceneFactory.cpp">
       <Filter>src\app</Filter>
@@ -539,23 +515,8 @@
     <ClInclude Include="include\app\MyGame.h">
       <Filter>include\app</Filter>
     </ClInclude>
-    <ClInclude Include="include\samples\rail_shooter\Bullet.h">
-      <Filter>include\samples\rail_shooter</Filter>
-    </ClInclude>
-    <ClInclude Include="include\samples\rail_shooter\Enemy.h">
-      <Filter>include\samples\rail_shooter</Filter>
-    </ClInclude>
-    <ClInclude Include="include\samples\rail_shooter\GameRuntime.h">
-      <Filter>include\samples\rail_shooter</Filter>
-    </ClInclude>
     <ClInclude Include="include\samples\side_scroller\SideScrollRuntime.h">
       <Filter>include\samples\side_scroller</Filter>
-    </ClInclude>
-    <ClInclude Include="include\samples\rail_shooter\Player.h">
-      <Filter>include\samples\rail_shooter</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\GameScene.h">
-      <Filter>include\app</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\EditorScene.h">
       <Filter>include\engine\scene</Filter>
@@ -580,9 +541,6 @@
     </ClInclude>
     <ClInclude Include="include\engine\scene\BaseScene.h">
       <Filter>include\engine\scene</Filter>
-    </ClInclude>
-    <ClInclude Include="include\app\TitleScene.h">
-      <Filter>include\app</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\scene\SceneManager.h">
       <Filter>include\engine\scene</Filter>

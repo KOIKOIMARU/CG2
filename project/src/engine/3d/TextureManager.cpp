@@ -32,7 +32,7 @@ void TextureManager::Destroy() {
 
 void TextureManager::LoadTexture(const std::string& filePath, bool forceSrgb) {
 
-    // ★ 読み込み済みチェック（unordered_map）
+    // 同じパスのGPU資源とSRVはキャッシュから再利用する。
     if (textureDatas_.contains(filePath)) {
         return;
     }

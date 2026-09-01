@@ -145,17 +145,17 @@ void DirectXCommon::Initialize(WinApp* winApp)
     InitializeDiagnosticLog();
     InitializeDevice();      // デバイス・DXGI
     InitializeCommand();     // コマンドキュー/アロケータ/リスト
-    InitializeSwapChain();   // ★ スワップチェーン
-    InitializeDepthBuffer();   // ★ 深度バッフ
+    InitializeSwapChain();   // 表示用バックバッファ
+    InitializeDepthBuffer(); // 3D描画用の深度バッファ
     InitializeDescriptorHeaps();
     InitializeRenderTargetView();
     InitializeDepthStencilView();
     InitializeFence();
-    InitializeViewport();       // ★ここで初期化
+    InitializeViewport();
     InitializeScissorRect();
     InitializeDXC();
 
-    // ★ FPS 固定の初期化
+    // 最初のフレーム時間を測る基準時刻を保存する。
     InitializeFixFPS();
 }
 
@@ -645,7 +645,7 @@ void DirectXCommon::PostDraw()
     frameTiming_.fenceWaitMs = ToMilliseconds(fenceBegin, fenceEnd);
     FlushDebugMessages();
 
-    // ★ ここで FPS 固定
+    // GPU送信完了後、設定した上限FPSまで必要に応じて待機する。
     UpdateFixFPS();
     const auto postDrawEnd = std::chrono::steady_clock::now();
     frameTiming_.postDrawMs = ToMilliseconds(postDrawBegin, postDrawEnd);
@@ -673,7 +673,7 @@ void DirectXCommon::InitializeDevice() {
     }
 #endif
 
-    // DXGIファクトリーの生成（★ メンバに直接作る）
+    // GPUアダプター列挙とスワップチェーン生成に使うDXGIファクトリー。
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory_));
     assert(SUCCEEDED(hr));
 
@@ -697,7 +697,7 @@ void DirectXCommon::InitializeDevice() {
     }
     assert(useAdapter != nullptr);
 
-    // ★ 一時変数じゃなくてそのまま device_ に作る
+    // 利用可能な最も高いFeature Levelから順にデバイス生成を試す。
     D3D_FEATURE_LEVEL featureLevels[] = {
         D3D_FEATURE_LEVEL_12_2,
         D3D_FEATURE_LEVEL_12_1,
@@ -849,7 +849,7 @@ void DirectXCommon::InitializeDepthBuffer()
     depthClearValue.DepthStencil.Depth = 1.0f;
     depthClearValue.DepthStencil.Stencil = 0;
 
-    // リソース生成（★ 結果だけメンバに持つ）
+    // 深度テスト中に継続利用するためメンバー資源として生成する。
     HRESULT hr = device_->CreateCommittedResource(
         &heapProperties,
         D3D12_HEAP_FLAG_NONE,
@@ -895,7 +895,7 @@ void DirectXCommon::InitializeDescriptorHeaps()
         false
     );
 
-    // ★★★ これが無かった ★★★
+    // RTV番号からCPUハンドルを計算するための要素間隔を取得する。
     rtvDescriptorSize_ =
         device_->GetDescriptorHandleIncrementSize(
             D3D12_DESCRIPTOR_HEAP_TYPE_RTV
@@ -922,7 +922,7 @@ void DirectXCommon::InitializeRenderTargetView()
 
         // SRGB の RTV 設定
         D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
-        rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;          // ★ SRGB でビューを作る
+        rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
         rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
         rtvDesc.Texture2D.MipSlice = 0;
         rtvDesc.Texture2D.PlaneSlice = 0;
@@ -934,7 +934,7 @@ void DirectXCommon::InitializeRenderTargetView()
         // RTVを生成
         device_->CreateRenderTargetView(
             swapChainResources_[i].Get(),
-            &rtvDesc,                 // ★ nullptr ではなく &rtvDesc
+            &rtvDesc,
             rtvHandle);
     }
 }
@@ -1098,7 +1098,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
         &shaderBuffer,
         args,
         _countof(args),
-        dxcIncludeHandler_.Get(),   // ← ここが超重要（修正済）
+        dxcIncludeHandler_.Get(), // HLSL内の#includeを標準規則で解決する。
         IID_PPV_ARGS(&result)
     );
 
@@ -2409,7 +2409,7 @@ void DirectXCommon::UpdateFixFPS() {
     auto elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(now - reference_);
 
-    // ★ ここが追加（秒に変換）
+    // microsecondsをゲーム更新で使う秒単位へ変換する。
     deltaTime_ = elapsed.count() / 1000000.0f;
 
     if (kUseSoftwareFrameLimiter && elapsed < kMinTime) {
@@ -2420,7 +2420,7 @@ void DirectXCommon::UpdateFixFPS() {
         const auto waitEnd = std::chrono::steady_clock::now();
         frameTiming_.fpsWaitMs = ToMilliseconds(waitBegin, waitEnd);
 
-        // ★ FPS固定時は deltaTime を 1/60 に揃える
+        // 待機を行ったフレームは固定更新量へそろえる。
         deltaTime_ = 1.0f / 60.0f;
     }
 

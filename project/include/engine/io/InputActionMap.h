@@ -24,15 +24,15 @@ public:
 
 private:
     struct Binding {
-        ActionId action = 0;
-        BYTE primaryKey = 0;
-        BYTE secondaryKey = 0;
-        bool isActive = false;
+        ActionId action = 0;       // ゲーム側で定義した操作番号
+        BYTE primaryKey = 0;       // 操作に割り当てる第1キー
+        BYTE secondaryKey = 0;     // 任意の第2キー。0なら未使用
+        bool isActive = false;     // この配列要素に割当てが存在するか
     };
 
     const Binding* FindBinding(ActionId action) const;
     Binding* FindBinding(ActionId action);
 
-    Input* input_ = nullptr;
-    std::array<Binding, kMaxBindingCount> bindings_{};
+    Input* input_ = nullptr; // 物理キー状態を問い合わせる借用先
+    std::array<Binding, kMaxBindingCount> bindings_{}; // 固定長の操作割当て表
 };

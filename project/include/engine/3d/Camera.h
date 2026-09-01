@@ -37,20 +37,15 @@ public:
     float GetOrthographicHeight() const;
 
 private:
-    // カメラのワールド空間上の姿勢。
-    Math::Transform transform;
-
-    // Updateで再計算する描画用行列。
-    Math::Matrix4x4 worldMatrix;
-    Math::Matrix4x4 viewMatrix;
-    Math::Matrix4x4 projectionMatrix;
-    Math::Matrix4x4 viewProjectionMatrix;
-
-    // 透視投影パラメータ。
-    float fovY;
-    float aspectRatio;
-    float nearClip;
-    float farClip;
-    CameraProjectionMode projectionMode = CameraProjectionMode::Perspective;
-    float orthographicHeight = 10.0f;
+    Math::Transform transform;              // カメラの拡縮・回転・ワールド位置
+    Math::Matrix4x4 worldMatrix;            // カメラ自身のワールド行列
+    Math::Matrix4x4 viewMatrix;             // ワールド空間からカメラ空間への変換
+    Math::Matrix4x4 projectionMatrix;       // 現在の方式に応じた投影変換
+    Math::Matrix4x4 viewProjectionMatrix;   // 描画側へ渡すビュー・投影合成行列
+    float fovY;                             // 透視投影時の垂直視野角（ラジアン）
+    float aspectRatio;                      // 描画領域の横幅と縦幅の比率
+    float nearClip;                         // 手前のクリッピング距離
+    float farClip;                          // 奥のクリッピング距離
+    CameraProjectionMode projectionMode = CameraProjectionMode::Perspective; // 現在の投影方式
+    float orthographicHeight = 10.0f;       // 平行投影で画面に収める縦方向の範囲
 };

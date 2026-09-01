@@ -47,7 +47,7 @@ constexpr const char* kInspectorModelItems[] = {
 constexpr const char* kSceneFilePath =
 "resources/editor_default_scene.json";
 constexpr const char* kEditorSettingsPath =
-"resources/game_editor_settings.json";
+"resources/editor_settings.json";
 constexpr size_t kMaxTransformHistoryCount = 64;
 constexpr float kTransformHistoryEpsilon = 0.0001f;
 constexpr Math::Vector3 kGameCameraRotate = { 0.15f, 0.0f, 0.0f };
@@ -210,6 +210,11 @@ const Math::Matrix4x4& EditorScene::GetProjectionMatrix() const
         }
     }
     return camera_ ? camera_->GetProjectionMatrix() : kIdentity;
+}
+
+bool EditorScene::IsPlayModeRunning() const
+{
+    return editorManager_.IsPlayMode() && playController_.IsRunning();
 }
 
 void EditorScene::Initialize() {
@@ -1082,9 +1087,6 @@ void EditorScene::Update() {
                 postEffectMode_);
             if (playController_.IsExitRequested()) {
                 ExitPlayMode();
-                if (sceneManager_) {
-                    sceneManager_->SetNextScene(SceneType::Title);
-                }
             }
         }
         return;

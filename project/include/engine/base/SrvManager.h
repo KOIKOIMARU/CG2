@@ -10,10 +10,10 @@ class DirectXCommon;
 // Allocateで得たインデックスは所有者が保持し、不要になった時点で一度だけFreeする。
 class SrvManager {
 public:
-    // 最大SRV数
+    // 1つのシェーダー可視ヒープで確保できる最大ディスクリプタ数。
     static const uint32_t kMaxSRVCount;
 
-    // 初期化（DirectXCommonは借り物）
+    // DirectXCommonを借用してディスクリプタヒープを生成する。
     void Initialize(DirectXCommon* dxCommon);
 
     // ===== 確保 =====
@@ -78,11 +78,11 @@ public:
 
 
 private:
-    DirectXCommon* directXCommon_ = nullptr; // 借り物
+    DirectXCommon* directXCommon_ = nullptr; // デバイスとコマンドリストの借用先
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap_;
-    uint32_t descriptorSize_ = 0;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap_; // SRV/UAVを格納するGPU可視ヒープ
+    uint32_t descriptorSize_ = 0; // 1ディスクリプタ分のバイト間隔
 
-    uint32_t useIndex_ = 0;
-    std::vector<uint32_t> freeIndices_;
+    uint32_t useIndex_ = 0;               // まだ一度も使っていない次の番号
+    std::vector<uint32_t> freeIndices_;   // Freeによって再利用可能になった番号
 };

@@ -1,13 +1,13 @@
 # チーム制作向け DirectX 12 エンジン
 
 このブランチは、個人制作で使用していたDirectX 12基盤をチーム制作向けに整理したものです。
-通常起動では汎用エディタが開き、2.5D横スクロール基準シーンが自動再生されます。個人制作のレールシューティング固有コードは`project/samples/rail_shooter/`へ隔離されています。
+通常起動では汎用エディタが開き、2.5D横スクロール基準シーンが自動再生されます。個人制作ゲームのコードや素材は含めていません。
 
 ## 最初に知っておくこと
 
 - `project/include/engine/`と`project/src/engine/`が再利用するエンジン本体です。
 - `project/include/app/`と`project/src/app/`は起動処理とシーン構成を行うアプリケーション層です。
-- `project/include/samples/`と`project/src/samples/`はエンジンの使用例です。新作ゲームの本体を置く場所ではありません。
+- `project/include/samples/side_scroller/`と`project/src/samples/side_scroller/`は2.5D構成の開始例です。新作ゲームの本体を置く場所ではありません。
 - `project/enc_temp_folder/`は保護領域です。閲覧、編集、生成、移動、削除を行わないでください。
 - `generated/`はビルド生成物です。ゲームコードや素材を置かないでください。
 
@@ -36,6 +36,11 @@ Visual Studioで`project/CG2.sln`を開き、`x64`の`Debug`または`Release`�
 ```
 
 実行ファイルは`generated/outputs/<Configuration>/CG2.exe`へ生成されます。
+
+## 画面表示
+
+- `F11`または`Alt+Enter`：ボーダーレスフルスクリーンと通常表示を切り替えます。
+- もう一度同じキーを押すと、フルスクリーン前の位置とサイズへ戻ります。
 
 ## 起動後の流れ
 
@@ -80,10 +85,6 @@ Visual Studioで`project/CG2.sln`を開き、`x64`の`Debug`または`Release`�
 ## サンプルについて
 
 `samples/side_scroller`はチーム作品の開始地点です。箱の仮プレイヤー、重力、ジャンプ、足場判定、Z固定、カメラ追従を最小構成で実装しています。ゲーム仕様が固まったら`app`側の正式なランタイムへ移し、サンプル固有処理を増やし続けないでください。
-
-`samples/rail_shooter`は個人制作ゲームをエンジン使用例として残したものです。エンジン本体ではありません。チーム作品の設計が決まったら、サンプルの実装をコピーせず、必要なエンジンAPIだけを参考にしてください。
-
-サンプルを完全に外す場合は、先にチーム作品用の`IEditorPlayRuntime`実装とシーンを追加し、`AppSceneFactory`の登録先を置き換えてからプロジェクト設定から`samples/rail_shooter`を除外します。
 
 ## 問題が起きたとき
 

@@ -23,7 +23,7 @@ public:
     }
 
 private:
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
-    std::string environmentTexturePath_;
+    DirectXCommon* dxCommon_ = nullptr; // デバイスとコマンドリストの借用先
+    SrvManager* srvManager_ = nullptr;  // モデル用SRVを登録する借用先
+    std::string environmentTexturePath_; // 全モデルが既定で使う環境マップ
 };

@@ -98,35 +98,35 @@ private:
     void RestoreMainRenderTarget();
 
 private:
-    static constexpr uint32_t kShadowMapSize = 1024;
+    static constexpr uint32_t kShadowMapSize = 1024; // 影マップ一辺の画素数
 
-    DirectXCommon* dxCommon_ = nullptr;
-    SrvManager* srvManager_ = nullptr;
+    DirectXCommon* dxCommon_ = nullptr; // デバイスとコマンドリストの借用先
+    SrvManager* srvManager_ = nullptr;  // 影マップSRVを登録する借用先
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; // 通常3D描画のルート引数定義
     std::array<
         std::array<
             Microsoft::WRL::ComPtr<ID3D12PipelineState>,
             static_cast<size_t>(BlendMode::Count)>,
-        static_cast<size_t>(DepthDrawMode::Count)> pipelineStates_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPipelineState_;
-    BlendMode blendMode_ = BlendMode::Normal;
-    DepthDrawMode depthDrawMode_ = DepthDrawMode::Normal;
+        static_cast<size_t>(DepthDrawMode::Count)> pipelineStates_; // 深度方式×合成方式のPSO
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> shadowPipelineState_; // 影マップ生成用PSO
+    BlendMode blendMode_ = BlendMode::Normal;       // 次の描画で使う色合成方式
+    DepthDrawMode depthDrawMode_ = DepthDrawMode::Normal; // 次の描画で使う深度方式
 
-    Camera* defaultCamera_ = nullptr;
-    std::string environmentTexturePath_;
+    Camera* defaultCamera_ = nullptr;       // Object3dが個別指定しない場合のカメラ
+    std::string environmentTexturePath_;   // 既定の環境マップ
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> shadowMapResource_;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowMapDsvHeap_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> shadowMapResource_; // ライト視点の深度を保存する画像
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowMapDsvHeap_; // 影マップ専用DSVヒープ
     D3D12_RESOURCE_STATES shadowMapState_ =
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    D3D12_VIEWPORT shadowViewport_{};
-    D3D12_RECT shadowScissorRect_{};
-    Math::Matrix4x4 shadowLightViewProjection_ = Math::MakeIdentity4x4();
-    Math::Vector3 shadowLightDirection_{ 0.30f, -0.86f, 0.41f };
-    uint32_t shadowMapSrvIndex_ = UINT32_MAX;
-    float shadowStrength_ = 0.34f;
-    float shadowBias_ = 0.0018f;
-    float shadowNormalBias_ = 0.0035f;
-    bool shadowMapReady_ = false;
+    D3D12_VIEWPORT shadowViewport_{}; // 影マップ全面へ描画するビューポート
+    D3D12_RECT shadowScissorRect_{};  // 影マップ全面のシザー矩形
+    Math::Matrix4x4 shadowLightViewProjection_ = Math::MakeIdentity4x4(); // ライト視点の変換
+    Math::Vector3 shadowLightDirection_{ 0.30f, -0.86f, 0.41f }; // 影を落とす平行光源の向き
+    uint32_t shadowMapSrvIndex_ = UINT32_MAX; // 通常描画から影マップを読むSRV番号
+    float shadowStrength_ = 0.34f;           // 影の暗さ
+    float shadowBias_ = 0.0018f;             // 深度比較の固定補正値
+    float shadowNormalBias_ = 0.0035f;       // 面の向きに応じた補正値
+    bool shadowMapReady_ = false;             // 今フレームの影マップが利用可能か
 };
