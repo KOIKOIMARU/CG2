@@ -1,6 +1,7 @@
 #include "engine/io/Input.h"
-#include <cassert>
 #include <algorithm>
+#include <cstring>
+#include <stdexcept>
 
 
 #pragma comment(lib, "dinput8.lib")
@@ -9,40 +10,59 @@
 //using namespace Microsoft::WRL;
 
 void Input::Initialize(WinApp* winApp) {
-	// メンバ変数にWinAppをセット
-	this->winApp = winApp;
+	if (!winApp) {
+		throw std::invalid_argument("Input::Initialize requires WinApp");
+	}
 
-	// 初期化処理
+	this->winApp = winApp;
 	HRESULT result;
 
-	// DirectInputの初期化
 	result = DirectInput8Create(
-		winApp->GetHInstance(), // ← これで現在のインスタンスハンドルを取得
+		winApp->GetHInstance(),
 		DIRECTINPUT_VERSION, IID_IDirectInput8,
-		(void**)&directInput, nullptr);
-	assert(SUCCEEDED(result));
+		reinterpret_cast<void**>(directInput.ReleaseAndGetAddressOf()), nullptr);
+	if (FAILED(result)) {
+		throw std::runtime_error("DirectInput8Create failed");
+	}
 
-	// キーボードデバイスの生成
-	//IDirectInputDevice8* keyboard = nullptr;
-	result = directInput->CreateDevice(GUID_SysKeyboard, &keyboard, NULL);
-	assert(SUCCEEDED(result));
+	result = directInput->CreateDevice(
+		GUID_SysKeyboard,
+		keyboard.ReleaseAndGetAddressOf(),
+		nullptr);
+	if (FAILED(result)) {
+		throw std::runtime_error("DirectInput keyboard creation failed");
+	}
 
-	// 入力データ形式のセット
-	result = keyboard->SetDataFormat(&c_dfDIKeyboard); // 標準形式
-	assert(SUCCEEDED(result));
+	result = keyboard->SetDataFormat(&c_dfDIKeyboard);
+	if (FAILED(result)) {
+		throw std::runtime_error("DirectInput keyboard format setup failed");
+	}
 
-	// 排他制御レベルのセット
 	result = keyboard->SetCooperativeLevel(
 		winApp->GetHwnd(), DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
-	assert(SUCCEEDED(result));
+	if (FAILED(result)) {
+		throw std::runtime_error("DirectInput cooperative level setup failed");
+	}
 }
 
 void Input::Update() {
-	// 更新処理
-	keyboard->Acquire();
-	// キーの状態
-	memcpy(keyPre, key, sizeof(key)); // 前の状態を保存
-	keyboard->GetDeviceState(sizeof(key), key);
+	std::memcpy(keyPre, key, sizeof(key));
+
+	// フォーカスを失った間は全キーを離した状態にする。
+	// 復帰時に古い押下状態が残り、キャラクターが動き続けることを防ぐ。
+	std::memset(key, 0, sizeof(key));
+	if (keyboard) {
+		HRESULT result = keyboard->GetDeviceState(sizeof(key), key);
+		if (result == DIERR_INPUTLOST || result == DIERR_NOTACQUIRED) {
+			result = keyboard->Acquire();
+			if (SUCCEEDED(result)) {
+				result = keyboard->GetDeviceState(sizeof(key), key);
+			}
+		}
+		if (FAILED(result)) {
+			std::memset(key, 0, sizeof(key));
+		}
+	}
 
 	POINT cursorPosition{};
 	if (winApp && GetCursorPos(&cursorPosition)) {
@@ -66,18 +86,10 @@ void Input::Update() {
 
 bool Input::PushKey(BYTE keyNumber)
 {
-	// 指定キーを押していればtrueを返す
-	if (key[keyNumber]) {
-		return true;
-	}
-	return false;
+	return (key[keyNumber] & 0x80) != 0;
 }
 
 bool Input::TriggerKey(BYTE keyNumber)
 {
-	// 指定キーがトリガーならtrueを返す
-	if (key[keyNumber] && !keyPre[keyNumber]) {
-		return true;
-	}
-	return false;
+	return (key[keyNumber] & 0x80) != 0 && (keyPre[keyNumber] & 0x80) == 0;
 }

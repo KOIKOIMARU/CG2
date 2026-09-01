@@ -1,6 +1,7 @@
 #pragma once
 #include <wrl.h>
 #include <d3d12.h>
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -11,7 +12,7 @@ class DirectXCommon;
 class SrvManager {
 public:
     // 1つのシェーダー可視ヒープで確保できる最大ディスクリプタ数。
-    static const uint32_t kMaxSRVCount;
+    static constexpr uint32_t kMaxSRVCount = 512;
 
     // DirectXCommonを借用してディスクリプタヒープを生成する。
     void Initialize(DirectXCommon* dxCommon);
@@ -85,4 +86,5 @@ private:
 
     uint32_t useIndex_ = 0;               // まだ一度も使っていない次の番号
     std::vector<uint32_t> freeIndices_;   // Freeによって再利用可能になった番号
+    std::array<bool, kMaxSRVCount> allocated_{}; // 二重解放と未確保番号の利用を検出する
 };

@@ -1,12 +1,14 @@
 #include "engine/3d/Model.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <cassert>
 #include <filesystem>
 #include <functional>
 #include <numbers>
+#include <stdexcept>
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -641,7 +643,9 @@ void Model::Initialize(ModelCommon* modelCommon,
     const std::string& directoryPath,
     const std::string& filename)
 {
-    assert(modelCommon);
+    if (!modelCommon) {
+        throw std::invalid_argument("Model::Initialize requires ModelCommon");
+    }
     modelCommon_ = modelCommon;
 
     std::filesystem::path requestedPath = filename;
@@ -651,7 +655,14 @@ void Model::Initialize(ModelCommon* modelCommon,
     }
     const std::string assetDirectory = assetDirectoryPath.string();
     const std::string assetFilename = requestedPath.filename().string();
-    const std::string extension = requestedPath.extension().string();
+    std::string extension = requestedPath.extension().string();
+    std::transform(
+        extension.begin(),
+        extension.end(),
+        extension.begin(),
+        [](unsigned char character) {
+            return static_cast<char>(std::tolower(character));
+        });
 
     if (extension == ".gltf" || extension == ".glb") {
         modelData_ = LoadAssimpFile(assetDirectory, assetFilename);
@@ -681,7 +692,9 @@ void Model::Initialize(ModelCommon* modelCommon,
 
 void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
 {
-    assert(modelCommon);
+    if (!modelCommon) {
+        throw std::invalid_argument("Model::Initialize requires ModelCommon");
+    }
     modelCommon_ = modelCommon;
     modelData_ = modelData;
 
@@ -892,7 +905,10 @@ MaterialData Model::LoadMaterialTemplate(const std::string& directoryPath, const
     materialData.textureFilePath = kDefaultTextureFilePath;
 
     std::ifstream file(directoryPath + "/" + filename);
-    assert(file.is_open());
+    if (!file.is_open()) {
+        throw std::runtime_error(
+            "Failed to open material file: " + directoryPath + "/" + filename);
+    }
 
     std::string line;
     while (std::getline(file, line)) {
@@ -919,7 +935,10 @@ ModelData Model::LoadObjFile(const std::string& directoryPath, const std::string
     std::vector<Vector3> normals;
 
     std::ifstream file(directoryPath + "/" + filename);
-    assert(file.is_open());
+    if (!file.is_open()) {
+        throw std::runtime_error(
+            "Failed to open OBJ model: " + directoryPath + "/" + filename);
+    }
 
     std::string line;
     while (std::getline(file, line)) {
@@ -1036,9 +1055,10 @@ ModelData Model::LoadAssimpFile(
         aiProcess_GenNormals;
 
     const aiScene* scene = importer.ReadFile(filePath.c_str(), flags);
-    assert(scene);
-    assert(scene->HasMeshes());
-    assert(scene->mRootNode);
+    if (!scene || !scene->HasMeshes() || !scene->mRootNode) {
+        throw std::runtime_error(
+            "Failed to load model '" + filePath + "': " + importer.GetErrorString());
+    }
 
     modelData.materials.reserve(scene->mNumMaterials);
     for (uint32_t materialIndex = 0; materialIndex < scene->mNumMaterials; ++materialIndex) {
@@ -1220,6 +1240,9 @@ ModelData Model::CreatePlaneData(
     float height,
     const std::string& textureFilePath)
 {
+    if (width <= 0.0f || height <= 0.0f) {
+        throw std::invalid_argument("Plane width and height must be positive");
+    }
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
 
@@ -1244,8 +1267,9 @@ ModelData Model::CreateTriangleData(
     float height,
     const std::string& textureFilePath)
 {
-    assert(width > 0.0f);
-    assert(height > 0.0f);
+    if (width <= 0.0f || height <= 0.0f) {
+        throw std::invalid_argument("Triangle width and height must be positive");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1269,8 +1293,10 @@ ModelData Model::CreateCircleData(
     float radius,
     const std::string& textureFilePath)
 {
-    assert(divideCount >= 3);
-    assert(radius > 0.0f);
+    if (divideCount < 3 || radius <= 0.0f) {
+        throw std::invalid_argument(
+            "Circle requires at least 3 divisions and a positive radius");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1316,8 +1342,10 @@ ModelData Model::CreateHeartData(
     float radius,
     const std::string& textureFilePath)
 {
-    assert(divideCount >= 12);
-    assert(radius > 0.0f);
+    if (divideCount < 12 || radius <= 0.0f) {
+        throw std::invalid_argument(
+            "Heart requires at least 12 divisions and a positive radius");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1367,9 +1395,10 @@ ModelData Model::CreateRingData(
     float innerRadius,
     const std::string& textureFilePath)
 {
-    assert(divideCount >= 3);
-    assert(outerRadius > innerRadius);
-    assert(innerRadius >= 0.0f);
+    if (divideCount < 3 || innerRadius < 0.0f || outerRadius <= innerRadius) {
+        throw std::invalid_argument(
+            "Ring requires at least 3 divisions and outerRadius > innerRadius >= 0");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1431,9 +1460,10 @@ ModelData Model::CreateSphereData(
     float radius,
     const std::string& textureFilePath)
 {
-    assert(latDivideCount >= 2);
-    assert(lonDivideCount >= 3);
-    assert(radius > 0.0f);
+    if (latDivideCount < 2 || lonDivideCount < 3 || radius <= 0.0f) {
+        throw std::invalid_argument(
+            "Sphere requires latitude >= 2, longitude >= 3, and a positive radius");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1499,10 +1529,11 @@ ModelData Model::CreateTorusData(
     float minorRadius,
     const std::string& textureFilePath)
 {
-    assert(majorDivideCount >= 3);
-    assert(minorDivideCount >= 3);
-    assert(majorRadius > 0.0f);
-    assert(minorRadius > 0.0f);
+    if (majorDivideCount < 3 || minorDivideCount < 3 ||
+        majorRadius <= 0.0f || minorRadius <= 0.0f) {
+        throw std::invalid_argument(
+            "Torus divisions must be >= 3 and both radii must be positive");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1569,10 +1600,11 @@ ModelData Model::CreateCylinderData(
     float height,
     const std::string& textureFilePath)
 {
-    assert(divideCount >= 3);
-    assert(topRadius >= 0.0f);
-    assert(bottomRadius >= 0.0f);
-    assert(height > 0.0f);
+    if (divideCount < 3 || topRadius < 0.0f || bottomRadius < 0.0f ||
+        (topRadius == 0.0f && bottomRadius == 0.0f) || height <= 0.0f) {
+        throw std::invalid_argument(
+            "Cylinder requires >= 3 divisions, a positive height, and a nonzero radius");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1638,9 +1670,10 @@ ModelData Model::CreateConeData(
     float height,
     const std::string& textureFilePath)
 {
-    assert(divideCount >= 3);
-    assert(radius > 0.0f);
-    assert(height > 0.0f);
+    if (divideCount < 3 || radius <= 0.0f || height <= 0.0f) {
+        throw std::invalid_argument(
+            "Cone requires at least 3 divisions, a positive radius, and a positive height");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;
@@ -1696,9 +1729,9 @@ ModelData Model::CreateBoxData(
     float depth,
     const std::string& textureFilePath)
 {
-    assert(width > 0.0f);
-    assert(height > 0.0f);
-    assert(depth > 0.0f);
+    if (width <= 0.0f || height <= 0.0f || depth <= 0.0f) {
+        throw std::invalid_argument("Box width, height, and depth must be positive");
+    }
 
     ModelData modelData;
     modelData.material.textureFilePath = textureFilePath;

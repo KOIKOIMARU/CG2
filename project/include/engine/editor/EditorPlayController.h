@@ -32,7 +32,7 @@ public:
         Input* input);
     bool Start();
     void Stop();
-    void Update(bool isEditorGuiVisible, bool showSkybox, int postEffectMode);
+    void Update(bool showSkybox, int postEffectMode);
     void SetHudViewportRect(bool isEnabled, const Math::Vector2& min, const Math::Vector2& size);
     void Draw();
     int GetPostEffectMode() const;

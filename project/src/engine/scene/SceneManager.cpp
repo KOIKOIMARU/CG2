@@ -1,7 +1,7 @@
 #include "engine/scene/SceneManager.h"
 #include "engine/scene/BaseScene.h"
 #include "engine/scene/AbstractSceneFactory.h"
-#include <cassert>
+#include <stdexcept>
 
 SceneManager* SceneManager::GetInstance() {
     // シーン遷移の管理元を一つに限定する。所有シーンはunique_ptrで保持する。
@@ -51,17 +51,22 @@ void SceneManager::PrepareScene(SceneType sceneType) {
         preparedScene_.reset();
     }
 
-    assert(sceneFactory_ != nullptr);
-    preparedScene_ = sceneFactory_->CreateScene(sceneType);
-    assert(preparedScene_ != nullptr);
-    preparedScene_->SetSceneManager(this);
-    preparedScene_->SetSystems(
+    if (!sceneFactory_) {
+        throw std::logic_error("SceneManager requires a scene factory");
+    }
+    std::unique_ptr<BaseScene> scene = sceneFactory_->CreateScene(sceneType);
+    if (!scene) {
+        throw std::runtime_error("Scene factory failed to create a scene");
+    }
+    scene->SetSceneManager(this);
+    scene->SetSystems(
         dxCommon_,
         srvManager_,
         spriteCommon_,
         imguiManager_,
         input_);
-    preparedScene_->Initialize();
+    scene->Initialize();
+    preparedScene_ = std::move(scene);
     preparedSceneType_ = sceneType;
     hasPreparedScene_ = true;
 }
@@ -89,20 +94,25 @@ void SceneManager::Update() {
             scene_ = std::move(preparedScene_);
             hasPreparedScene_ = false;
         } else {
-            assert(sceneFactory_ != nullptr);
+            if (!sceneFactory_) {
+                throw std::logic_error("SceneManager requires a scene factory");
+            }
+            std::unique_ptr<BaseScene> scene =
+                sceneFactory_->CreateScene(nextSceneType_);
+            if (!scene) {
+                throw std::runtime_error("Scene factory failed to create a scene");
+            }
 
-            scene_ = sceneFactory_->CreateScene(nextSceneType_);
-            assert(scene_ != nullptr);
-
-            scene_->SetSceneManager(this);
-            scene_->SetSystems(
+            scene->SetSceneManager(this);
+            scene->SetSystems(
                 dxCommon_,
                 srvManager_,
                 spriteCommon_,
                 imguiManager_,
                 input_
             );
-            scene_->Initialize();
+            scene->Initialize();
+            scene_ = std::move(scene);
         }
 
         hasNextScene_ = false;

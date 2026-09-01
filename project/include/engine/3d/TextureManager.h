@@ -49,13 +49,12 @@ private:
     struct TextureData {
         DirectX::TexMetadata metadata;                    // 寸法、形式、ミップ数などの画像情報
         Microsoft::WRL::ComPtr<ID3D12Resource> resource;  // GPU上のテクスチャ本体
-        uint32_t srvIndex = 0;                            // シェーダーから参照するSRV番号
+        uint32_t srvIndex = UINT32_MAX;                   // シェーダーから参照するSRV番号
     };
 
     std::unordered_map<std::string, TextureData> textureDatas_; // パスまたは生成名ごとの所有キャッシュ
 
     DirectXCommon* dxCommon_ = nullptr; // GPU転送に使う描画基盤の借用先
     SrvManager* srvManager_ = nullptr;  // テクスチャSRVを確保する借用先
-
-    static TextureManager* instance_; // アプリ内で共有する唯一の管理インスタンス
+    void ReleaseTextures(); // 所有テクスチャとSRV番号を一括返却する
 };

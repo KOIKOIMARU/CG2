@@ -87,10 +87,9 @@ private:
     ~ModelManager() = default;
     ModelManager(const ModelManager&) = delete;
     ModelManager& operator=(const ModelManager&) = delete;
+    ModelCommon* GetInitializedModelCommon() const;
 
 private:
-    static ModelManager* instance; // アプリ内で共有する唯一の管理インスタンス
-
     std::map<std::string, std::unique_ptr<Model>> models_; // キーごとに所有する読込み済みモデル
-    ModelCommon* modelCommon_ = nullptr;                   // 各Modelへ渡す共有描画基盤
+    std::unique_ptr<ModelCommon> modelCommon_;             // 各Modelへ渡す共有描画基盤
 };

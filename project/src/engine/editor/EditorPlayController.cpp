@@ -58,7 +58,6 @@ void EditorPlayController::Stop()
 }
 
 void EditorPlayController::Update(
-    bool isEditorGuiVisible,
     bool showSkybox,
     int postEffectMode)
 {
@@ -66,7 +65,6 @@ void EditorPlayController::Update(
         return;
     }
 
-    (void)isEditorGuiVisible;
     runtime_->SetRenderingOptions(showSkybox, postEffectMode);
     runtime_->Update();
 }

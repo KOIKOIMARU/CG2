@@ -18,10 +18,12 @@
 #include "engine/io/Input.h"
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <system_error>
 #include <utility>
 
 // 汎用エディタシーンの実装。編集用オブジェクトの所有、JSON入出力、
@@ -71,7 +73,11 @@ bool ExtractSettingsInt(const std::string& source, const char* key, int& out)
         return false;
     }
 
-    out = std::stoi(match[1].str());
+    try {
+        out = std::stoi(match[1].str());
+    } catch (const std::exception&) {
+        return false;
+    }
     return true;
 }
 
@@ -88,7 +94,11 @@ bool ExtractSettingsFloat(
         return false;
     }
 
-    out = std::stof(match[1].str());
+    try {
+        out = std::stof(match[1].str());
+    } catch (const std::exception&) {
+        return false;
+    }
     return true;
 }
 
@@ -120,9 +130,15 @@ bool ExtractSettingsVector3(
         return false;
     }
 
-    out.x = std::stof(match[1].str());
-    out.y = std::stof(match[2].str());
-    out.z = std::stof(match[3].str());
+    Math::Vector3 value{};
+    try {
+        value.x = std::stof(match[1].str());
+        value.y = std::stof(match[2].str());
+        value.z = std::stof(match[3].str());
+    } catch (const std::exception&) {
+        return false;
+    }
+    out = value;
     return true;
 }
 
@@ -1082,7 +1098,6 @@ void EditorScene::Update() {
     if (editorManager_.IsPlayMode()) {
         if (playController_.IsRunning() && !startedPlayModeThisFrame) {
             playController_.Update(
-                editorManager_.IsEditorGuiVisible(),
                 showSkybox_,
                 postEffectMode_);
             if (playController_.IsExitRequested()) {
@@ -1157,7 +1172,11 @@ void EditorScene::SaveEditorSettings() const
 {
     std::filesystem::path path(kEditorSettingsPath);
     if (path.has_parent_path()) {
-        std::filesystem::create_directories(path.parent_path());
+        std::error_code error;
+        std::filesystem::create_directories(path.parent_path(), error);
+        if (error) {
+            return;
+        }
     }
 
     std::ofstream file(path);

@@ -1,48 +1,47 @@
 #include "engine/3d/TextureManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
-#include <cassert>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-
-TextureManager* TextureManager::instance_ = nullptr;
+#include <stdexcept>
 
 TextureManager* TextureManager::GetInstance() {
-    if (!instance_) {
-        instance_ = new TextureManager();
-    }
-    return instance_;
+    static TextureManager instance;
+    return &instance;
 }
 
 void TextureManager::Initialize(
     DirectXCommon* dxCommon,
     SrvManager* srvManager) {
+    if (!dxCommon || !srvManager) {
+        throw std::invalid_argument(
+            "TextureManager::Initialize requires DirectXCommon and SrvManager");
+    }
 
+    ReleaseTextures();
     dxCommon_ = dxCommon;
     srvManager_ = srvManager;
-    textureDatas_.clear();
     CreateSolidTexture2D("resources/default_normal.png", 128, 128, 255, 255);
 }
 
 void TextureManager::Destroy() {
-    delete instance_;
-    instance_ = nullptr;
+    TextureManager* manager = GetInstance();
+    manager->ReleaseTextures();
+    manager->dxCommon_ = nullptr;
+    manager->srvManager_ = nullptr;
 }
 
 void TextureManager::LoadTexture(const std::string& filePath, bool forceSrgb) {
+    if (!dxCommon_ || !srvManager_) {
+        throw std::logic_error("TextureManager is not initialized");
+    }
 
     // 同じパスのGPU資源とSRVはキャッシュから再利用する。
     if (textureDatas_.contains(filePath)) {
         return;
     }
-
-
-
-
-    TextureData& textureData = textureDatas_[filePath];
-
-    // 読み込み
+    TextureData textureData{};
     DirectX::ScratchImage mipImages =
         DirectXCommon::LoadTexture(filePath, forceSrgb);
     textureData.metadata = mipImages.GetMetadata();
@@ -73,6 +72,7 @@ void TextureManager::LoadTexture(const std::string& filePath, bool forceSrgb) {
         );
     }
 
+    textureDatas_.emplace(filePath, std::move(textureData));
 }
 
 void TextureManager::CreateSolidTexture2D(
@@ -85,6 +85,9 @@ void TextureManager::CreateSolidTexture2D(
     if (textureDatas_.contains(name)) {
         return;
     }
+    if (!dxCommon_ || !srvManager_) {
+        throw std::logic_error("TextureManager is not initialized");
+    }
 
     DirectX::ScratchImage image;
     HRESULT hr = image.Initialize2D(
@@ -93,7 +96,9 @@ void TextureManager::CreateSolidTexture2D(
         1,
         1,
         1);
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr)) {
+        throw std::runtime_error("Failed to create a solid 2D texture");
+    }
 
     uint8_t* pixel = image.GetPixels();
     pixel[0] = red;
@@ -101,7 +106,7 @@ void TextureManager::CreateSolidTexture2D(
     pixel[2] = blue;
     pixel[3] = alpha;
 
-    TextureData& textureData = textureDatas_[name];
+    TextureData textureData{};
     textureData.metadata = image.GetMetadata();
     textureData.resource =
         dxCommon_->CreateTextureResource(textureData.metadata);
@@ -113,6 +118,7 @@ void TextureManager::CreateSolidTexture2D(
         textureData.resource.Get(),
         textureData.metadata.format,
         UINT(textureData.metadata.mipLevels));
+    textureDatas_.emplace(name, std::move(textureData));
 }
 
 void TextureManager::CreateSolidCubeTexture(
@@ -125,6 +131,9 @@ void TextureManager::CreateSolidCubeTexture(
     if (textureDatas_.contains(name)) {
         return;
     }
+    if (!dxCommon_ || !srvManager_) {
+        throw std::logic_error("TextureManager is not initialized");
+    }
 
     DirectX::ScratchImage image;
     HRESULT hr = image.InitializeCube(
@@ -133,7 +142,9 @@ void TextureManager::CreateSolidCubeTexture(
         1,
         1,
         1);
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr)) {
+        throw std::runtime_error("Failed to create a solid cube texture");
+    }
 
     const DirectX::Image* images = image.GetImages();
     for (size_t index = 0; index < image.GetImageCount(); ++index) {
@@ -144,7 +155,7 @@ void TextureManager::CreateSolidCubeTexture(
         pixel[3] = alpha;
     }
 
-    TextureData& textureData = textureDatas_[name];
+    TextureData textureData{};
     textureData.metadata = image.GetMetadata();
     textureData.resource =
         dxCommon_->CreateTextureResource(textureData.metadata);
@@ -156,12 +167,16 @@ void TextureManager::CreateSolidCubeTexture(
         textureData.resource.Get(),
         textureData.metadata.format,
         UINT(textureData.metadata.mipLevels));
+    textureDatas_.emplace(name, std::move(textureData));
 }
 
 void TextureManager::CreateSkyGradientCubeTexture(const std::string& name)
 {
     if (textureDatas_.contains(name)) {
         return;
+    }
+    if (!dxCommon_ || !srvManager_) {
+        throw std::logic_error("TextureManager is not initialized");
     }
 
     constexpr size_t kSize = 16;
@@ -172,7 +187,9 @@ void TextureManager::CreateSkyGradientCubeTexture(const std::string& name)
         kSize,
         1,
         1);
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr)) {
+        throw std::runtime_error("Failed to create the sky gradient cube texture");
+    }
 
     const auto writePixel =
         [](uint8_t* pixel, float red, float green, float blue) {
@@ -222,7 +239,7 @@ void TextureManager::CreateSkyGradientCubeTexture(const std::string& name)
         }
     }
 
-    TextureData& textureData = textureDatas_[name];
+    TextureData textureData{};
     textureData.metadata = image.GetMetadata();
     textureData.resource =
         dxCommon_->CreateTextureResource(textureData.metadata);
@@ -234,15 +251,36 @@ void TextureManager::CreateSkyGradientCubeTexture(const std::string& name)
         textureData.resource.Get(),
         textureData.metadata.format,
         UINT(textureData.metadata.mipLevels));
+    textureDatas_.emplace(name, std::move(textureData));
 }
 
 const DirectX::TexMetadata&
 TextureManager::GetMetaData(const std::string& filePath) {
-    assert(textureDatas_.contains(filePath));
-    return textureDatas_.at(filePath).metadata;
+    const auto iterator = textureDatas_.find(filePath);
+    if (iterator == textureDatas_.end()) {
+        throw std::out_of_range("Texture is not loaded: " + filePath);
+    }
+    return iterator->second.metadata;
 }
 
 uint32_t TextureManager::GetSrvIndex(const std::string& filePath) {
-    assert(textureDatas_.contains(filePath));
-    return textureDatas_.at(filePath).srvIndex;
+    const auto iterator = textureDatas_.find(filePath);
+    if (iterator == textureDatas_.end()) {
+        throw std::out_of_range("Texture is not loaded: " + filePath);
+    }
+    return iterator->second.srvIndex;
+}
+
+void TextureManager::ReleaseTextures()
+{
+    if (srvManager_) {
+        for (auto& [name, textureData] : textureDatas_) {
+            (void)name;
+            if (textureData.srvIndex != UINT32_MAX) {
+                srvManager_->Free(textureData.srvIndex);
+                textureData.srvIndex = UINT32_MAX;
+            }
+        }
+    }
+    textureDatas_.clear();
 }

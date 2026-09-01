@@ -72,15 +72,15 @@ void Framework::Finalize() {
         imguiManager_->Finalize();
     }
 
-    if (winApp_) {
-        winApp_->Finalize();
-    }
-
-    // unique_ptr なので delete 不要
+    // GPU資源と入力デバイスを、依存先のDirectXとウィンドウより先に破棄する。
     spriteCommon_.reset();
     input_.reset();
     imguiManager_.reset();
     srvManager_.reset();
     dxCommon_.reset();
+
+    if (winApp_) {
+        winApp_->Finalize();
+    }
     winApp_.reset();
 }

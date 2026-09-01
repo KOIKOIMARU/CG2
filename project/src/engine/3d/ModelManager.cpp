@@ -2,15 +2,12 @@
 #include "engine/3d/Model.h"
 #include "engine/3d/ModelCommon.h"
 #include "engine/base/DirectXCommon.h"
-
-ModelManager* ModelManager::instance = nullptr;
+#include <stdexcept>
 
 ModelManager* ModelManager::GetInstance()
 {
-    if (!instance) {
-        instance = new ModelManager();
-    }
-    return instance;
+    static ModelManager instance;
+    return &instance;
 }
 
 void ModelManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
@@ -19,7 +16,7 @@ void ModelManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
         return;
     }
 
-    modelCommon_ = new ModelCommon();
+    modelCommon_ = std::make_unique<ModelCommon>();
     modelCommon_->Initialize(dxCommon, srvManager);
 }
 
@@ -27,11 +24,7 @@ void ModelManager::Finalize()
 {
     models_.clear();
 
-    delete modelCommon_;
-    modelCommon_ = nullptr;
-
-    delete instance;
-    instance = nullptr;
+    modelCommon_.reset();
 }
 
 void ModelManager::LoadModel(const std::string& filePath)
@@ -42,7 +35,7 @@ void ModelManager::LoadModel(const std::string& filePath)
     }
 
     auto model = std::make_unique<Model>();
-    model->Initialize(modelCommon_, "resources", filePath);
+    model->Initialize(GetInitializedModelCommon(), "resources", filePath);
 
     models_.insert(std::make_pair(filePath, std::move(model)));
 }
@@ -59,7 +52,7 @@ void ModelManager::CreateTriangle(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateTriangleData(width, height, textureFilePath)
     );
 
@@ -78,7 +71,7 @@ void ModelManager::CreatePlane(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreatePlaneData(width, height, textureFilePath)
     );
 
@@ -97,7 +90,7 @@ void ModelManager::CreateCircle(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateCircleData(divideCount, radius, textureFilePath)
     );
 
@@ -116,7 +109,7 @@ void ModelManager::CreateHeart(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateHeartData(divideCount, radius, textureFilePath)
     );
 
@@ -136,7 +129,7 @@ void ModelManager::CreateRing(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateRingData(
             divideCount,
             outerRadius,
@@ -160,7 +153,7 @@ void ModelManager::CreateSphere(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateSphereData(
             latDivideCount,
             lonDivideCount,
@@ -185,7 +178,7 @@ void ModelManager::CreateTorus(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateTorusData(
             majorDivideCount,
             minorDivideCount,
@@ -211,7 +204,7 @@ void ModelManager::CreateCylinder(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateCylinderData(
             divideCount,
             topRadius,
@@ -236,7 +229,7 @@ void ModelManager::CreateCone(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateConeData(divideCount, radius, height, textureFilePath)
     );
 
@@ -256,7 +249,7 @@ void ModelManager::CreateBox(
 
     auto model = std::make_unique<Model>();
     model->Initialize(
-        modelCommon_,
+        GetInitializedModelCommon(),
         Model::CreateBoxData(width, height, depth, textureFilePath)
     );
 
@@ -276,4 +269,12 @@ Model* ModelManager::FindModel(const std::string& filePath)
         return models_.at(filePath).get();
     }
     return nullptr;
+}
+
+ModelCommon* ModelManager::GetInitializedModelCommon() const
+{
+    if (!modelCommon_) {
+        throw std::logic_error("ModelManager must be initialized before creating models");
+    }
+    return modelCommon_.get();
 }

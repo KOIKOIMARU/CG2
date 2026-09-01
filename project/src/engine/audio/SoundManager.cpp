@@ -1,36 +1,74 @@
 #include "engine/audio/SoundManager.h"
-#include "engine/base/StringUtility.h"   // ConvertString(wstring<->string)がある前提
-#include <cassert>
+#include "engine/base/StringUtility.h"
+#include <algorithm>
 #include <combaseapi.h>
+#include <format>
+#include <stdexcept>
 
 using Microsoft::WRL::ComPtr;
 
+namespace {
+
+void ThrowIfFailed(HRESULT result, const char* operation)
+{
+    if (FAILED(result)) {
+        throw std::runtime_error(std::format(
+            "SoundManager: {} failed (HRESULT=0x{:08X})",
+            operation,
+            static_cast<uint32_t>(result)));
+    }
+}
+
+}
+
+SoundManager::~SoundManager()
+{
+    Finalize();
+}
+
 void SoundManager::Initialize() {
+    if (xAudio2_) {
+        return;
+    }
+
     // 音声ファイルのデコードに使用するMedia Foundationを初期化する。
     HRESULT result = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "MFStartup");
+    isMediaFoundationStarted_ = true;
 
-    // XAudio2 初期化
+    // XAudio2本体と最終出力Voiceを順に生成する。
     result = XAudio2Create(&xAudio2_, 0, XAUDIO2_DEFAULT_PROCESSOR);
-    assert(SUCCEEDED(result));
+    if (FAILED(result)) {
+        Finalize();
+        ThrowIfFailed(result, "XAudio2Create");
+    }
 
     result = xAudio2_->CreateMasteringVoice(&masterVoice_);
-    assert(SUCCEEDED(result));
+    if (FAILED(result)) {
+        Finalize();
+        ThrowIfFailed(result, "CreateMasteringVoice");
+    }
 }
 
 void SoundManager::Finalize() {
-    // 先にXAudio2止める（資料意図）
-    xAudio2_.Reset();
+    // PCMバッファを解放する前に、それを参照中のVoiceをすべて破棄する。
+    StopAllVoices();
 
-    // 音声バッファ解放
     for (auto& [key, sd] : sounds_) {
         UnloadFile(sd);
     }
     sounds_.clear();
 
-    // Initializeと対応するMedia Foundationの終了処理。
-    HRESULT result = MFShutdown();
-    assert(SUCCEEDED(result));
+    if (masterVoice_) {
+        masterVoice_->DestroyVoice();
+        masterVoice_ = nullptr;
+    }
+    xAudio2_.Reset();
+
+    if (isMediaFoundationStarted_) {
+        MFShutdown();
+        isMediaFoundationStarted_ = false;
+    }
 }
 
 void SoundManager::Load(const std::string& key, const std::string& filename) {
@@ -43,30 +81,49 @@ void SoundManager::Load(const std::string& key, const std::string& filename) {
 void SoundManager::Unload(const std::string& key) {
     auto it = sounds_.find(key);
     if (it == sounds_.end()) return;
+    StopVoicesForKey(key);
     UnloadFile(it->second);
     sounds_.erase(it);
 }
 
-void SoundManager::Play(const std::string& key) {
+bool SoundManager::Play(const std::string& key) {
+    if (!xAudio2_) {
+        return false;
+    }
+
+    CleanupFinishedVoices();
+
     auto it = sounds_.find(key);
-    assert(it != sounds_.end());
+    if (it == sounds_.end() || it->second.buffer.empty()) {
+        return false;
+    }
 
     const SoundData& soundData = it->second;
-    assert(!soundData.buffer.empty());
 
-    IXAudio2SourceVoice* pSourceVoice = nullptr;
-    HRESULT result = xAudio2_->CreateSourceVoice(&pSourceVoice, &soundData.wfex);
-    assert(SUCCEEDED(result));
+    IXAudio2SourceVoice* sourceVoice = nullptr;
+    HRESULT result = xAudio2_->CreateSourceVoice(&sourceVoice, &soundData.wfex);
+    if (FAILED(result) || !sourceVoice) {
+        return false;
+    }
 
     XAUDIO2_BUFFER buf{};
     buf.pAudioData = soundData.buffer.data();
     buf.AudioBytes = static_cast<UINT32>(soundData.buffer.size());
     buf.Flags = XAUDIO2_END_OF_STREAM;
 
-    result = pSourceVoice->SubmitSourceBuffer(&buf);
-    assert(SUCCEEDED(result));
-    result = pSourceVoice->Start();
-    assert(SUCCEEDED(result));
+    result = sourceVoice->SubmitSourceBuffer(&buf);
+    if (FAILED(result)) {
+        sourceVoice->DestroyVoice();
+        return false;
+    }
+    result = sourceVoice->Start();
+    if (FAILED(result)) {
+        sourceVoice->DestroyVoice();
+        return false;
+    }
+
+    activeVoices_.push_back({ sourceVoice, key });
+    return true;
 }
 
 
@@ -82,42 +139,40 @@ SoundData SoundManager::LoadFile(const std::string& filename) {
     // ファイル形式を問わずPCMへ変換できるSource Readerを生成する。
     ComPtr<IMFSourceReader> pReader;
     result = MFCreateSourceReaderFromURL(filePathW.c_str(), nullptr, &pReader);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "MFCreateSourceReaderFromURL");
 
     // PCM形式にフォーマット指定
     ComPtr<IMFMediaType> pPCMType;
     result = MFCreateMediaType(&pPCMType);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "MFCreateMediaType");
     result = pPCMType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "Set audio major type");
     result = pPCMType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "Set PCM subtype");
 
     result = pReader->SetCurrentMediaType(
         (DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM,
         nullptr,
         pPCMType.Get());
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "SetCurrentMediaType");
 
     // 実際にセットされたメディアタイプを取得
     ComPtr<IMFMediaType> pOutType;
     result = pReader->GetCurrentMediaType(
         (DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM,
         &pOutType);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "GetCurrentMediaType");
 
     // WaveFormat取得
     WAVEFORMATEX* waveFormat = nullptr;
     result = MFCreateWaveFormatExFromMFMediaType(pOutType.Get(), &waveFormat, nullptr);
-    assert(SUCCEEDED(result));
+    ThrowIfFailed(result, "MFCreateWaveFormatExFromMFMediaType");
 
     SoundData soundData{};
     soundData.wfex = *waveFormat;
 
     // 用済みなので解放（MFが確保したメモリ）
     CoTaskMemFree(waveFormat);
-
-    // （任意）reserveで高速化：とりあえず無しでもOK
 
     // PCM波形データの取得（サンプルを繋げる）
     while (true) {
@@ -133,7 +188,7 @@ SoundData SoundManager::LoadFile(const std::string& filename) {
             &flags,
             &llTimeStamp,
             &pSample);
-        assert(SUCCEEDED(result));
+        ThrowIfFailed(result, "ReadSample");
 
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
             break;
@@ -142,14 +197,14 @@ SoundData SoundManager::LoadFile(const std::string& filename) {
         if (pSample) {
             ComPtr<IMFMediaBuffer> pBuffer;
             result = pSample->ConvertToContiguousBuffer(&pBuffer);
-            assert(SUCCEEDED(result));
+            ThrowIfFailed(result, "ConvertToContiguousBuffer");
 
             BYTE* pData = nullptr;
             DWORD maxLength = 0;
             DWORD currentLength = 0;
 
             result = pBuffer->Lock(&pData, &maxLength, &currentLength);
-            assert(SUCCEEDED(result));
+            ThrowIfFailed(result, "IMFMediaBuffer::Lock");
 
             // 複数サンプルに分割された音声を再生順に連結する。
             soundData.buffer.insert(soundData.buffer.end(), pData, pData + currentLength);
@@ -164,4 +219,58 @@ SoundData SoundManager::LoadFile(const std::string& filename) {
 void SoundManager::UnloadFile(SoundData& soundData) {
     soundData.buffer.clear();
     soundData.wfex = {};
+}
+
+void SoundManager::CleanupFinishedVoices()
+{
+    const auto newEnd = std::remove_if(
+        activeVoices_.begin(),
+        activeVoices_.end(),
+        [](ActiveVoice& activeVoice) {
+            if (!activeVoice.voice) {
+                return true;
+            }
+
+            XAUDIO2_VOICE_STATE state{};
+            activeVoice.voice->GetState(
+                &state,
+                XAUDIO2_VOICE_NOSAMPLESPLAYED);
+            if (state.BuffersQueued != 0) {
+                return false;
+            }
+
+            activeVoice.voice->DestroyVoice();
+            activeVoice.voice = nullptr;
+            return true;
+        });
+    activeVoices_.erase(newEnd, activeVoices_.end());
+}
+
+void SoundManager::StopVoicesForKey(const std::string& key)
+{
+    const auto newEnd = std::remove_if(
+        activeVoices_.begin(),
+        activeVoices_.end(),
+        [&key](ActiveVoice& activeVoice) {
+            if (activeVoice.soundKey != key) {
+                return false;
+            }
+            if (activeVoice.voice) {
+                activeVoice.voice->DestroyVoice();
+                activeVoice.voice = nullptr;
+            }
+            return true;
+        });
+    activeVoices_.erase(newEnd, activeVoices_.end());
+}
+
+void SoundManager::StopAllVoices()
+{
+    for (ActiveVoice& activeVoice : activeVoices_) {
+        if (activeVoice.voice) {
+            activeVoice.voice->DestroyVoice();
+            activeVoice.voice = nullptr;
+        }
+    }
+    activeVoices_.clear();
 }

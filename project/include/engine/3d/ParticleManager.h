@@ -1,10 +1,8 @@
 #pragma once
 
 #include <unordered_map>
-#include <list>
 #include <string>
 #include <memory>
-#include <random>
 #include <cstdint>
 
 
@@ -13,7 +11,6 @@
 #include <d3d12.h>
 
 #include "engine/base/Math.h"
-#include "engine/3d/Particle.h"
 
 class DirectXCommon;
 class SrvManager;
@@ -68,8 +65,6 @@ public:
         const Math::Vector3& position,
         const Math::Vector3& direction,
         uint32_t count);
-
-    float RandomFloat(float min, float max);
 
 private:
     ParticleManager() = default;
@@ -129,9 +124,6 @@ private:
         std::string textureFilePath;       // 粒の描画に使うテクスチャ
         uint32_t textureSrvIndex = 0;      // テクスチャSRVのヒープ番号
 
-        // --- パーティクル本体 ---
-        std::list<Particle> particles;     // CPUパーティクル互換用の粒一覧
-
         // --- インスタンシング ---
         uint32_t particleSrvIndex = UINT32_MAX;    // 描画から粒を読むSRV番号
         uint32_t particleUavIndex = UINT32_MAX;    // Compute Shaderが粒へ書くUAV番号
@@ -156,8 +148,6 @@ private:
     SrvManager* srvManager_ = nullptr;  // SRV/UAVを確保する借用先
 
     std::unordered_map<std::string, ParticleGroup> particleGroups_; // 名前ごとの所有グループ
-
-    std::mt19937 randomEngine_; // 発生条件をばらつかせる乱数生成器
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;           // 描画用ルートシグネチャ
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;           // ビルボード描画用PSO

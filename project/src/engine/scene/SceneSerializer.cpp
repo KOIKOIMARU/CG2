@@ -3,13 +3,64 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <exception>
 #include <regex>
 #include <sstream>
+#include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace {
 
 // 本シリアライザーはエディタが生成する限定形式のJSONを対象とする。
 // 汎用JSONパーサーではないため、キー追加時は保存側と読込側を同時に更新する。
+std::string EscapeJsonString(std::string_view value)
+{
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (const char character : value) {
+        switch (character) {
+        case '\\': escaped += "\\\\"; break;
+        case '"': escaped += "\\\""; break;
+        case '\b': escaped += "\\b"; break;
+        case '\f': escaped += "\\f"; break;
+        case '\n': escaped += "\\n"; break;
+        case '\r': escaped += "\\r"; break;
+        case '\t': escaped += "\\t"; break;
+        default: escaped += character; break;
+        }
+    }
+    return escaped;
+}
+
+bool UnescapeJsonString(std::string_view value, std::string& out)
+{
+    std::string unescaped;
+    unescaped.reserve(value.size());
+    for (size_t index = 0; index < value.size(); ++index) {
+        const char character = value[index];
+        if (character != '\\') {
+            unescaped += character;
+            continue;
+        }
+        if (++index >= value.size()) {
+            return false;
+        }
+        switch (value[index]) {
+        case '\\': unescaped += '\\'; break;
+        case '"': unescaped += '"'; break;
+        case 'b': unescaped += '\b'; break;
+        case 'f': unescaped += '\f'; break;
+        case 'n': unescaped += '\n'; break;
+        case 'r': unescaped += '\r'; break;
+        case 't': unescaped += '\t'; break;
+        default: return false;
+        }
+    }
+    out = std::move(unescaped);
+    return true;
+}
+
 bool ExtractJsonVector3(
     const std::string& source,
     const char* key,
@@ -24,9 +75,15 @@ bool ExtractJsonVector3(
         return false;
     }
 
-    out.x = std::stof(match[1].str());
-    out.y = std::stof(match[2].str());
-    out.z = std::stof(match[3].str());
+    Math::Vector3 value{};
+    try {
+        value.x = std::stof(match[1].str());
+        value.y = std::stof(match[2].str());
+        value.z = std::stof(match[3].str());
+    } catch (const std::exception&) {
+        return false;
+    }
+    out = value;
     return true;
 }
 
@@ -44,10 +101,16 @@ bool ExtractJsonVector4(
         return false;
     }
 
-    out.x = std::stof(match[1].str());
-    out.y = std::stof(match[2].str());
-    out.z = std::stof(match[3].str());
-    out.w = std::stof(match[4].str());
+    Math::Vector4 value{};
+    try {
+        value.x = std::stof(match[1].str());
+        value.y = std::stof(match[2].str());
+        value.z = std::stof(match[3].str());
+        value.w = std::stof(match[4].str());
+    } catch (const std::exception&) {
+        return false;
+    }
+    out = value;
     return true;
 }
 
@@ -61,7 +124,11 @@ bool ExtractJsonFloat(const std::string& source, const char* key, float& out)
         return false;
     }
 
-    out = std::stof(match[1].str());
+    try {
+        out = std::stof(match[1].str());
+    } catch (const std::exception&) {
+        return false;
+    }
     return true;
 }
 
@@ -89,7 +156,11 @@ bool ExtractJsonInt(const std::string& source, const char* key, int& out)
         return false;
     }
 
-    out = std::stoi(match[1].str());
+    try {
+        out = std::stoi(match[1].str());
+    } catch (const std::exception&) {
+        return false;
+    }
     return true;
 }
 
@@ -99,15 +170,14 @@ bool ExtractJsonString(
     std::string& out)
 {
     const std::regex pattern(
-        std::string("\"") + key + "\"\\s*:\\s*\"([^\"]*)\""
+        std::string("\"") + key + "\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\""
     );
     std::smatch match;
     if (!std::regex_search(source, match, pattern)) {
         return false;
     }
 
-    out = match[1].str();
-    return true;
+    return UnescapeJsonString(match[1].str(), out);
 }
 
 bool ExtractJsonBlock(
@@ -149,7 +219,11 @@ bool SceneSerializer::SaveScene(
     // 親フォルダが未作成でも、エディタから初回保存できるように生成する。
     std::filesystem::path filePath(path);
     if (filePath.has_parent_path()) {
-        std::filesystem::create_directories(filePath.parent_path());
+        std::error_code error;
+        std::filesystem::create_directories(filePath.parent_path(), error);
+        if (error) {
+            return false;
+        }
     }
 
     std::ofstream file(filePath);
@@ -193,7 +267,7 @@ bool SceneSerializer::SaveScene(
         const ObjectRecord& record = records[index];
 
         file << "    {\n";
-        file << "      \"name\": \"" << record.name << "\",\n";
+        file << "      \"name\": \"" << EscapeJsonString(record.name) << "\",\n";
         file << "      \"primitive\": "
             << (record.primitive ? "true" : "false") << ",\n";
         file << "      \"modelIndex\": " << record.modelIndex << ",\n";
@@ -208,13 +282,15 @@ bool SceneSerializer::SaveScene(
             << record.color.w << "],\n";
         file << "      \"alphaReference\": " << record.alphaReference << ",\n";
         file << "      \"lightingMode\": " << record.lightingMode << ",\n";
-        file << "      \"texture\": \"" << record.textureFilePath << "\"\n";
+        file << "      \"texture\": \""
+            << EscapeJsonString(record.textureFilePath) << "\"\n";
         file << "    }" << (index + 1 < records.size() ? "," : "") << "\n";
     }
     file << "  ]\n";
     file << "}\n";
 
-    return true;
+    file.flush();
+    return file.good();
 }
 
 bool SceneSerializer::LoadObjects(

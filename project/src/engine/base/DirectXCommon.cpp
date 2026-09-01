@@ -1,6 +1,7 @@
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/Logger.h"
 #include "engine/base/SrvManager.h"
+#include "engine/base/StringUtility.h"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -138,8 +139,9 @@ DirectXCommon::~DirectXCommon()
 
 void DirectXCommon::Initialize(WinApp* winApp)
 {
-    // WinAppを覚えておく
-    assert(winApp);
+    if (!winApp) {
+        throw std::invalid_argument("DirectXCommon::Initialize requires WinApp");
+    }
     this->winApp_ = winApp;
 
     InitializeDiagnosticLog();
@@ -675,7 +677,7 @@ void DirectXCommon::InitializeDevice() {
 
     // GPUアダプター列挙とスワップチェーン生成に使うDXGIファクトリー。
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateDXGIFactory1");
 
     // 使用するアダプタ用の変数
     ComPtr<IDXGIAdapter4> useAdapter = nullptr;
@@ -688,14 +690,16 @@ void DirectXCommon::InitializeDevice() {
 
         DXGI_ADAPTER_DESC3 adapterDesc{};
         hr = useAdapter->GetDesc3(&adapterDesc);
-        assert(SUCCEEDED(hr));
+        CheckDeviceOperation(hr, "IDXGIAdapter4::GetDesc3");
 
         if (!(adapterDesc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
             break;
         }
         useAdapter = nullptr;
     }
-    assert(useAdapter != nullptr);
+    if (!useAdapter) {
+        throw std::runtime_error("No DirectX 12 hardware adapter was found");
+    }
 
     // 利用可能な最も高いFeature Levelから順にデバイス生成を試す。
     D3D_FEATURE_LEVEL featureLevels[] = {
@@ -715,7 +719,9 @@ void DirectXCommon::InitializeDevice() {
             break;
         }
     }
-    assert(device_ != nullptr);
+    if (!device_) {
+        throw std::runtime_error("Failed to create a DirectX 12 device");
+    }
     Log("Complete create D3D12Device!!!\n");
 
 #ifdef _DEBUG
@@ -751,7 +757,9 @@ void DirectXCommon::InitializeDevice() {
 
 void DirectXCommon::InitializeCommand()
 {
-    assert(device_);  // 念のため
+    if (!device_) {
+        throw std::logic_error("DirectX 12 device is not initialized");
+    }
 
     HRESULT hr{};
 
@@ -763,14 +771,14 @@ void DirectXCommon::InitializeCommand()
     hr = device_->CreateCommandQueue(
         &commandQueueDesc,
         IID_PPV_ARGS(&commandQueue_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateCommandQueue");
     commandQueue_->SetName(L"CG2 Main Direct Queue");
 
     // コマンドアロケータ生成
     hr = device_->CreateCommandAllocator(
         D3D12_COMMAND_LIST_TYPE_DIRECT,
         IID_PPV_ARGS(&commandAllocator_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateCommandAllocator");
     commandAllocator_->SetName(L"CG2 Main Command Allocator");
 
     // コマンドリスト生成
@@ -780,19 +788,19 @@ void DirectXCommon::InitializeCommand()
         commandAllocator_.Get(),
         nullptr,
         IID_PPV_ARGS(&commandList_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateCommandList");
     commandList_->SetName(L"CG2 Main Graphics Command List");
 
     // いったん Close しておく（毎フレーム Reset して使う想定）
     hr = commandList_->Close();
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "Initial CommandList::Close");
 }
 
 void DirectXCommon::InitializeSwapChain()
 {
-    assert(dxgiFactory_);
-    assert(commandQueue_);
-    assert(winApp_);
+    if (!dxgiFactory_ || !commandQueue_ || !winApp_) {
+        throw std::logic_error("Swap chain dependencies are not initialized");
+    }
 
     HRESULT hr{};
 
@@ -817,16 +825,18 @@ void DirectXCommon::InitializeSwapChain()
         nullptr,                      // フルスクリーンの設定（今回は使わない）
         nullptr,                      // 出力先モニタ
         &swapChain1);                 // 返ってくるスワップチェーン
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateSwapChainForHwnd");
 
     // IDXGISwapChain4 にキャストしてメンバに保持
     hr = swapChain1.As(&swapChain_);
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "Query IDXGISwapChain4");
 }
 
 void DirectXCommon::InitializeDepthBuffer()
 {
-    assert(device_);  // 念のため
+    if (!device_) {
+        throw std::logic_error("DirectX 12 device is not initialized");
+    }
 
     // 生成するResourceの設定
     D3D12_RESOURCE_DESC resourceDesc{};
@@ -857,7 +867,7 @@ void DirectXCommon::InitializeDepthBuffer()
         D3D12_RESOURCE_STATE_DEPTH_WRITE,
         &depthClearValue,
         IID_PPV_ARGS(&depthStencilResource_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "Create depth stencil resource");
 }
 
 ComPtr<ID3D12DescriptorHeap> DirectXCommon::CreateDescriptorHeap(
@@ -865,7 +875,9 @@ ComPtr<ID3D12DescriptorHeap> DirectXCommon::CreateDescriptorHeap(
     UINT numDescriptors,
     bool shaderVisible)
 {
-    assert(device_);
+    if (!device_) {
+        throw std::logic_error("DirectX 12 device is not initialized");
+    }
 
     D3D12_DESCRIPTOR_HEAP_DESC desc{};
     desc.Type = heapType;
@@ -877,7 +889,7 @@ ComPtr<ID3D12DescriptorHeap> DirectXCommon::CreateDescriptorHeap(
 
     ComPtr<ID3D12DescriptorHeap> heap;
     HRESULT hr = device_->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&heap));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateDescriptorHeap");
 
     return heap;
 }
@@ -918,7 +930,7 @@ void DirectXCommon::InitializeRenderTargetView()
     for (UINT i = 0; i < kBackBufferCount; ++i) {
         // スワップチェーンからバックバッファのリソースを取得
         HRESULT hr = swapChain_->GetBuffer(i, IID_PPV_ARGS(&swapChainResources_[i]));
-        assert(SUCCEEDED(hr));
+        CheckDeviceOperation(hr, "SwapChain::GetBuffer");
 
         // SRGB の RTV 設定
         D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
@@ -992,11 +1004,13 @@ void DirectXCommon::InitializeFence()
         fenceValue_,
         D3D12_FENCE_FLAG_NONE,
         IID_PPV_ARGS(&fence_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "CreateFence");
 
     // イベント生成（待機に使う）
     fenceEvent_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    assert(fenceEvent_ != nullptr);
+    if (!fenceEvent_) {
+        throw std::runtime_error("Failed to create the DirectX 12 fence event");
+    }
 }
 
 void DirectXCommon::InitializeViewport()
@@ -1023,15 +1037,15 @@ void DirectXCommon::InitializeDXC()
 
     // DXCユーティリティの生成
     hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "Create DXC utilities");
 
     // DXCコンパイラの生成
     hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler_));
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "Create DXC compiler");
 
     // デフォルトインクルードハンドラの生成
     hr = dxcUtils_->CreateDefaultIncludeHandler(&dxcIncludeHandler_);
-    assert(SUCCEEDED(hr));
+    CheckDeviceOperation(hr, "Create DXC include handler");
 }
 
 
@@ -1054,8 +1068,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
             std::filesystem::current_path().string() +
             "\n";
         OutputDebugStringA(msg.c_str());
-        assert(false);
-        return nullptr;
+        throw std::runtime_error(msg);
     }
 
     const std::wstring cacheKey =
@@ -1071,9 +1084,10 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     Microsoft::WRL::ComPtr<IDxcBlobEncoding> shaderSource = nullptr;
     hr = dxcUtils_->LoadFile(absPath.c_str(), nullptr, &shaderSource);
     if (FAILED(hr)) {
-        OutputDebugStringA("❌ LoadFile failed\n");
-        assert(false);
-        return nullptr;
+        throw std::runtime_error(std::format(
+            "Failed to load shader '{}': HRESULT=0x{:08X}",
+            absPath.string(),
+            static_cast<uint32_t>(hr)));
     }
 
     DxcBuffer shaderBuffer{};
@@ -1103,9 +1117,10 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     );
 
     if (FAILED(hr)) {
-        OutputDebugStringA("❌ Shader compile request failed.\n");
-        assert(false);
-        return nullptr;
+        throw std::runtime_error(std::format(
+            "DXC failed to compile '{}': HRESULT=0x{:08X}",
+            absPath.string(),
+            static_cast<uint32_t>(hr)));
     }
 
     // ============================
@@ -1115,10 +1130,12 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errorBlob), nullptr);
 
     if (errorBlob && errorBlob->GetStringLength() != 0) {
-        OutputDebugStringA("❌ Shader Compile Error:\n");
-        OutputDebugStringA(errorBlob->GetStringPointer());
-        assert(false);
-        return nullptr;
+        const std::string message = std::format(
+            "Shader compilation failed for '{}':\n{}",
+            absPath.string(),
+            errorBlob->GetStringPointer());
+        OutputDebugStringA(message.c_str());
+        throw std::runtime_error(message);
     }
 
     // ============================
@@ -1128,9 +1145,8 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
 
     if (!shaderBlob) {
-        OutputDebugStringA("❌ DXC returned no shader blob.\n");
-        assert(false);
-        return nullptr;
+        throw std::runtime_error(
+            "DXC returned no compiled shader object for: " + absPath.string());
     }
 
     shaderCache_.emplace(cacheKey, shaderBlob);
@@ -2347,13 +2363,15 @@ void DirectXCommon::EndTextureUploadBatch()
     isTextureUploadBatchActive_ = false;
 }
 
-// すでにある UploadTextureData の下あたりに追加
 DirectX::ScratchImage DirectXCommon::LoadTexture(
     const std::string& filePath,
     bool forceSrgb)
 {
-    // std::string → std::wstring に変換
-    std::wstring filePathW(filePath.begin(), filePath.end());
+    const std::wstring filePathW = StringUtility::ConvertString(filePath);
+    if (filePathW.empty() && !filePath.empty()) {
+        throw std::runtime_error(
+            std::format("Texture path is not valid UTF-8: '{}'", filePath));
+    }
 
     DirectX::ScratchImage image{};
     DirectX::TexMetadata metadata{};
@@ -2368,7 +2386,12 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(
             DirectX::DDS_FLAGS_NONE,
             &metadata,
             image);
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            throw std::runtime_error(std::format(
+                "Failed to load DDS texture '{}': HRESULT=0x{:08X}",
+                filePath,
+                static_cast<uint32_t>(hr)));
+        }
         return image;
     }
 
@@ -2378,7 +2401,12 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(
         forceSrgb ? DirectX::WIC_FLAGS_FORCE_SRGB : DirectX::WIC_FLAGS_NONE,
         &metadata,
         image);
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr)) {
+        throw std::runtime_error(std::format(
+            "Failed to load texture '{}': HRESULT=0x{:08X}",
+            filePath,
+            static_cast<uint32_t>(hr)));
+    }
 
     // ミップマップ生成
     DirectX::ScratchImage mipImages{};
@@ -2389,9 +2417,14 @@ DirectX::ScratchImage DirectXCommon::LoadTexture(
         forceSrgb ? DirectX::TEX_FILTER_SRGB : DirectX::TEX_FILTER_DEFAULT,
         0,
         mipImages);
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr)) {
+        throw std::runtime_error(std::format(
+            "Failed to generate mipmaps for '{}': HRESULT=0x{:08X}",
+            filePath,
+            static_cast<uint32_t>(hr)));
+    }
 
-    return mipImages;  // これをそのまま返して使う
+    return mipImages;
 }
 
 void DirectXCommon::InitializeFixFPS() {

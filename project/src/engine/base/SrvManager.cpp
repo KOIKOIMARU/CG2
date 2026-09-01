@@ -1,14 +1,15 @@
 #include "engine/base/SrvManager.h"
 #include "engine/base/DirectXCommon.h"
 #include <cassert>
+#include <stdexcept>
 
 using Microsoft::WRL::ComPtr;
 
-const uint32_t SrvManager::kMaxSRVCount = 512;
-
 void SrvManager::Initialize(DirectXCommon* dxCommon)
 {
-    assert(dxCommon);
+    if (!dxCommon) {
+        throw std::invalid_argument("SrvManager::Initialize requires DirectXCommon");
+    }
     directXCommon_ = dxCommon;
 
     // SRVヒープ生成
@@ -27,6 +28,7 @@ void SrvManager::Initialize(DirectXCommon* dxCommon)
 
     useIndex_ = 0;
     freeIndices_.clear();
+    allocated_.fill(false);
 }
 
 uint32_t SrvManager::Allocate()
@@ -34,13 +36,18 @@ uint32_t SrvManager::Allocate()
     if (!freeIndices_.empty()) {
         uint32_t index = freeIndices_.back();
         freeIndices_.pop_back();
+        assert(index < allocated_.size() && !allocated_[index]);
+        allocated_[index] = true;
         return index;
     }
 
-    assert(useIndex_ < kMaxSRVCount);
+    if (useIndex_ >= kMaxSRVCount) {
+        throw std::runtime_error("SRV descriptor heap exhausted");
+    }
 
     uint32_t index = useIndex_;
     useIndex_++;
+    allocated_[index] = true;
     return index;
 }
 
@@ -57,21 +64,30 @@ bool SrvManager::CanAllocate(uint32_t count) const
 
 void SrvManager::Free(uint32_t index)
 {
-    assert(index < useIndex_);
+    if (index >= useIndex_ || index >= allocated_.size() || !allocated_[index]) {
+        assert(false && "Attempted to free an invalid SRV descriptor index");
+        return;
+    }
+    allocated_[index] = false;
     freeIndices_.push_back(index);
 }
 
 void SrvManager::Free(D3D12_CPU_DESCRIPTOR_HANDLE handle)
 {
-    assert(descriptorHeap_);
-    assert(descriptorSize_ != 0);
+    if (!descriptorHeap_ || descriptorSize_ == 0) {
+        throw std::logic_error("SrvManager is not initialized");
+    }
 
     D3D12_CPU_DESCRIPTOR_HANDLE start =
         descriptorHeap_->GetCPUDescriptorHandleForHeapStart();
-    assert(handle.ptr >= start.ptr);
+    if (handle.ptr < start.ptr) {
+        throw std::invalid_argument("SRV handle is outside the managed heap");
+    }
 
     SIZE_T offset = handle.ptr - start.ptr;
-    assert(offset % descriptorSize_ == 0);
+    if (offset % descriptorSize_ != 0) {
+        throw std::invalid_argument("SRV handle is not descriptor-aligned");
+    }
 
     uint32_t index = static_cast<uint32_t>(offset / descriptorSize_);
     Free(index);
@@ -80,7 +96,12 @@ void SrvManager::Free(D3D12_CPU_DESCRIPTOR_HANDLE handle)
 D3D12_CPU_DESCRIPTOR_HANDLE
 SrvManager::GetCPUDescriptorHandle(uint32_t index)
 {
-    assert(descriptorHeap_);
+    if (!descriptorHeap_) {
+        throw std::logic_error("SrvManager is not initialized");
+    }
+    if (index >= kMaxSRVCount) {
+        throw std::out_of_range("SRV descriptor index is out of range");
+    }
 
     D3D12_CPU_DESCRIPTOR_HANDLE handle =
         descriptorHeap_->GetCPUDescriptorHandleForHeapStart();
@@ -91,7 +112,12 @@ SrvManager::GetCPUDescriptorHandle(uint32_t index)
 D3D12_GPU_DESCRIPTOR_HANDLE
 SrvManager::GetGPUDescriptorHandle(uint32_t index)
 {
-    assert(descriptorHeap_);
+    if (!descriptorHeap_) {
+        throw std::logic_error("SrvManager is not initialized");
+    }
+    if (index >= kMaxSRVCount) {
+        throw std::out_of_range("SRV descriptor index is out of range");
+    }
 
     D3D12_GPU_DESCRIPTOR_HANDLE handle =
         descriptorHeap_->GetGPUDescriptorHandleForHeapStart();
@@ -105,7 +131,9 @@ void SrvManager::CreateSRVforTexture2D(
     DXGI_FORMAT format,
     UINT mipLevels)
 {
-    assert(resource);
+    if (!resource) {
+        throw std::invalid_argument("Texture2D SRV requires a resource");
+    }
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Format = format;
@@ -127,7 +155,9 @@ void SrvManager::CreateSRVforTextureCube(
     DXGI_FORMAT format,
     UINT mipLevels)
 {
-    assert(resource);
+    if (!resource) {
+        throw std::invalid_argument("TextureCube SRV requires a resource");
+    }
 
     // Skyboxなどで使うCubemap用のSRVを作成
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -152,7 +182,9 @@ void SrvManager::CreateSRVforStructuredBuffer(
     UINT numElements,
     UINT structureByteStride)
 {
-    assert(resource);
+    if (!resource) {
+        throw std::invalid_argument("Structured buffer SRV requires a resource");
+    }
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -176,7 +208,9 @@ void SrvManager::CreateUAVforStructuredBuffer(
     UINT numElements,
     UINT structureByteStride)
 {
-    assert(resource);
+    if (!resource) {
+        throw std::invalid_argument("Structured buffer UAV requires a resource");
+    }
 
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
     uavDesc.Format = DXGI_FORMAT_UNKNOWN;

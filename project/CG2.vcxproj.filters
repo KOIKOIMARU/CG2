@@ -171,9 +171,6 @@
     <ClCompile Include="src\app\main.cpp">
       <Filter>src\app</Filter>
     </ClCompile>
-    <ClCompile Include="src\engine\3d\ResourceObject.cpp">
-      <Filter>src\engine\3d</Filter>
-    </ClCompile>
     <ClCompile Include="src\engine\io\Input.cpp">
       <Filter>src\engine\io</Filter>
     </ClCompile>
@@ -227,9 +224,6 @@
     </ClCompile>
     <ClCompile Include="src\engine\base\SrvManager.cpp">
       <Filter>src\engine\base</Filter>
-    </ClCompile>
-    <ClCompile Include="src\engine\3d\Particle.cpp">
-      <Filter>src\engine\3d</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\3d\ParticleManager.cpp">
       <Filter>src\engine\3d</Filter>
@@ -436,9 +430,6 @@
     <ClInclude Include="externals\IconFontCppHeaders\IconsFontAwesome6.h">
       <Filter>externals\IconFontCppHeaders</Filter>
     </ClInclude>
-    <ClInclude Include="include\engine\3d\ResourceObject.h">
-      <Filter>include\engine\3d</Filter>
-    </ClInclude>
     <ClInclude Include="resource.h" />
     <ClInclude Include="include\engine\io\Input.h">
       <Filter>include\engine\io</Filter>
@@ -493,9 +484,6 @@
     </ClInclude>
     <ClInclude Include="include\engine\base\SrvManager.h">
       <Filter>include\engine\base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\engine\3d\Particle.h">
-      <Filter>include\engine\3d</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\3d\ParticleManager.h">
       <Filter>include\engine\3d</Filter>

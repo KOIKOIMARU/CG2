@@ -57,7 +57,6 @@ void ParticleManager::Initialize(DirectXCommon* dxCommon, SrvManager* srvManager
     srvManager_ = srvManager;
 
     particleGroups_.clear();
-    randomEngine_.seed(std::random_device{}());
 
     // ===== 頂点 =====
     const auto vertices = MakeQuadVertices();
@@ -812,7 +811,9 @@ void ParticleManager::Emit(
     uint32_t count
 ) {
     auto it = particleGroups_.find(name);
-    assert(it != particleGroups_.end());
+    if (it == particleGroups_.end() || !it->second.emitterData) {
+        return;
+    }
     Emit(name, position, it->second.emitterData->direction, count);
 }
 
@@ -822,23 +823,15 @@ void ParticleManager::Emit(
     const Vector3& direction,
     uint32_t count
 ) {
-    // ① グループ存在チェック
     auto it = particleGroups_.find(name);
-    assert(it != particleGroups_.end());
-
-    // ② CPU側で判断した射出情報をGPUへ渡す
-    ParticleGroup& group = it->second;
-    if (group.emitterData) {
-        group.emitterData->translate = position;
-        group.emitterData->direction = direction;
-        group.emitterData->count = count;
-        group.emitterData->emit = 1;
-        group.needsEmit = true;
+    if (it == particleGroups_.end() || !it->second.emitterData) {
+        return;
     }
-}
 
-float ParticleManager::RandomFloat(float min, float max)
-{
-    std::uniform_real_distribution<float> dist(min, max);
-    return dist(randomEngine_);
+    ParticleGroup& group = it->second;
+    group.emitterData->translate = position;
+    group.emitterData->direction = direction;
+    group.emitterData->count = count;
+    group.emitterData->emit = 1;
+    group.needsEmit = true;
 }
