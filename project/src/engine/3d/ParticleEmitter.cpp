@@ -4,9 +4,6 @@
 
 using namespace Math;
 
-// =========================
-// コンストラクタ
-// =========================
 ParticleEmitter::ParticleEmitter(
     const std::string& groupName,
     const Vector3& position,
@@ -21,23 +18,17 @@ ParticleEmitter::ParticleEmitter(
 {
 }
 
-// =========================
-// 更新
-// =========================
 void ParticleEmitter::Update(float deltaTime)
 {
     elapsedTime_ += deltaTime;
 
-    // 発生間隔を超えている間、発生し続ける
+    // 余剰時間を残すことで、フレーム時間が揺れても長期的な発生数を一定に保つ。
     while (elapsedTime_ >= emitInterval_) {
         Emit();
-        elapsedTime_ -= emitInterval_; // 余剰時間を残し、フレーム時間が揺れても平均発生間隔を保つ。
+        elapsedTime_ -= emitInterval_;
     }
 }
 
-// =========================
-// Emit（資料どおり超シンプル）
-// =========================
 void ParticleEmitter::Emit()
 {
     ParticleManager::GetInstance()->Emit(

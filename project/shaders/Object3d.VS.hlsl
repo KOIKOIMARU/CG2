@@ -1,26 +1,27 @@
 #include "Object3d.hlsli"
 
+// CPUまたはVertex Shaderスキニング後の頂点をワールド・クリップ空間へ変換する。
 cbuffer TransformCB : register(b1)
 {
-    float4x4 gWVP;
-    float4x4 gWorld;
-    float4x4 gWorldInverseTranspose;
+    float4x4 gWVP;                   // ローカル座標からクリップ座標への変換
+    float4x4 gWorld;                 // ローカル座標からワールド座標への変換
+    float4x4 gWorldInverseTranspose; // 法線をワールド空間へ変換する行列
 };
 
 cbuffer SkinningCB : register(b6)
 {
-    int gEnableSkinning;
-    float3 gSkinningPadding;
-    WellForGPU gMatrixPalette[128];
+    int gEnableSkinning;             // Vertex Shaderでスキニングする場合は1
+    float3 gSkinningPadding;         // 定数バッファ境界用の余白
+    WellForGPU gMatrixPalette[128];  // ジョイント番号順の現在姿勢
 };
 
 struct VertexShaderInput
 {
-    float4 position : POSITION0;
-    float2 texcoord : TEXCOORD0;
-    float3 normal : NORMAL0;
-    float4 weight : BLENDWEIGHT0;
-    uint4 jointIndices : BLENDINDICES0;
+    float4 position : POSITION0;       // モデル空間の頂点位置
+    float2 texcoord : TEXCOORD0;       // モデルのUV座標
+    float3 normal : NORMAL0;           // モデル空間の頂点法線
+    float4 weight : BLENDWEIGHT0;      // 最大4ジョイントの影響率
+    uint4 jointIndices : BLENDINDICES0;// weightに対応するジョイント番号
 };
 
 VertexShaderOutput main(VertexShaderInput input)

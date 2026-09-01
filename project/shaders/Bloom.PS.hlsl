@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 互換用の単一パス版ブルーム。小規模な発光と色調補正を同時に適用する。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 周囲5x5画素を均等平均し、3x3版より広いぼかしを作る。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

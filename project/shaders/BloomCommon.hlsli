@@ -1,16 +1,17 @@
 #include "Fullscreen.hlsli"
 
+// 多段ブルームの抽出・ぼかし・拡大・合成パスで共有する入出力と補助関数。
 Texture2D<float32_t4> gTexture : register(t0);
 Texture2D<float32_t4> gSecondaryTexture : register(t1);
 SamplerState gSampler : register(s0);
 
 struct BloomParameter {
-    float32_t2 texelSize;
-    float32_t2 direction;
-    float32_t threshold;
-    float32_t intensity;
-    float32_t scatter;
-    float32_t padding;
+    float32_t2 texelSize; // 入力画像1画素分のUV幅
+    float32_t2 direction; // 分離ブラーの横・縦方向
+    float32_t threshold;  // 発光として抽出する輝度しきい値
+    float32_t intensity;  // 元画像へ戻す発光の強さ
+    float32_t scatter;    // 低解像度ブルームを広げる割合
+    float32_t padding;    // 定数バッファの16バイト境界用余白
 };
 
 ConstantBuffer<BloomParameter> gBloom : register(b0);
@@ -32,6 +33,7 @@ float32_t3 ApplySaturation(float32_t3 color, float32_t amount)
 
 float32_t3 ExtractBloom(float32_t3 color, float32_t threshold)
 {
+    // knee幅で境界を滑らかにつなぎ、しきい値付近のちらつきを抑える。
     float32_t brightness = max(max(color.r, color.g), color.b);
     float32_t knee = max(threshold * 0.42f, 0.0001f);
     float32_t soft = brightness - threshold + knee;

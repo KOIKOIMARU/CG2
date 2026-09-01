@@ -62,6 +62,7 @@ private:
         "resources/scene_01.json",
         "resources/scene_02.json"
     };
+    // 選択物の保存先と、生成候補としてUIへ表示するプレハブ一覧。
     std::array<const char*, 3> prefabFilePaths_{
         "resources/prefab_00.json",
         "resources/prefab_01.json",

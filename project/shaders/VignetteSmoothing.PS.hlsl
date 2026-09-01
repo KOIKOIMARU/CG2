@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 3x3ガウシアン平滑化とビネットを1パスで適用する。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

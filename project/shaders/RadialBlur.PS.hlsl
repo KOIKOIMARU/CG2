@@ -1,12 +1,13 @@
 #include "Fullscreen.hlsli"
 
+// 指定中心へ向かう複数点を平均し、速度演出用の放射ブラーを作る。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 
 struct RadialBlurParameter {
-    float32_t2 center;
-    float32_t blurWidth;
-    float32_t padding;
+    float32_t2 center;   // ブラーが収束するUV座標
+    float32_t blurWidth; // サンプル間隔を決める強度
+    float32_t padding;   // 定数バッファの16バイト境界用余白
 };
 
 ConstantBuffer<RadialBlurParameter> gRadialBlurParameter : register(b0);

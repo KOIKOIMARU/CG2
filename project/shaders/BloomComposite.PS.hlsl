@@ -1,5 +1,6 @@
 #include "BloomCommon.hlsli"
 
+// 元画像へブルームを合成し、フィルミックカーブと軽い色調補正で仕上げる。
 PixelShaderOutput main(VertexShaderOutput input)
 {
     float32_t3 baseColor = gTexture.Sample(gSampler, input.texcoord).rgb;

@@ -237,16 +237,15 @@ void Object3d::CreateTransformationMatrix() {
 void Object3d::CreateDirectionalLight() {
     auto dxCommon = object3dCommon_->GetDxCommon();
 
-    // 平行光源用 ConstantBuffer を作成
+    // オブジェクト単位でライト設定を上書きできるよう、専用定数バッファを持つ。
     directionalLightResource_ =
         dxCommon->CreateBufferResource(sizeof(DirectionalLight));
 
-    // Map
     directionalLightResource_->Map(
         0, nullptr,
         reinterpret_cast<void**>(&directionalLightData_));
 
-    // 初期化（資料準拠）
+    // 未設定でも白飛びしにくい昼光色と、影描画と一致する向きを既定値にする。
     directionalLightData_->color = { 1.0f, 0.985f, 0.955f, 1.0f };
     directionalLightData_->direction = Normalize({ 0.30f, -0.86f, 0.41f });
     directionalLightData_->intensity = 0.94f;
@@ -882,7 +881,6 @@ void Object3d::SetTextureFilePath(const std::string& textureFilePath)
     }
 }
 
-// ===== getter =====
 Vector3 Object3d::GetScale() const {
     return transform_.scale;
 }

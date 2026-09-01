@@ -1,5 +1,6 @@
 #include "BloomCommon.hlsli"
 
+// directionを横・縦に切り替えて使う、分離型ガウシアンぼかし。
 PixelShaderOutput main(VertexShaderOutput input)
 {
     float32_t2 stepUv = gBloom.texelSize * gBloom.direction;

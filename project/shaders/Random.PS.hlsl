@@ -1,11 +1,12 @@
 #include "Fullscreen.hlsli"
 
+// 時刻で変化する疑似乱数を画面色へ乗算し、ノイズ表現を作る。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 
 struct RandomParameter {
-    float32_t time;
-    float32_t3 padding;
+    float32_t time;     // ノイズ模様を変化させる累積時刻
+    float32_t3 padding; // 定数バッファの16バイト境界用余白
 };
 
 ConstantBuffer<RandomParameter> gRandomParameter : register(b0);

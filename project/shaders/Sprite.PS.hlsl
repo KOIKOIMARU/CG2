@@ -1,4 +1,4 @@
-// Sprite.PS.hlsl
+// UV変換後のテクスチャ色へ、スプライト固有のRGBA色を乗算する。
 
 struct VSOutput
 {
@@ -8,10 +8,10 @@ struct VSOutput
 
 cbuffer MaterialCB : register(b0)
 {
-    float4 gMaterialColor;
-    int gEnableLighting;
-    float3 gPadding;
-    float4x4 gUVTransform;
+    float4 gMaterialColor; // テクスチャへ乗算するRGBA色
+    int gEnableLighting;   // C++側Materialとのレイアウト互換用
+    float3 gPadding;       // 定数バッファ境界用の余白
+    float4x4 gUVTransform; // UVの拡縮・移動・反転
 };
 
 Texture2D<float4> gTexture : register(t0);

@@ -1,5 +1,6 @@
 #include "BloomCommon.hlsli"
 
+// 元画像を軽く平滑化してから、しきい値以上の高輝度成分だけを抽出する。
 PixelShaderOutput main(VertexShaderOutput input)
 {
     float32_t2 uv = input.texcoord;

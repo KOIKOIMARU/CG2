@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 深度差をビュー空間の距離差へ戻して、物体境界の輪郭を抽出する。
 Texture2D<float32_t4> gTexture : register(t0);
 Texture2D<float32_t> gDepthTexture : register(t1);
 SamplerState gSamplerLinear : register(s0);
@@ -7,7 +8,7 @@ SamplerState gSamplerPoint : register(s1);
 
 cbuffer DepthOutlineParameter : register(b0)
 {
-    float4x4 gProjectionInverse;
+    float4x4 gProjectionInverse; // NDC深度からビュー空間位置を復元する逆投影行列
 };
 
 struct PixelShaderOutput {

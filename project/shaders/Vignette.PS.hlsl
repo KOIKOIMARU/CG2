@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 画面中央を維持しながら四隅を暗くし、視線を中央へ誘導する。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

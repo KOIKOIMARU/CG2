@@ -21,6 +21,7 @@
 
 namespace {
 
+// モデルに画像指定がない場合も描画資源を常に有効にする既定テクスチャ。
 constexpr const char* kDefaultTextureFilePath = "resources/uvChecker.png";
 constexpr const char* kDefaultNormalTextureFilePath =
     "resources/default_normal.png";
@@ -110,6 +111,7 @@ void GenerateFallbackObjTexcoords(std::vector<VertexData>& vertices)
     const float height = (std::max)(maxPosition.y - minPosition.y, 0.001f);
     const float depth = (std::max)(maxPosition.z - minPosition.z, 0.001f);
 
+    // 最も正面を向く軸へ投影し、UVを持たないOBJにも破綻しにくい座標を与える。
     for (VertexData& vertex : vertices) {
         const float normalX = std::abs(vertex.normal.x);
         const float normalY = std::abs(vertex.normal.y);

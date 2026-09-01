@@ -22,14 +22,13 @@ namespace
 {
     struct ParticleVertex
     {
-        Vector4 position;
-        Vector2 texcoord;
+        Vector4 position; // ビルボード中心を原点とするローカル頂点位置
+        Vector2 texcoord; // 粒テクスチャを参照するUV座標
     };
 
-    // 板ポリ（2三角形 = 6頂点）※中心(0,0)・サイズ1想定。必要ならスケールはWVP側で。
+    // 全粒子で共有する一辺1の板。大きさと向きは頂点シェーダー側で決める。
     std::array<ParticleVertex, 6> MakeQuadVertices()
     {
-        // 左下(-0.5,-0.5) ～ 右上(0.5,0.5)
         return {
             ParticleVertex{ Vector4{-0.5f, -0.5f, 0.0f, 1.0f}, Vector2{0.0f, 1.0f} },
             ParticleVertex{ Vector4{-0.5f,  0.5f, 0.0f, 1.0f}, Vector2{0.0f, 0.0f} },
@@ -588,12 +587,9 @@ void ParticleManager::Draw()
 }
 
 
-// ======================================
-// 終了処理
-// ======================================
 void ParticleManager::Finalize()
 {
-    // Particle用SRV/UAVを解放
+    // 各グループが確保したディスクリプタを返してからGPU資源を破棄する。
     for (auto& [name, group] : particleGroups_) {
         ReleaseParticleGroupDescriptors(group);
     }
@@ -626,7 +622,7 @@ bool ParticleManager::CreateParticleGroup(
     if (!IsGpuPipelineReady()) {
         return false;
     }
-    // ① 既に存在していないかチェック
+    // 同名グループは共有資源として扱い、重複生成しない。
     if (particleGroups_.find(name) != particleGroups_.end()) {
         return true;
     }
@@ -634,18 +630,16 @@ bool ParticleManager::CreateParticleGroup(
         return false;
     }
 
-    // ② 空のグループを作成
     ParticleGroup group{};
 
-    // ③ テクスチャ設定
+    // テクスチャはTextureManagerの共有キャッシュを参照する。
     group.textureFilePath = textureFilePath;
 
-    // テクスチャ読み込み（事前ロードでもOK）
     TextureManager::GetInstance()->LoadTexture(textureFilePath);
     group.textureSrvIndex =
         TextureManager::GetInstance()->GetSrvIndex(textureFilePath);
 
-    // ④ Particle用 StructuredBuffer 作成
+    // 粒状態はCompute Shaderが更新するため、SRVとUAVの両方から参照できるようにする。
     group.particleResource =
         dxCommon_->CreateBufferResource(
             sizeof(ParticleCS) * kMaxInstanceCount_,
@@ -658,7 +652,7 @@ bool ParticleManager::CreateParticleGroup(
     group.needsInitialize = true;
     group.needsEmit = false;
 
-    // ⑤ 空きParticle番号を管理するFreeListIndexとFreeListを作成
+    // FreeListは未使用スロットを再利用し、発生中のGPUバッファ再確保を避ける。
     group.freeCounterResource =
         dxCommon_->CreateBufferResource(
             sizeof(int32_t),
@@ -676,7 +670,7 @@ bool ParticleManager::CreateParticleGroup(
         );
     group.freeListResourceState = D3D12_RESOURCE_STATE_COMMON;
 
-    // ⑥ Emitter情報をConstantBufferとして作成
+    // 発生条件はCPUから毎回書き換える定数バッファに保持する。
     group.emitterResource = dxCommon_->CreateBufferResource(256);
     if (!group.particleResource ||
         !group.freeCounterResource ||
@@ -710,13 +704,12 @@ bool ParticleManager::CreateParticleGroup(
     group.emitterData->emit = 0;
     group.emitterData->padding = 0.0f;
 
-    // ⑦ SRV/UAV 確保
+    // 粒状態の読込・書込とFreeListの書込に必要なディスクリプタをまとめて確保する。
     group.particleSrvIndex = srvManager_->Allocate();
     group.particleUavIndex = srvManager_->Allocate();
     group.freeCounterUavIndex = srvManager_->Allocate();
     group.freeListUavIndex = srvManager_->Allocate();
 
-    // ⑧ StructuredBuffer 用 SRV/UAV 作成
     srvManager_->CreateSRVforStructuredBuffer(
         group.particleSrvIndex,
         group.particleResource.Get(),
@@ -742,7 +735,7 @@ bool ParticleManager::CreateParticleGroup(
         sizeof(uint32_t)
     );
 
-    // ⑨ コンテナに登録
+    // すべてのGPU資源が揃ったグループだけを公開コンテナへ登録する。
     try {
         const auto [it, inserted] =
             particleGroups_.emplace(name, std::move(group));

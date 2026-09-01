@@ -1,42 +1,43 @@
+// FreeListから空きスロットを取得し、Emitter条件に従って新しい粒を生成する。
 static const uint kMaxParticles = 1024;
 
 struct Particle
 {
-    float3 translate;
-    float3 scale;
-    float lifeTime;
-    float3 velocity;
-    float currentTime;
-    float4 color;
-    float3 initialScale;
-    float endScale;
+    float3 translate;    // 現在のワールド位置
+    float3 scale;        // 現在の描画サイズ
+    float lifeTime;      // 生存する秒数
+    float3 velocity;     // 1秒あたりの移動量
+    float currentTime;   // 生成後の経過秒数
+    float4 color;        // 描画するRGBA色
+    float3 initialScale; // 生成時のサイズ
+    float endScale;      // 消滅時のサイズ倍率
 };
 
 struct EmitterSphere
 {
-    float3 translate;
-    float radius;
-    float3 direction;
-    float spread;
-    float4 colorMin;
-    float4 colorMax;
-    float2 scaleMin;
-    float2 scaleMax;
-    float lifeTimeMin;
-    float lifeTimeMax;
-    float speedMin;
-    float speedMax;
-    float endScale;
-    uint count;
-    uint emit;
-    float padding;
+    float3 translate;  // ワールド空間の発生中心
+    float radius;      // 球状発生範囲の半径
+    float3 direction;  // 飛翔の基準方向
+    float spread;      // 基準方向からのばらつき
+    float4 colorMin;   // 生成色の乱数下限
+    float4 colorMax;   // 生成色の乱数上限
+    float2 scaleMin;   // 生成サイズの乱数下限
+    float2 scaleMax;   // 生成サイズの乱数上限
+    float lifeTimeMin; // 寿命の乱数下限
+    float lifeTimeMax; // 寿命の乱数上限
+    float speedMin;    // 初速の乱数下限
+    float speedMax;    // 初速の乱数上限
+    float endScale;    // 消滅時のサイズ倍率
+    uint count;        // 今回生成する粒数
+    uint emit;         // 発生要求がある場合は1
+    float padding;     // 定数バッファ境界用の余白
 };
 
 struct PerFrame
 {
-    float time;
-    float deltaTime;
-    float2 padding;
+    float time;        // 初期化後の累積秒数
+    float deltaTime;   // 今フレームの経過秒数
+    float2 padding;    // 定数バッファ境界用の余白
 };
 
 float rand3dTo1d(float3 value)
@@ -72,8 +73,8 @@ class RandomGenerator
 };
 
 RWStructuredBuffer<Particle> gParticles : register(u0);
-RWStructuredBuffer<int> gFreeListIndex : register(u1);
-RWStructuredBuffer<uint> gFreeList : register(u2);
+RWStructuredBuffer<int> gFreeListIndex : register(u1); // FreeList末尾の有効番号
+RWStructuredBuffer<uint> gFreeList : register(u2);     // 未使用粒子のスロット番号
 ConstantBuffer<EmitterSphere> gEmitter : register(b0);
 ConstantBuffer<PerFrame> gPerFrame : register(b1);
 
@@ -119,7 +120,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         }
         else
         {
-            // 空きがないのに減らしてしまった分を戻して、このEmitを終える
+            // InterlockedAddで先に減らした分を戻し、FreeListの有効範囲を維持する。
             int unused;
             InterlockedAdd(gFreeListIndex[0], 1, unused);
             break;

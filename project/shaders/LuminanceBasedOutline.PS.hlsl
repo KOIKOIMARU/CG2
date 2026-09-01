@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 周辺画素との輝度差をPrewittフィルターで検出し、輪郭を暗くする。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

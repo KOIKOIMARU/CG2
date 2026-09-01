@@ -2,7 +2,7 @@
 #include <d3d12.h>
 #include <wrl.h>
 
-class DirectXCommon;   // 前方宣言
+class DirectXCommon;
 class TextureManager;
 class SrvManager;
 
@@ -32,8 +32,6 @@ private:
     DirectXCommon* dxCommon_ = nullptr; // デバイスとコマンドリストの借用先
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_; // スプライト用ルート引数定義
-
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_; // スプライト用PSO
-
-    SrvManager* srvManager_ = nullptr; // テクスチャSRVを設定する借用先
+    SrvManager* srvManager_ = nullptr;                          // テクスチャSRVを設定する借用先
 };

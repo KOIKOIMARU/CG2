@@ -35,24 +35,22 @@ public:
         float endScale = 1.0f;                              // 消滅直前の初期サイズに対する倍率
     };
 
-    // ===== シングルトン =====
     static ParticleManager* GetInstance();
 
-    // コピー禁止
     ParticleManager(const ParticleManager&) = delete;
     ParticleManager& operator=(const ParticleManager&) = delete;
 
-    // ===== 初期化 / 終了 =====
+    // 描画・Compute処理に必要な共通GPU資源を生成・破棄する。
     void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager);
     void Finalize();
 
-    // ===== 更新 / 描画 =====
+    // UpdateはCompute処理、Drawは更新済み粒子のインスタンシング描画を記録する。
     void Update(const Math::Matrix4x4& viewMatrix,
         const Math::Matrix4x4& projectionMatrix);
 
     void Draw();
 
-    // ===== パーティクル発生 =====
+    // グループ名は生成・発生・削除で共通の識別子として使用する。
     bool CreateParticleGroup(const std::string& name,
         const std::string& textureFilePath,
         const EmitSettings& settings = {});
@@ -116,9 +114,7 @@ private:
         Math::Vector2 padding;  // 16バイト境界にそろえる余白
     };
 
-    // ============================
-    // パーティクルグループ
-    // ============================
+    // 1種類の見た目と発生設定に対応するGPU資源一式。
     struct ParticleGroup
     {
         std::string textureFilePath;       // 粒の描画に使うテクスチャ

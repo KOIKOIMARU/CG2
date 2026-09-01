@@ -1,13 +1,14 @@
 #include "Fullscreen.hlsli"
 
+// ノイズマスクをしきい値で切り抜き、境界に発光色を加える。
 Texture2D<float32_t4> gTexture : register(t0);
 Texture2D<float32_t> gMaskTexture : register(t1);
 SamplerState gSampler : register(s0);
 
 struct DissolveParameter {
-    float32_t threshold;
-    float32_t edgeWidth;
-    float32_t2 padding;
+    float32_t threshold; // 0～1の消滅進行度
+    float32_t edgeWidth; // 切り抜き境界の発光幅
+    float32_t2 padding;  // 定数バッファの16バイト境界用余白
 };
 
 ConstantBuffer<DissolveParameter> gDissolveParameter : register(b0);

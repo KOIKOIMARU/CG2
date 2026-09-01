@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 中心に近い画素ほど強く重み付けする3x3ガウシアンぼかし。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

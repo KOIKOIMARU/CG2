@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// アンチエイリアス、遠景安定化、霧、露出、色調を1パスで仕上げる統合ポストエフェクト。
 Texture2D<float32_t4> gTexture : register(t0);
 Texture2D<float32_t> gDepthTexture : register(t1);
 SamplerState gSamplerLinear : register(s0);
@@ -7,19 +8,19 @@ SamplerState gSamplerPoint : register(s1);
 
 cbuffer GameToneParameter : register(b0)
 {
-    float32_t4x4 gProjectionInverse;
-    float32_t vignetteStrength;
-    float32_t saturation;
-    float32_t contrast;
-    float32_t damageTint;
-    float32_t fogStart;
-    float32_t fogEnd;
-    float32_t fogStrength;
-    float32_t horizonFogStrength;
-    float32_t exposure;
-    float32_t blackPoint;
-    float32_t highlightCompression;
-    float32_t colorTemperature;
+    float32_t4x4 gProjectionInverse; // NDC深度からビュー空間位置を復元する逆投影行列
+    float32_t vignetteStrength;      // 画面周辺を暗くする強さ
+    float32_t saturation;            // 色の鮮やかさ
+    float32_t contrast;              // 明暗差
+    float32_t damageTint;            // 被弾色の合成率
+    float32_t fogStart;              // 距離霧を開始するビュー空間距離
+    float32_t fogEnd;                // 距離霧が最大になるビュー空間距離
+    float32_t fogStrength;           // 距離霧の最大合成率
+    float32_t horizonFogStrength;    // 地平線付近へ追加する霧の強さ
+    float32_t exposure;              // 画面全体の露出倍率
+    float32_t blackPoint;            // 黒として締める入力しきい値
+    float32_t highlightCompression;  // 高輝度の白飛びを抑える量
+    float32_t colorTemperature;      // 負で寒色、正で暖色へ寄せる補正量
 };
 
 struct PixelShaderOutput {

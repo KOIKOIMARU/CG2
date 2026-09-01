@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 人間の明るさ知覚に合わせた輝度へRGBを変換し、グレースケール化する。
 Texture2D<float32_t4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 

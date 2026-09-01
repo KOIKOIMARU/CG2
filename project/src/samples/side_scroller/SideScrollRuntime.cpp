@@ -17,13 +17,13 @@
 
 namespace {
 
-constexpr float kGameplayDepth = 0.0f;
-constexpr float kMoveSpeed = 6.0f;
-constexpr float kJumpSpeed = 8.5f;
-constexpr float kGravity = -22.0f;
-constexpr float kMinimumPlayerY = -8.0f;
-constexpr float kCameraFollowSpeed = 5.5f;
-constexpr float kCameraLookAhead = 1.8f;
+constexpr float kGameplayDepth = 0.0f;   // 2.5D操作面として固定するZ座標
+constexpr float kMoveSpeed = 6.0f;       // 左右移動速度（ワールド単位/秒）
+constexpr float kJumpSpeed = 8.5f;       // ジャンプ開始時の上向き速度
+constexpr float kGravity = -22.0f;       // 1秒あたりの下向き加速度
+constexpr float kMinimumPlayerY = -8.0f; // 落下時に初期位置へ戻すY座標
+constexpr float kCameraFollowSpeed = 5.5f; // 追従補間の応答速度
+constexpr float kCameraLookAhead = 1.8f;   // プレイヤーより先を映すX方向距離
 
 } // namespace
 

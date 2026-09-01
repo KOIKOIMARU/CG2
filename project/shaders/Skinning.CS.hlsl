@@ -1,31 +1,32 @@
 #include "Object3d.hlsli"
 
+// 頂点スキニングをGPUで並列処理し、通常描画用の頂点バッファへ書き出す。
 struct Vertex
 {
-    float4 position;
-    float2 texcoord;
-    float3 normal;
+    float4 position; // 変形前のモデル空間位置
+    float2 texcoord; // 変形せず出力へ引き継ぐUV座標
+    float3 normal;   // 変形前のモデル空間法線
 };
 
 struct VertexInfluence
 {
-    float4 weight;
-    int4 index;
+    float4 weight; // 最大4ジョイントの影響率
+    int4 index;    // weightに対応するジョイント番号
 };
 
 struct OutputVertex
 {
-    float4 position;
-    float2 texcoord;
-    float3 normal;
-    float4 weight;
-    uint4 jointIndices;
+    float4 position;    // 現在姿勢へ変形済みの頂点位置
+    float2 texcoord;    // 元頂点のUV座標
+    float3 normal;      // 現在姿勢へ変形済みの法線
+    float4 weight;      // 後段とのレイアウト互換用の影響率
+    uint4 jointIndices; // 後段とのレイアウト互換用のジョイント番号
 };
 
 cbuffer SkinningInformation : register(b0)
 {
-    uint gNumVertices;
-    float3 gSkinningInformationPadding;
+    uint gNumVertices;                  // 実際に処理する頂点数
+    float3 gSkinningInformationPadding; // 定数バッファ境界用の余白
 };
 
 StructuredBuffer<WellForGPU> gMatrixPalette : register(t0);

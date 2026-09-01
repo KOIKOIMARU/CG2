@@ -1,11 +1,12 @@
 #include "Object3d.hlsli"
 
+// テクスチャを使わず、単色マテリアルと平行光源だけで陰影を付ける。
 cbuffer MaterialCB : register(b0)
 {
     float4 gMaterialColor;
     int gEnableLighting;
     float3 padding;
-    float4x4 uvTransform; // 未使用
+    float4x4 uvTransform; // C++側Materialとのレイアウト互換用
 };
 
 cbuffer DirectionalLightCB : register(b3)

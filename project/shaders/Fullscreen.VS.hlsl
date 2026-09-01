@@ -1,5 +1,6 @@
 #include "Fullscreen.hlsli"
 
+// 頂点バッファを使わず、SV_VertexIDから画面全体を覆う三角形を生成する。
 static const uint32_t kNumVertex = 3;
 static const float32_t4 kPositions[kNumVertex] = {
     { -1.0f, 1.0f, 0.0f, 1.0f },

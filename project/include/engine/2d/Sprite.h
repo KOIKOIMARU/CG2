@@ -16,24 +16,24 @@ public:
     void Update();
     void Draw();
 
-    // セッター
+    // positionとsizeはクライアント領域のピクセル単位、rotationはラジアンで指定する。
     void SetPosition(const Math::Vector2& position) { position_ = position; }
     void SetRotation(float rotation) { rotation_ = rotation; }
     void SetSize(const Math::Vector2& size) { size_ = size; }
     void SetColor(const Math::Vector4& color) { materialData_->color = color; }
 
-    // -------- アンカーポイント --------
+    // アンカーは画像左上(0,0)～右下(1,1)の正規化座標で指定する。
     const Math::Vector2& GetAnchorPoint() const { return anchorPoint_; }
     void SetAnchorPoint(const Math::Vector2& p) { anchorPoint_ = p; }
 
-    // -------- UVスケール / 移動 --------
+    // UV変換は元画像に対する倍率と平行移動量で指定する。
     void SetUVScale(const Math::Vector2& scale) { uvScale_ = scale; }
     const Math::Vector2& GetUVScale() const { return uvScale_; }
 
     void SetUVTranslate(const Math::Vector2& trans) { uvTranslate_ = trans; }
     const Math::Vector2& GetUVTranslate() const { return uvTranslate_; }
 
-    // -------- フリップ --------
+    // 反転はUV座標を入れ替え、表示位置やサイズには影響しない。
     void SetFlipX(bool flag) { isFlipX_ = flag; }
     void SetFlipY(bool flag) { isFlipY_ = flag; }
 
@@ -63,20 +63,18 @@ private:
     void CreateMaterialData();
     void CreateTransformData();
 
-    // テクスチャサイズから切り出し範囲＆スプライトサイズを初期化
+    // 元画像の寸法を初期表示サイズへ反映する。
     void AdjustTextureSize();
 
 private:
-    // ルートシグネチャ、PSO、DirectX基盤を提供する非所有ポインタ。
-    SpriteCommon* spriteCommon_ = nullptr;
+    SpriteCommon* spriteCommon_ = nullptr; // 共有PSOと描画基盤を提供する借用先
 
-    // 四角形の頂点／インデックスと、それらを参照する描画ビュー。
-    Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> indexResource_;
-    VertexData* vertexData_ = nullptr;
-    uint32_t* indexData_ = nullptr;
-    D3D12_VERTEX_BUFFER_VIEW vertexBufferView_{};
-    D3D12_INDEX_BUFFER_VIEW  indexBufferView_{};
+    Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_; // 四角形の頂点バッファ
+    Microsoft::WRL::ComPtr<ID3D12Resource> indexResource_;  // 四角形のインデックスバッファ
+    VertexData* vertexData_ = nullptr;                       // 頂点バッファのCPU書込み先
+    uint32_t* indexData_ = nullptr;                          // インデックスバッファのCPU書込み先
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView_{};            // 頂点バッファの描画ビュー
+    D3D12_INDEX_BUFFER_VIEW indexBufferView_{};              // インデックスバッファの描画ビュー
 
     Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_; // マテリアル定数バッファ。
     Material* materialData_ = nullptr; // materialResource_をCPUから更新するマップ先。
@@ -94,14 +92,9 @@ private:
     std::string textureFilePath_; // TextureManagerへ問い合わせるキャッシュキー。
 
 
-    // 画像内の回転・配置基準。左上が(0,0)、右下が(1,1)。
-    Math::Vector2 anchorPoint_{ 0.0f, 0.0f };
-
-    // UV 切り出し（スケール / 平行移動）
-    Math::Vector2 uvScale_ = { 1.0f, 1.0f };
-    Math::Vector2 uvTranslate_ = { 0.0f, 0.0f };
-
-    // 反転フラグ
-    bool isFlipX_ = false;
-    bool isFlipY_ = false;
+    Math::Vector2 anchorPoint_{ 0.0f, 0.0f }; // 画像内の回転・配置基準となる正規化座標
+    Math::Vector2 uvScale_ = { 1.0f, 1.0f };  // 元画像から切り出すUV範囲の倍率
+    Math::Vector2 uvTranslate_ = { 0.0f, 0.0f }; // 元画像内のUV開始位置
+    bool isFlipX_ = false; // 水平方向に画像を反転するか
+    bool isFlipY_ = false; // 垂直方向に画像を反転するか
 };

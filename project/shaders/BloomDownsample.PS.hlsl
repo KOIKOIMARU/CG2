@@ -1,5 +1,6 @@
 #include "BloomCommon.hlsli"
 
+// 周辺画素を平均しながら縮小し、広い発光を低コストで作る入力にする。
 PixelShaderOutput main(VertexShaderOutput input)
 {
     float32_t2 texel = gBloom.texelSize;

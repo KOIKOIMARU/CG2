@@ -30,6 +30,7 @@
 // プレイモードへの切り替え、デバッグカメラをこのクラスで調停する。
 namespace {
 
+// Inspectorのモデル選択番号は、この表示順と一致する。
 constexpr const char* kInspectorModelItems[] = {
     "primitive_plane",
     "primitive_ring",
@@ -47,14 +48,14 @@ constexpr const char* kInspectorModelItems[] = {
 };
 
 constexpr const char* kSceneFilePath =
-"resources/editor_default_scene.json";
+"resources/editor_default_scene.json"; // エディター起動時に読む既定シーン
 constexpr const char* kEditorSettingsPath =
-"resources/editor_settings.json";
-constexpr size_t kMaxTransformHistoryCount = 64;
-constexpr float kTransformHistoryEpsilon = 0.0001f;
-constexpr Math::Vector3 kGameCameraRotate = { 0.15f, 0.0f, 0.0f };
-constexpr Math::Vector3 kGameCameraTranslate = { 0.0f, 2.5f, -13.0f };
-constexpr float kGameCameraFovY = 0.5f;
+"resources/editor_settings.json"; // パネルやカメラ設定の保存先
+constexpr size_t kMaxTransformHistoryCount = 64; // Undo/Redoで保持する最大操作数
+constexpr float kTransformHistoryEpsilon = 0.0001f; // 変換値の変更とみなす最小差
+constexpr Math::Vector3 kGameCameraRotate = { 0.15f, 0.0f, 0.0f }; // 既定カメラ角度
+constexpr Math::Vector3 kGameCameraTranslate = { 0.0f, 2.5f, -13.0f }; // 既定カメラ位置
+constexpr float kGameCameraFovY = 0.5f; // 既定の垂直視野角（ラジアン）
 
 bool IsSameVector3(const Math::Vector3& lhs, const Math::Vector3& rhs)
 {

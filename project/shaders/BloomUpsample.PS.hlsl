@@ -1,5 +1,6 @@
 #include "BloomCommon.hlsli"
 
+// 細い発光へ低解像度の広い発光を加え、多段ブルームを再構成する。
 PixelShaderOutput main(VertexShaderOutput input)
 {
     float32_t3 fineBloom = gTexture.Sample(gSampler, input.texcoord).rgb;

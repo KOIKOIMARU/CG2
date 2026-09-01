@@ -18,6 +18,7 @@ namespace {
 
 #ifdef USE_IMGUI
 
+// 1280x720基準でエディターパネルを分割する固定レイアウト値。
 constexpr float kEditorToolbarHeight = 54.0f;
 constexpr float kEditorHierarchyWidth = 240.0f;
 constexpr float kEditorInspectorWidth = 330.0f;
@@ -36,6 +37,7 @@ constexpr float kEditorProjectY =
 constexpr float kEditorInspectorX = kEditorClientWidth - kEditorInspectorWidth;
 constexpr float kDegreesToRadians = 0.017453292519943295f;
 
+// Projectパネルに表示し、Inspectorへドラッグできる組み込みモデル一覧。
 constexpr const char* kProjectModelAssets[] = {
     "primitive_plane",
     "primitive_ring",
@@ -52,6 +54,7 @@ constexpr const char* kProjectModelAssets[] = {
     "human/walk.gltf"
 };
 
+// Projectパネルに表示し、マテリアルへドラッグできるテクスチャ一覧。
 constexpr const char* kProjectTextureAssets[] = {
     "resources/uvChecker.png",
     "resources/checkerBoard.png",
@@ -62,9 +65,9 @@ constexpr const char* kProjectTextureAssets[] = {
 };
 
 struct ViewportImageRect {
-    ImVec2 min{};
-    ImVec2 max{};
-    bool isValid = false;
+    ImVec2 min{};         // ゲーム画像の左上スクリーン座標
+    ImVec2 max{};         // ゲーム画像の右下スクリーン座標
+    bool isValid = false; // 今フレームに画像が描かれたか
 };
 
 ImGuizmo::OPERATION ToImGuizmoOperation(int gizmoMode)

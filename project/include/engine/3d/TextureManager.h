@@ -33,7 +33,7 @@ public:
         uint8_t alpha = 255);
     void CreateSkyGradientCubeTexture(const std::string& name);
 
-    // ===== getter =====
+    // 登録済みテクスチャの画像情報とSRV番号を返す。未登録パスは例外になる。
     const DirectX::TexMetadata& GetMetaData(const std::string& filePath);
     uint32_t GetSrvIndex(const std::string& filePath);
 

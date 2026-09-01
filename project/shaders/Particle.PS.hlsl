@@ -1,3 +1,4 @@
+// 粒テクスチャとGPU上で更新された頂点色を乗算して描画する。
 struct VertexOut
 {
     float4 position : SV_POSITION;

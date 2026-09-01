@@ -1,5 +1,6 @@
 #include "Object3d.hlsli" 
 
+// テクスチャ、直接光、環境光、法線マップ、影を統合する通常3D描画用シェーダー。
 cbuffer MaterialCB : register(b0)
 {
     Material gMaterial;
@@ -39,6 +40,7 @@ struct PixelShaderOutput
 
 float CalculateDirectionalShadow(float3 worldPosition, float3 normal, float3 lightToSurface)
 {
+    // 4点PCFで影境界を平滑化し、biasで自己シャドウのちらつきを抑える。
     if (gDirectionalLight.shadowMapEnabled < 0.5f ||
         gDirectionalLight.shadowStrength <= 0.001f)
     {

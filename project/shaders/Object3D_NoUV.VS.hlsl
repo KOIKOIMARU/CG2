@@ -1,3 +1,4 @@
+// UVを持たない単色モデルを通常3Dパイプラインへ渡す頂点シェーダー。
 struct VSInput
 {
     float4 position : POSITION;
@@ -7,7 +8,7 @@ struct VSInput
 struct VertexShaderOutput
 {
     float4 position : SV_POSITION;
-    float2 texcoord : TEXCOORD0; // UVなしでも共通構造のため必要
+    float2 texcoord : TEXCOORD0; // Pixel Shaderとの共通入出力を保つダミーUV
     float3 normal : NORMAL0;
 };
 
@@ -22,6 +23,6 @@ VertexShaderOutput main(VSInput input)
     VertexShaderOutput output;
     output.position = mul(input.position, WVP);
     output.normal = mul((float3x3) World, input.normal);
-    output.texcoord = float2(0.0f, 0.0f); // ダミー
+    output.texcoord = float2(0.0f, 0.0f);
     return output;
 }

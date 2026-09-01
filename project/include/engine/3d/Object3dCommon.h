@@ -119,7 +119,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> shadowMapResource_; // ライト視点の深度を保存する画像
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> shadowMapDsvHeap_; // 影マップ専用DSVヒープ
     D3D12_RESOURCE_STATES shadowMapState_ =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE; // 影画像の現在のリソース状態
     D3D12_VIEWPORT shadowViewport_{}; // 影マップ全面へ描画するビューポート
     D3D12_RECT shadowScissorRect_{};  // 影マップ全面のシザー矩形
     Math::Matrix4x4 shadowLightViewProjection_ = Math::MakeIdentity4x4(); // ライト視点の変換

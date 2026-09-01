@@ -8,12 +8,12 @@
 #include <cstdint>
 #include <fstream>
 #include <format>
-#include <dxcapi.h>            // DXC（dxcUtils, dxcCompiler, IncludeHandler）
-#include <vector>              // arguments 用
-#include <string>              // wstring
+#include <dxcapi.h>
+#include <vector>
+#include <string>
 #include <chrono>
 #include <stdexcept>
-#include <thread>   // sleep_for 用
+#include <thread>
 
 
 #include "imgui.h"
@@ -30,6 +30,7 @@ using Logger::Log;
 
 namespace {
 
+// シーンが何も描かない領域に使用する、線形空間の背景色。
 constexpr Math::Vector4 kRenderTextureClearColor{ 0.04f, 0.06f, 0.09f, 1.0f };
 
 float ToMilliseconds(
@@ -1055,9 +1056,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
 {
     HRESULT hr = S_OK;
 
-    // ============================
-    // 1) ファイルパス → 絶対パス
-    // ============================
+    // 相対表記の違いで同じシェーダーを重複コンパイルしないよう、絶対パスへ正規化する。
     std::filesystem::path absPath = std::filesystem::absolute(filePath);
 
     if (!std::filesystem::exists(absPath)) {
@@ -1078,9 +1077,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
         return cachedShader->second;
     }
 
-    // ============================
-    // 2) ファイル読み込み
-    // ============================
+    // ソースはプロジェクト規約どおりUTF-8としてDXCへ渡す。
     Microsoft::WRL::ComPtr<IDxcBlobEncoding> shaderSource = nullptr;
     hr = dxcUtils_->LoadFile(absPath.c_str(), nullptr, &shaderSource);
     if (FAILED(hr)) {
@@ -1095,9 +1092,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
     shaderBuffer.Size = shaderSource->GetBufferSize();
     shaderBuffer.Encoding = DXC_CP_UTF8;
 
-    // ============================
-    // 3) コンパイル引数の準備
-    // ============================
+    // デバッグ時にGPU診断から元のHLSL行を追えるよう、デバッグ情報を埋め込む。
     LPCWSTR args[] = {
         absPath.c_str(),      // ファイル名
         L"-E", L"main",       // エントリーポイント
@@ -1123,9 +1118,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
             static_cast<uint32_t>(hr)));
     }
 
-    // ============================
-    // 4) エラーメッセージ取り出し
-    // ============================
+    // DXCはCompile自体が成功しても診断を返すため、内容があれば初期化失敗として扱う。
     Microsoft::WRL::ComPtr<IDxcBlobUtf8> errorBlob = nullptr;
     result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errorBlob), nullptr);
 
@@ -1138,9 +1131,7 @@ Microsoft::WRL::ComPtr<IDxcBlob> DirectXCommon::CompileShader(
         throw std::runtime_error(message);
     }
 
-    // ============================
-    // 5) 成功したバイナリの取得
-    // ============================
+    // 成功したバイナリはパスとプロファイルの組で共有し、PSO生成時の再コンパイルを防ぐ。
     Microsoft::WRL::ComPtr<IDxcBlob> shaderBlob = nullptr;
     result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
 
@@ -2180,7 +2171,7 @@ void DirectXCommon::UploadTextureData(
 
     HRESULT hr{};
 
-    // ① 単発転送の場合だけ、専用コマンドを作成
+    // Batch中は共有リストへ追記し、単発時だけ専用リストを生成してその場で完了を待つ。
     ComPtr<ID3D12CommandAllocator> uploadAllocator;
     ComPtr<ID3D12GraphicsCommandList> uploadList;
     ID3D12GraphicsCommandList* destinationList = textureUploadBatchList_.Get();
@@ -2203,7 +2194,7 @@ void DirectXCommon::UploadTextureData(
     }
     assert(destinationList);
 
-    // ② サブリソース情報を作成
+    // ミップや配列面をD3D12のサブリソース列へ展開する。
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     DirectX::PrepareUpload(
         device_.Get(),
@@ -2212,7 +2203,7 @@ void DirectXCommon::UploadTextureData(
         mipImages.GetMetadata(),
         subresources);
 
-    // 中間アップロードバッファ
+    // COPY_SOURCEとして使う中間バッファはGPUコピー完了まで生存させる。
     UINT64 intermediateSize =
         GetRequiredIntermediateSize(
             texture.Get(), 0,
@@ -2221,7 +2212,7 @@ void DirectXCommon::UploadTextureData(
     auto intermediate =
         CreateBufferResource(static_cast<size_t>(intermediateSize));
 
-    // ③ UpdateSubresources で COPY_DEST にコピー
+    // 全サブリソースのコピーと、シェーダー参照状態への遷移を同じリストへ記録する。
     UpdateSubresources(
         destinationList,
         texture.Get(),
@@ -2230,7 +2221,6 @@ void DirectXCommon::UploadTextureData(
         static_cast<UINT>(subresources.size()),
         subresources.data());
 
-    // コピー完了後、テクスチャを SHADER_RESOURCE 用に遷移
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
     barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
@@ -2245,14 +2235,13 @@ void DirectXCommon::UploadTextureData(
         return;
     }
 
-    // ④ コマンドを閉じて実行
+    // 単発転送はここで送信し、中間バッファを破棄する前にGPU完了を保証する。
     hr = uploadList->Close();
     CheckDeviceOperation(hr, "TextureUpload CommandList::Close");
 
     ID3D12CommandList* lists[] = { uploadList.Get() };
     commandQueue_->ExecuteCommandLists(_countof(lists), lists);
 
-    // ⑤ フェンスで GPU 完了を待つ
     fenceValue_++;
     hr = commandQueue_->Signal(fence_.Get(), fenceValue_);
     CheckDeviceOperation(hr, "TextureUpload CommandQueue::Signal");

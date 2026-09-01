@@ -1,5 +1,6 @@
 #include "Object3d.hlsli"
 
+// ライト視点の深度だけを描く影マップ生成用頂点シェーダー。
 cbuffer TransformCB : register(b1)
 {
     float4x4 gWVP;

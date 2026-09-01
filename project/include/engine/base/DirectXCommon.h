@@ -60,7 +60,7 @@ public:
     IDxcCompiler3* GetDxcCompiler() const { return dxcCompiler_.Get(); }
     IDxcIncludeHandler* GetDxcIncludeHandler() const { return dxcIncludeHandler_.Get(); }
 
-    // バッファリソース生成
+    // CPU書込み用または指定ヒープ上の汎用バッファを生成する。
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(size_t sizeInBytes);
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(
         size_t sizeInBytes,
@@ -68,7 +68,7 @@ public:
         D3D12_RESOURCE_STATES initialState,
         D3D12_RESOURCE_FLAGS resourceFlags = D3D12_RESOURCE_FLAG_NONE);
 
-    // テクスチャリソース生成
+    // metadataと同じ寸法・形式を持つGPUテクスチャを生成する。
     Microsoft::WRL::ComPtr<ID3D12Resource>
         CreateTextureResource(const DirectX::TexMetadata& metadata);
 
@@ -83,7 +83,7 @@ public:
     D3D12_GPU_DESCRIPTOR_HANDLE GetRenderTextureGpuDescriptorHandle() const;
     Math::Vector2 GetRenderTextureSize() const;
 
-    // テクスチャデータ転送
+    // Batchで囲むと複数テクスチャの転送を1回のGPU待機へまとめられる。
     void UploadTextureData(
         const Microsoft::WRL::ComPtr<ID3D12Resource>& texture,
         const DirectX::ScratchImage& mipImages);
@@ -102,12 +102,12 @@ public:
         const std::wstring& filePath,
         const wchar_t* profile);
 
-	// テクスチャ読み込み（static／外から使う便利版）
+    // 画像ファイルを読み、ミップマップ生成済みのCPU画像を返す。
     static DirectX::ScratchImage LoadTexture(
         const std::string& filePath,
         bool forceSrgb = true);
 
-    // デスクリプタヒープ生成関数（内部用）
+    // 指定した用途と個数のディスクリプタヒープを生成する。
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(
         D3D12_DESCRIPTOR_HEAP_TYPE heapType,
         UINT numDescriptors,
@@ -282,9 +282,9 @@ private:
     uint32_t depthTextureSrvIndex_ = 0;      // 深度画像のSRV番号
     uint32_t dissolveMaskTextureSrvIndex_ = 0; // ディゾルブ用ノイズ画像のSRV番号
     D3D12_RESOURCE_STATES renderTextureState_ =
-        D3D12_RESOURCE_STATE_RENDER_TARGET;
+        D3D12_RESOURCE_STATE_RENDER_TARGET; // シーン中間画像の現在状態
     D3D12_RESOURCE_STATES postEffectTextureState_ =
-        D3D12_RESOURCE_STATE_RENDER_TARGET;
+        D3D12_RESOURCE_STATE_RENDER_TARGET; // エフェクト中間画像の現在状態
 
     UINT rtvDescriptorSize_ = 0; // RTVヒープ内の1要素分のバイト間隔
     UINT dsvDescriptorSize_ = 0; // DSVヒープ内の1要素分のバイト間隔

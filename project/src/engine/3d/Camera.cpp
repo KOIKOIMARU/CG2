@@ -93,7 +93,6 @@ void Camera::SetOrthographicHeight(float value) {
     }
 }
 
-// ===== getter =====
 const Matrix4x4& Camera::GetWorldMatrix() const {
     return worldMatrix;
 }
