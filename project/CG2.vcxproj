@@ -166,12 +166,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\app\GameScene.cpp" />
     <ClCompile Include="src\engine\scene\EditorScene.cpp" />
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp" />
+    <ClCompile Include="src\engine\collision\Collision.cpp" />
     <ClCompile Include="src\engine\editor\EditorManager.cpp" />
     <ClCompile Include="src\engine\editor\EditorPlayController.cpp" />
     <ClCompile Include="src\engine\base\Framework.cpp" />
     <ClCompile Include="src\samples\rail_shooter\Bullet.cpp" />
     <ClCompile Include="src\samples\rail_shooter\Enemy.cpp" />
     <ClCompile Include="src\samples\rail_shooter\GameRuntime.cpp" />
+    <ClCompile Include="src\samples\side_scroller\SideScrollRuntime.cpp" />
     <ClCompile Include="src\app\MyGame.cpp" />
     <ClCompile Include="src\samples\rail_shooter\Player.cpp" />
     <ClCompile Include="src\engine\audio\SoundManager.cpp" />
@@ -217,6 +219,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\engine\3d\ResourceObject.cpp" />
     <ClCompile Include="src\engine\base\WinApp.cpp" />
     <ClCompile Include="src\engine\io\Input.cpp" />
+    <ClCompile Include="src\engine\io\InputActionMap.cpp" />
     <ClCompile Include="src\engine\base\StringUtility.cpp" />
     <ClCompile Include="src\engine\3d\TextureManager.cpp" />
     <ClCompile Include="src\engine\base\SrvManager.cpp">
@@ -418,6 +421,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\app\GameScene.h" />
     <ClInclude Include="include\engine\scene\EditorScene.h" />
     <ClInclude Include="include\engine\scene\SceneSerializer.h" />
+    <ClInclude Include="include\engine\collision\Collision.h" />
     <ClInclude Include="include\engine\editor\EditorManager.h" />
     <ClInclude Include="include\engine\editor\EditorPlayController.h" />
     <ClInclude Include="include\engine\editor\IEditorPlayRuntime.h" />
@@ -456,6 +460,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\ResourceObject.h" />
     <ClInclude Include="include\engine\base\WinApp.h" />
     <ClInclude Include="include\engine\io\Input.h" />
+    <ClInclude Include="include\engine\io\InputActionMap.h" />
     <ClInclude Include="include\engine\base\Logger.h" />
     <ClInclude Include="include\engine\base\Math.h" />
     <ClInclude Include="include\engine\3d\Object3d.h" />
@@ -470,6 +475,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\samples\rail_shooter\Bullet.h" />
     <ClInclude Include="include\samples\rail_shooter\Enemy.h" />
     <ClInclude Include="include\samples\rail_shooter\GameRuntime.h" />
+    <ClInclude Include="include\samples\side_scroller\SideScrollRuntime.h" />
     <ClInclude Include="include\app\MyGame.h" />
     <ClInclude Include="include\samples\rail_shooter\Player.h" />
     <ClInclude Include="resource.h" />

@@ -40,6 +40,9 @@
     <Filter Include="src\samples\rail_shooter">
       <UniqueIdentifier>{60a8c8f5-45dc-4ea8-a7fb-c397996b55de}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\samples\side_scroller">
+      <UniqueIdentifier>{26f9959d-f06c-47f2-aa26-482595380ad0}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\engine">
       <UniqueIdentifier>{2d3be6c6-d76e-47da-ad6d-05e289153934}</UniqueIdentifier>
     </Filter>
@@ -100,6 +103,9 @@
     <Filter Include="src\engine\editor">
       <UniqueIdentifier>{efeb9ce3-9cf2-4730-8b6b-8fdcf75908dc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\engine\collision">
+      <UniqueIdentifier>{8e7ad999-c3c9-47f9-ad39-748060ea9d01}</UniqueIdentifier>
+    </Filter>
     <Filter Include="include\app">
       <UniqueIdentifier>{ec19c3a1-1317-4b46-bfe5-011156ee37e3}</UniqueIdentifier>
     </Filter>
@@ -109,8 +115,14 @@
     <Filter Include="include\samples\rail_shooter">
       <UniqueIdentifier>{dbe8d65b-0a13-4a4e-bd49-c528370009df}</UniqueIdentifier>
     </Filter>
+    <Filter Include="include\samples\side_scroller">
+      <UniqueIdentifier>{4210f755-5811-4538-8973-90549fd4d988}</UniqueIdentifier>
+    </Filter>
     <Filter Include="include\engine\editor">
       <UniqueIdentifier>{cf6cfd83-4227-4b29-bb70-e69e2dcfd395}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\engine\collision">
+      <UniqueIdentifier>{8ce47b84-51f4-430f-9c85-0655112e8e52}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -252,6 +264,9 @@
     <ClCompile Include="src\samples\rail_shooter\GameRuntime.cpp">
       <Filter>src\samples\rail_shooter</Filter>
     </ClCompile>
+    <ClCompile Include="src\samples\side_scroller\SideScrollRuntime.cpp">
+      <Filter>src\samples\side_scroller</Filter>
+    </ClCompile>
     <ClCompile Include="src\samples\rail_shooter\Player.cpp">
       <Filter>src\samples\rail_shooter</Filter>
     </ClCompile>
@@ -263,6 +278,12 @@
     </ClCompile>
     <ClCompile Include="src\engine\scene\SceneSerializer.cpp">
       <Filter>src\engine\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\collision\Collision.cpp">
+      <Filter>src\engine\collision</Filter>
+    </ClCompile>
+    <ClCompile Include="src\engine\io\InputActionMap.cpp">
+      <Filter>src\engine\io</Filter>
     </ClCompile>
     <ClCompile Include="src\engine\editor\EditorManager.cpp">
       <Filter>src\engine\editor</Filter>
@@ -527,6 +548,9 @@
     <ClInclude Include="include\samples\rail_shooter\GameRuntime.h">
       <Filter>include\samples\rail_shooter</Filter>
     </ClInclude>
+    <ClInclude Include="include\samples\side_scroller\SideScrollRuntime.h">
+      <Filter>include\samples\side_scroller</Filter>
+    </ClInclude>
     <ClInclude Include="include\samples\rail_shooter\Player.h">
       <Filter>include\samples\rail_shooter</Filter>
     </ClInclude>
@@ -538,6 +562,12 @@
     </ClInclude>
     <ClInclude Include="include\engine\scene\SceneSerializer.h">
       <Filter>include\engine\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\collision\Collision.h">
+      <Filter>include\engine\collision</Filter>
+    </ClInclude>
+    <ClInclude Include="include\engine\io\InputActionMap.h">
+      <Filter>include\engine\io</Filter>
     </ClInclude>
     <ClInclude Include="include\engine\editor\EditorManager.h">
       <Filter>include\engine\editor</Filter>

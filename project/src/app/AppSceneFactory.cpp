@@ -1,7 +1,7 @@
 #include "app/AppSceneFactory.h"
 #include "app/TitleScene.h"
 #include "app/GameScene.h"
-#include "samples/rail_shooter/GameRuntime.h"
+#include "samples/side_scroller/SideScrollRuntime.h"
 #include "engine/scene/EditorScene.h"
 
 // app層だけが具体シーンとサンプルランタイムを知り、engine層へは抽象型を返す。
@@ -17,7 +17,7 @@ std::unique_ptr<BaseScene> AppSceneFactory::CreateScene(SceneType sceneType) {
     {
         auto editorScene = std::make_unique<EditorScene>();
         editorScene->SetPlayRuntimeFactory([] {
-            return std::make_unique<GameRuntime>();
+            return std::make_unique<SideScrollRuntime>();
         });
         return editorScene;
     }

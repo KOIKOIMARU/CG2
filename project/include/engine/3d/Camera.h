@@ -1,6 +1,12 @@
 #pragma once
 #include "engine/base/Math.h"
 
+// カメラが使用する投影方式。Perspectiveは奥行き表現、Orthographicは平行投影に使う。
+enum class CameraProjectionMode {
+    Perspective,
+    Orthographic,
+};
+
 // 位置・回転と透視投影パラメータから、描画用の各種行列を生成するカメラ。
 // 値を変更したフレームではUpdateを呼んでから行列を参照する。
 class Camera {
@@ -16,6 +22,9 @@ public:
     void SetAspectRatio(float aspectRatio);
     void SetNearClip(float nearClip);
     void SetFarClip(float farClip);
+    void SetProjectionMode(CameraProjectionMode mode);
+    // 正投影で画面に収める縦方向のワールドサイズ。0より大きい値を指定する。
+    void SetOrthographicHeight(float height);
 
     // Updateで最後に計算された行列と姿勢を返す。
     const Math::Matrix4x4& GetWorldMatrix() const;
@@ -24,6 +33,8 @@ public:
     const Math::Matrix4x4& GetViewProjectionMatrix() const;
     const Math::Vector3& GetRotate() const;
     const Math::Vector3& GetTranslate() const;
+    CameraProjectionMode GetProjectionMode() const;
+    float GetOrthographicHeight() const;
 
 private:
     // カメラのワールド空間上の姿勢。
@@ -40,4 +51,6 @@ private:
     float aspectRatio;
     float nearClip;
     float farClip;
+    CameraProjectionMode projectionMode = CameraProjectionMode::Perspective;
+    float orthographicHeight = 10.0f;
 };

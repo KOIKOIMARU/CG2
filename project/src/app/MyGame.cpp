@@ -9,6 +9,7 @@
 #include "engine/base/ImGuiManager.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/io/Input.h"
+#include "engine/editor/EditorManager.h"
 #include "engine/scene/EditorScene.h"
 #include "engine/scene/SceneType.h"
 
@@ -81,6 +82,10 @@ void MyGame::Initialize() {
 
     // 通常起動ではゲーム固有サンプルを経由せず、汎用エディタを開く。
     // 自動スモークテストだけはレールシューティングサンプルを検証する。
+    if (!smokeTestOptions_.enabled) {
+        // チーム起動時は横スクロール基準シーンをすぐ確認できるようプレイを予約する。
+        EditorManager::RequestPlayOnNextEditorOpen();
+    }
     SceneManager::GetInstance()->SetNextScene(
         smokeTestOptions_.enabled ? SceneType::Title : SceneType::Editor);
 }

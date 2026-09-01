@@ -32,13 +32,24 @@ void Camera::Update()
     // ★ view は world の逆行列
     viewMatrix = Inverse(worldMatrix);
 
-    // ★ projection
-    projectionMatrix = MakePerspectiveFovMatrix(
-        fovY,
-        aspectRatio,
-        nearClip,
-        farClip
-    );
+    // ゲームの見せ方に応じて透視投影と正投影を切り替える。
+    if (projectionMode == CameraProjectionMode::Orthographic) {
+        const float halfHeight = orthographicHeight * 0.5f;
+        const float halfWidth = halfHeight * aspectRatio;
+        projectionMatrix = MakeOrthographicMatrix(
+            -halfWidth,
+            halfHeight,
+            halfWidth,
+            -halfHeight,
+            nearClip,
+            farClip);
+    } else {
+        projectionMatrix = MakePerspectiveFovMatrix(
+            fovY,
+            aspectRatio,
+            nearClip,
+            farClip);
+    }
 
     // ★ VP
     viewProjectionMatrix =
@@ -72,6 +83,16 @@ void Camera::SetFarClip(float value) {
     farClip = value;
 }
 
+void Camera::SetProjectionMode(CameraProjectionMode mode) {
+    projectionMode = mode;
+}
+
+void Camera::SetOrthographicHeight(float value) {
+    if (value > 0.0f) {
+        orthographicHeight = value;
+    }
+}
+
 // ===== getter =====
 const Matrix4x4& Camera::GetWorldMatrix() const {
     return worldMatrix;
@@ -95,4 +116,12 @@ const Vector3& Camera::GetRotate() const {
 
 const Vector3& Camera::GetTranslate() const {
     return transform.translate;
+}
+
+CameraProjectionMode Camera::GetProjectionMode() const {
+    return projectionMode;
+}
+
+float Camera::GetOrthographicHeight() const {
+    return orthographicHeight;
 }
