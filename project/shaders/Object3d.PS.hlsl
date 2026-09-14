@@ -5,6 +5,12 @@ cbuffer MaterialCB : register(b0)
     Material gMaterial;
 };
 
+// glTFの材質色。白なら従来のテクスチャ／Object3dカラーのみの描画と同じ。
+cbuffer ModelMaterialColorCB : register(b7)
+{
+    float4 gModelBaseColor;
+};
+
 Texture2D<float4> gTexture : register(t0);
 TextureCube<float4> gEnvironmentTexture : register(t1);
 Texture2D<float> gShadowMap : register(t2);
@@ -162,6 +168,7 @@ PixelShaderOutput main(VertexShaderOutput input)
 
     float2 uv = mul(float4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform).xy;
     float4 tex = gTexture.Sample(gSampler, uv);
+    tex *= gModelBaseColor;
     float3 geometryNormal = normalize(input.normal);
     float3 normal = ApplyNormalMap(
         geometryNormal,

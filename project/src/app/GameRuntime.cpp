@@ -17,6 +17,7 @@
 #include <TextEditor.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -145,12 +146,16 @@ constexpr int kSniperTelegraphLeadFrames = 34;
 constexpr int kFeverGaugeMax = 100;
 constexpr int kFeverDurationFrames = 600;
 constexpr int kFeverActivationFlashFrames = 90;
-constexpr bool kUseLegacyFeverActivationBanner = false;
 constexpr int kFeverRapidShotCooldown = 12;
 constexpr int kFeverScoreMultiplier = 3;
 constexpr int kFeverEncounterBreatherFrames = 18;
 constexpr float kFeverRailSpeedMultiplier = 2.15f;
 constexpr float kFeverRailAccelerationResponse = 0.15f;
+constexpr int kDefeatChainDurationFrames = 210;
+constexpr int kDefeatChainBreakFlashFrames = 42;
+constexpr int kDefeatChainMaxCount = 99;
+constexpr int kDefeatChainScoreTierSize = 4;
+constexpr int kDefeatChainMaxScoreMultiplier = 4;
 int gSharedResourcePreloadStep = 0;
 bool gSharedResourcesPreloaded = false;
 const char* gSharedResourcePreloadLabel = "Waiting";
@@ -397,6 +402,49 @@ Math::Vector3 TransformCoord(const Math::Vector3& v, const Math::Matrix4x4& m)
     return { x / w, y / w, z / w };
 }
 
+// 1280x720を基準に、ゲーム表示領域に合わせて文字と余白を一緒に拡縮する。
+float GetCombatHudScale(const Math::Vector2& viewportSize)
+{
+    return std::clamp((std::min)(viewportSize.x / 1280.0f, viewportSize.y / 720.0f), 0.5f, 2.0f);
+}
+
+void DrawCombatHudText(
+    ImDrawList* drawList,
+    ImVec2 position,
+    float fontSize,
+    ImU32 color,
+    const char* text,
+    bool alignRight = false)
+{
+    ImFont* font = ImGui::GetFont();
+    if (alignRight) {
+        position.x -= font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text).x;
+    }
+    const int alpha = static_cast<int>((color >> IM_COL32_A_SHIFT) & 0xff);
+    const float shadowOffset = (std::max)(1.0f, fontSize / 22.0f);
+    // 空や発光エフェクトの上でも細い文字が埋もれないよう、1pxの暗い輪郭を付ける。
+    const ImVec2 outlineOffsets[] = { { -1.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, -1.0f }, { 0.0f, 1.0f } };
+    for (const ImVec2& offset : outlineOffsets) {
+        drawList->AddText(font, fontSize, ImVec2(position.x + offset.x, position.y + offset.y),
+            IM_COL32(3, 8, 16, alpha / 2), text);
+    }
+    drawList->AddText(font, fontSize,
+        ImVec2(position.x + shadowOffset, position.y + shadowOffset),
+        IM_COL32(3, 8, 16, alpha * 3 / 4), text);
+    drawList->AddText(font, fontSize, position, color, text);
+}
+
+// 枠を使わず、明るい背景でも数字を読める程度の局所的な下地だけを敷く。
+void DrawCombatHudShade(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, bool alignRight)
+{
+    const ImU32 dark = IM_COL32(7, 13, 23, 164);
+    const ImU32 clear = IM_COL32(7, 13, 23, 0);
+    drawList->AddRectFilledMultiColor(min, max,
+        alignRight ? clear : dark, alignRight ? dark : clear,
+        alignRight ? IM_COL32(7, 13, 23, 40) : clear,
+        alignRight ? clear : IM_COL32(7, 13, 23, 40));
+}
+
 void DrawSystemHudPanel(
     ImDrawList* drawList,
     const ImVec2& min,
@@ -404,69 +452,11 @@ void DrawSystemHudPanel(
     ImU32 accentColor,
     float headerHeight = 29.0f)
 {
-    constexpr float kCut = 10.0f;
-    const ImVec2 panelPoints[] = {
-        ImVec2(min.x, min.y),
-        ImVec2(max.x - kCut, min.y),
-        ImVec2(max.x, min.y + kCut),
-        ImVec2(max.x, max.y),
-        ImVec2(min.x + kCut, max.y),
-        ImVec2(min.x, max.y - kCut)
-    };
-    ImVec2 shadowPoints[6]{};
-    for (int index = 0; index < 6; ++index) {
-        shadowPoints[index] = ImVec2(
-            panelPoints[index].x + 4.0f,
-            panelPoints[index].y + 5.0f);
-    }
-
-    drawList->AddConvexPolyFilled(
-        shadowPoints,
-        6,
-        IM_COL32(0, 0, 0, 92));
-    drawList->AddConvexPolyFilled(
-        panelPoints,
-        6,
-        IM_COL32(9, 25, 34, 214));
-    drawList->AddPolyline(
-        panelPoints,
-        6,
-        IM_COL32(218, 252, 248, 182),
-        ImDrawFlags_Closed,
-        1.5f);
-    drawList->AddRectFilledMultiColor(
-        ImVec2(min.x + 3.0f, min.y + 3.0f),
-        ImVec2(max.x - kCut - 1.0f, min.y + headerHeight),
-        IM_COL32(38, 112, 116, 158),
-        IM_COL32(19, 65, 73, 108),
-        IM_COL32(12, 42, 51, 56),
-        IM_COL32(26, 82, 87, 96));
+    // 通知には背景を残し、飾りは見出し脇の短い色線に絞る。
+    drawList->AddRectFilled(min, max, IM_COL32(9, 15, 25, 218), 6.0f);
     drawList->AddLine(
-        ImVec2(min.x + 3.0f, min.y + headerHeight),
-        ImVec2(max.x - 3.0f, min.y + headerHeight),
-        IM_COL32(82, 189, 184, 92),
-        1.0f);
-    drawList->AddLine(
-        ImVec2(min.x + 3.0f, min.y + 2.0f),
-        ImVec2(max.x - kCut - 1.0f, min.y + 2.0f),
-        accentColor,
-        2.0f);
-
-    const ImVec2 diamondCenter(min.x + 18.0f, min.y + headerHeight * 0.5f);
-    drawList->AddQuadFilled(
-        ImVec2(diamondCenter.x, diamondCenter.y - 5.0f),
-        ImVec2(diamondCenter.x + 5.0f, diamondCenter.y),
-        ImVec2(diamondCenter.x, diamondCenter.y + 5.0f),
-        ImVec2(diamondCenter.x - 5.0f, diamondCenter.y),
-        accentColor);
-    drawList->AddLine(
-        ImVec2(max.x - 24.0f, max.y - 7.0f),
-        ImVec2(max.x - 8.0f, max.y - 7.0f),
-        accentColor,
-        2.0f);
-    drawList->AddLine(
-        ImVec2(max.x - 8.0f, max.y - 7.0f),
-        ImVec2(max.x - 8.0f, max.y - 18.0f),
+        ImVec2(min.x + 16.0f, min.y + 8.0f),
+        ImVec2(min.x + 16.0f, min.y + headerHeight - 7.0f),
         accentColor,
         2.0f);
 }
@@ -682,6 +672,10 @@ void GameRuntime::Initialize()
     playerDamageCount_ = 0;
     feverActivationCount_ = 0;
     justDodgeCount_ = 0;
+    defeatChainCount_ = 0;
+    defeatChainTimer_ = 0;
+    defeatChainBreakFlashTimer_ = 0;
+    maxDefeatChainCount_ = 0;
     score_ = 0;
     gameplayElapsedSeconds_ = 0.0f;
     enemySpawnTimer_ = 0;
@@ -898,6 +892,7 @@ void GameRuntime::Finalize()
     enemies_.clear();
     hitEffects_.clear();
     hitEffectObjectPool_.clear();
+    transparentSceneryDrawOrder_.clear();
     railSceneryObjects_.clear();
     depthCueEffects_.clear();
     player_.reset();
@@ -957,6 +952,7 @@ void GameRuntime::Update()
 
     UpdateWorldEntities();
     UpdateGameplayCollisions();
+    UpdateDefeatChain();
     AdvanceEnemyWaveIfCleared();
     UpdateLockOnTarget();
     DrawHud();
@@ -1228,7 +1224,59 @@ void GameRuntime::AddScore(int baseScore)
     if (baseScore <= 0) {
         return;
     }
-    score_ += baseScore * (feverTimer_ > 0 ? kFeverScoreMultiplier : 1);
+    const int feverMultiplier = feverTimer_ > 0 ? kFeverScoreMultiplier : 1;
+    score_ += baseScore * feverMultiplier * GetDefeatChainScoreMultiplier();
+}
+
+void GameRuntime::UpdateDefeatChain()
+{
+    if (defeatChainBreakFlashTimer_ > 0) {
+        --defeatChainBreakFlashTimer_;
+    }
+    if (isGameOver_ || isGameClear_ || defeatChainCount_ <= 0) {
+        return;
+    }
+
+    // 敵がいない移動区間では猶予を消費せず、プレイヤーの腕前以外でチェインを切らない。
+    const bool hasChainTarget = std::any_of(
+        enemies_.begin(),
+        enemies_.end(),
+        [](const std::unique_ptr<Enemy>& enemy) {
+            return enemy && !enemy->IsDead() && !enemy->IsBoss() && enemy->IsTargetable();
+        });
+    if (!hasChainTarget) {
+        return;
+    }
+
+    if (defeatChainTimer_ > 0) {
+        --defeatChainTimer_;
+    }
+    if (defeatChainTimer_ <= 0) {
+        BreakEnemyDefeatChain();
+    }
+}
+
+void GameRuntime::RegisterEnemyDefeatChain()
+{
+    defeatChainCount_ = (std::min)(defeatChainCount_ + 1, kDefeatChainMaxCount);
+    defeatChainTimer_ = kDefeatChainDurationFrames;
+    defeatChainBreakFlashTimer_ = 0;
+    maxDefeatChainCount_ = (std::max)(maxDefeatChainCount_, defeatChainCount_);
+}
+
+void GameRuntime::BreakEnemyDefeatChain()
+{
+    if (defeatChainCount_ >= 2) {
+        defeatChainBreakFlashTimer_ = kDefeatChainBreakFlashFrames;
+    }
+    defeatChainCount_ = 0;
+    defeatChainTimer_ = 0;
+}
+
+int GameRuntime::GetDefeatChainScoreMultiplier() const
+{
+    const int multiplier = 1 + defeatChainCount_ / kDefeatChainScoreTierSize;
+    return (std::min)(multiplier, kDefeatChainMaxScoreMultiplier);
 }
 
 #ifdef ENABLE_DEBUG_GUI
@@ -1283,6 +1331,10 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     playerDamageCount_ = 0;
     feverActivationCount_ = 0;
     justDodgeCount_ = 0;
+    defeatChainCount_ = 0;
+    defeatChainTimer_ = 0;
+    defeatChainBreakFlashTimer_ = 0;
+    maxDefeatChainCount_ = 0;
     gameplayElapsedSeconds_ = 0.0f;
     enemySpawnTimer_ = 0;
     enemyShotTimer_ = 32;
@@ -2022,6 +2074,7 @@ void GameRuntime::DrawDepthCueEffects()
 
 void GameRuntime::InitializeRailScenery()
 {
+    transparentSceneryDrawOrder_.clear();
     railSceneryObjects_.clear();
 
     if (!object3dCommon_) {
@@ -2302,6 +2355,7 @@ void GameRuntime::InitializeRailScenery()
             kCityLoopLength,
             0.0f);
     }
+    transparentSceneryDrawOrder_.reserve(railSceneryObjects_.size());
 }
 
 void GameRuntime::UpdateRailScenery()
@@ -2360,7 +2414,7 @@ void GameRuntime::UpdateRailScenery()
     }
 }
 
-void GameRuntime::DrawRailScenery()
+void GameRuntime::DrawRailScenery(ModelDrawPass drawPass)
 {
     if (railSceneryObjects_.empty() || !object3dCommon_) {
         return;
@@ -2368,13 +2422,33 @@ void GameRuntime::DrawRailScenery()
 
     const BlendMode previousBlendMode = object3dCommon_->GetBlendMode();
     const DepthDrawMode previousDepthMode = object3dCommon_->GetDepthDrawMode();
-    object3dCommon_->SetDepthDrawMode(DepthDrawMode::Normal);
-    object3dCommon_->SetBlendMode(BlendMode::None);
+    const bool transparent = drawPass == ModelDrawPass::Transparent;
+    object3dCommon_->SetDepthDrawMode(transparent ? DepthDrawMode::ReadOnly : DepthDrawMode::Normal);
+    object3dCommon_->SetBlendMode(transparent ? BlendMode::Normal : BlendMode::None);
     object3dCommon_->CommonDrawSetting();
 
-    for (const RailSceneryObject& scenery : railSceneryObjects_) {
-        if (scenery.object && scenery.isVisible) {
-            scenery.object->Draw();
+    if (transparent) {
+        transparentSceneryDrawOrder_.clear();
+        for (const RailSceneryObject& scenery : railSceneryObjects_) {
+            if (scenery.object && scenery.isVisible && scenery.object->HasTransparentMaterials()) {
+                transparentSceneryDrawOrder_.push_back(&scenery);
+            }
+        }
+        // カメラを動かしても手前のガラスが奥の室内を消さないよう、深度は読み取りだけにする。
+        const Math::Matrix4x4 view = camera_ ? camera_->GetViewMatrix() : Math::MakeIdentity4x4();
+        std::sort(transparentSceneryDrawOrder_.begin(), transparentSceneryDrawOrder_.end(),
+            [&view](const RailSceneryObject* a, const RailSceneryObject* b) {
+                return TransformCoord(a->object->GetTranslate(), view).z >
+                    TransformCoord(b->object->GetTranslate(), view).z;
+            });
+        for (const RailSceneryObject* scenery : transparentSceneryDrawOrder_) {
+            scenery->object->Draw(drawPass);
+        }
+    } else {
+        for (const RailSceneryObject& scenery : railSceneryObjects_) {
+            if (scenery.object && scenery.isVisible) {
+                scenery.object->Draw(drawPass);
+            }
         }
     }
 
@@ -2737,7 +2811,7 @@ void GameRuntime::Draw()
         skybox_->Draw();
     }
 
-    DrawRailScenery();
+    DrawRailScenery(ModelDrawPass::Opaque);
     DrawContactShadows();
     DrawDepthCueEffects();
 
@@ -2764,6 +2838,8 @@ void GameRuntime::Draw()
     for (const auto& enemy : enemies_) {
         enemy->Draw();
     }
+    // 不透明な背景・機体を描き終えてから、窓ガラスだけを合成する。
+    DrawRailScenery(ModelDrawPass::Transparent);
     DrawBulletEffectObjects();
     DrawHitEffectObjects();
     if (gpuPlayerExhaustEnabled_ && camera_) {
@@ -4150,6 +4226,9 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
     ++justDodgeCount_;
     AddScore(kJustDodgeScoreBonus);
     AddFeverGauge(22);
+    if (defeatChainCount_ > 0) {
+        defeatChainTimer_ = (std::max)(defeatChainTimer_, 90);
+    }
     chargeTimer_ = (std::min)(chargeTimer_ + kJustDodgeChargeBonus, kChargeShotMax);
     chargeFlashTimer_ = (std::max)(chargeFlashTimer_, 26);
     justDodgeFlashTimer_ = (std::max)(justDodgeFlashTimer_, kJustDodgeFlashDuration);
@@ -6309,7 +6388,8 @@ void GameRuntime::DrawHud()
         0.0f,
         1.0f);
     const bool isChargeReady = chargeTimer_ >= chargeShotThreshold_;
-    auto drawBar = [drawList](
+    const float hudScale = GetCombatHudScale(hudSize);
+    auto drawBar = [drawList, hudScale](
                        const ImVec2& min,
                        const ImVec2& max,
                        float rate,
@@ -6317,25 +6397,10 @@ void GameRuntime::DrawHud()
         const ImVec2 fillMax(
             min.x + (max.x - min.x) * (std::clamp)(rate, 0.0f, 1.0f),
             max.y);
-        drawList->AddRectFilled(min, max, IM_COL32(17, 24, 38, 225), 4.0f);
-        drawList->AddRectFilled(min, fillMax, fillColor, 4.0f);
-        if (fillMax.x > min.x + 2.0f) {
-            drawList->AddLine(
-                ImVec2(min.x + 3.0f, min.y + 2.0f),
-                ImVec2(fillMax.x - 2.0f, min.y + 2.0f),
-                IM_COL32(255, 255, 255, 62),
-                1.0f);
+        drawList->AddRectFilled(min, max, IM_COL32(14, 22, 33, 210), 2.0f * hudScale);
+        if (fillMax.x > min.x) {
+            drawList->AddRectFilled(min, fillMax, fillColor, 2.0f * hudScale);
         }
-        for (int segment = 1; segment < 4; ++segment) {
-            const float x = min.x + (max.x - min.x) *
-                (static_cast<float>(segment) / 4.0f);
-            drawList->AddLine(
-                ImVec2(x, min.y + 2.0f),
-                ImVec2(x, max.y - 2.0f),
-                IM_COL32(9, 18, 30, 118),
-                1.0f);
-        }
-        drawList->AddRect(min, max, IM_COL32(228, 242, 255, 95), 4.0f);
     };
     if (hpRate <= 0.34f && !isGameOver_) {
         const int alertAlpha = static_cast<int>(
@@ -6376,105 +6441,60 @@ void GameRuntime::DrawHud()
             clearAlertColor);
     }
 
-    const ImVec2 playerPanelMin(origin.x + 18.0f, origin.y + 18.0f);
-    const ImVec2 playerPanelMax(playerPanelMin.x + 300.0f, playerPanelMin.y + 116.0f);
-    const ImVec2 hpBarMin(playerPanelMin.x + 18.0f, playerPanelMin.y + 48.0f);
-    const ImVec2 hpBarMax(hpBarMin.x + 244.0f, hpBarMin.y + 15.0f);
-    const ImVec2 chargeBarMin(playerPanelMin.x + 18.0f, playerPanelMin.y + 84.0f);
-    const ImVec2 chargeBarMax(chargeBarMin.x + 244.0f, chargeBarMin.y + 10.0f);
-    const std::string hpText = std::to_string(hp) + " / " + std::to_string(maxHp);
+    const ImVec2 playerAnchor(origin.x + 28.0f * hudScale, origin.y + 24.0f * hudScale);
+    const ImVec2 hpBarMin(playerAnchor.x, playerAnchor.y + 36.0f * hudScale);
+    const ImVec2 hpBarMax(hpBarMin.x + 244.0f * hudScale, hpBarMin.y + 16.0f * hudScale);
+    const ImVec2 chargeBarMin(playerAnchor.x, playerAnchor.y + 87.0f * hudScale);
+    const ImVec2 chargeBarMax(chargeBarMin.x + 244.0f * hudScale, chargeBarMin.y + 5.0f * hudScale);
+    char hpText[16]{};
+    char maxHpText[24]{};
+    std::snprintf(hpText, sizeof(hpText), "%d", hp);
+    std::snprintf(maxHpText, sizeof(maxHpText), "/ %d", maxHp);
     const ImU32 hpColor =
         hpRate < 0.3f ? IM_COL32(255, 86, 94, 245) :
         hpRate < 0.55f ? IM_COL32(255, 205, 88, 245) :
-                         IM_COL32(86, 232, 148, 245);
+                         IM_COL32(145, 231, 195, 255);
 
-    DrawSystemHudPanel(
-        drawList,
-        playerPanelMin,
-        playerPanelMax,
-        IM_COL32(150, 239, 114, 230));
-    drawList->AddText(
-        ImVec2(playerPanelMin.x + 32.0f, playerPanelMin.y + 9.0f),
-        IM_COL32(226, 250, 247, 245),
-        "PLAYER STATUS  /  UNIT 01");
-    drawList->AddText(
-        ImVec2(playerPanelMax.x - 74.0f, playerPanelMin.y + 14.0f),
-        IM_COL32(168, 222, 255, 225),
-        hasLockTarget_ ? "補助" : "照準");
-    drawList->AddText(
-        ImVec2(hpBarMin.x, hpBarMin.y - 18.0f),
-        IM_COL32(196, 214, 232, 215),
-        "HP");
-    drawList->AddText(
-        ImVec2(hpBarMax.x - ImGui::CalcTextSize(hpText.c_str()).x, hpBarMin.y - 18.0f),
-        IM_COL32(232, 244, 255, 235),
-        hpText.c_str());
+    DrawCombatHudShade(drawList, origin,
+        ImVec2(origin.x + 330.0f * hudScale, origin.y + 142.0f * hudScale), false);
+    DrawCombatHudText(drawList, ImVec2(playerAnchor.x, playerAnchor.y + 12.0f * hudScale),
+        14.0f * hudScale, IM_COL32(219, 229, 238, 235), "HP");
+    DrawCombatHudText(drawList, ImVec2(playerAnchor.x + 35.0f * hudScale, playerAnchor.y),
+        30.0f * hudScale, hpRate <= 0.34f ? hpColor : IM_COL32(248, 250, 252, 255), hpText);
+    const float hpNumberWidth = ImGui::GetFont()->CalcTextSizeA(30.0f * hudScale, FLT_MAX, 0.0f, hpText).x;
+    DrawCombatHudText(drawList,
+        ImVec2(playerAnchor.x + 42.0f * hudScale + hpNumberWidth, playerAnchor.y + 13.0f * hudScale),
+        14.0f * hudScale, IM_COL32(194, 208, 220, 230), maxHpText);
+    if (hpRate <= 0.34f) {
+        DrawCombatHudText(drawList, ImVec2(hpBarMax.x, playerAnchor.y + 13.0f * hudScale),
+            14.0f * hudScale, hpColor, "危険", true);
+    }
     drawBar(hpBarMin, hpBarMax, hpRate, hpColor);
-
-    drawList->AddText(
-        ImVec2(chargeBarMin.x, chargeBarMin.y - 18.0f),
-        IM_COL32(196, 214, 232, 215),
-        "チャージ");
-    const char* chargeStatusText = isChargeReady ? "準備完了" : "蓄積中";
-    const ImVec2 chargeStatusSize = ImGui::CalcTextSize(chargeStatusText);
-    drawList->AddText(
-        ImVec2(chargeBarMax.x - chargeStatusSize.x, chargeBarMin.y - 18.0f),
-        isChargeReady ? IM_COL32(116, 242, 255, 245) :
-                        IM_COL32(198, 214, 232, 190),
-        chargeStatusText);
+    DrawCombatHudText(drawList, ImVec2(chargeBarMin.x, chargeBarMin.y - 21.0f * hudScale),
+        14.0f * hudScale, IM_COL32(212, 222, 232, 235), "チャージショット");
+    DrawCombatHudText(drawList, ImVec2(chargeBarMax.x, chargeBarMin.y - 21.0f * hudScale),
+        14.0f * hudScale, isChargeReady ? IM_COL32(155, 225, 255, 255) : IM_COL32(183, 199, 214, 220),
+        isChargeReady ? "発射可能" : "充填中", true);
     drawBar(
         chargeBarMin,
         chargeBarMax,
         chargeRate,
-        isChargeReady ? IM_COL32(112, 232, 255, 245) :
-                        IM_COL32(248, 205, 82, 230));
-    if (isChargeReady) {
-        drawList->AddRect(
-            ImVec2(chargeBarMin.x - 2.0f, chargeBarMin.y - 2.0f),
-            ImVec2(chargeBarMax.x + 2.0f, chargeBarMax.y + 2.0f),
-            IM_COL32(154, 248, 255, 120),
-            5.0f,
-            0,
-            2.0f);
-    }
+        isChargeReady ? IM_COL32(151, 222, 255, 245) : IM_COL32(108, 155, 184, 230));
 
-    const ImVec2 scorePanelMax(
-        origin.x + drawSize.x - 18.0f,
-        origin.y + 90.0f);
-    const ImVec2 scorePanelMin(scorePanelMax.x - 242.0f, origin.y + 18.0f);
+    const ImVec2 scoreAnchor(origin.x + drawSize.x - 28.0f * hudScale, playerAnchor.y);
     const int waveNumber = currentWaveIndex_ < kWaveCount ? currentWaveIndex_ + 1 : kWaveCount;
-    const int waveEnemyCount = GetTotalEnemyTargetCount();
-    const std::string scoreText = std::to_string(score_);
-    const std::string waveText =
-        "ウェーブ " + std::to_string(waveNumber) + " / " + std::to_string(kWaveCount);
-    const std::string enemyText =
-        "敵 " + std::to_string(enemies_.size()) + "  出現 " +
-        std::to_string((std::min)(spawnedEnemyCountInWave_, waveEnemyCount)) +
-        " / " + std::to_string(waveEnemyCount);
-
-    DrawSystemHudPanel(
-        drawList,
-        scorePanelMin,
-        scorePanelMax,
-        IM_COL32(150, 239, 114, 230),
-        27.0f);
-    drawList->AddText(
-        ImVec2(scorePanelMin.x + 32.0f, scorePanelMin.y + 8.0f),
-        IM_COL32(226, 250, 247, 240),
-        "MISSION // スコア");
-    drawList->AddText(
-        ImVec2(scorePanelMax.x - 16.0f - ImGui::CalcTextSize(scoreText.c_str()).x,
-               scorePanelMin.y + 10.0f),
-        IM_COL32(166, 242, 116, 255),
-        scoreText.c_str());
-    drawList->AddText(
-        ImVec2(scorePanelMin.x + 14.0f, scorePanelMin.y + 36.0f),
-        IM_COL32(205, 224, 242, 220),
-        waveText.c_str());
-    drawList->AddText(
-        ImVec2(scorePanelMin.x + 14.0f, scorePanelMin.y + 54.0f),
-        IM_COL32(180, 202, 222, 205),
-        enemyText.c_str());
+    char scoreText[32]{};
+    char waveText[48]{};
+    std::snprintf(scoreText, sizeof(scoreText), "%06d", score_);
+    std::snprintf(waveText, sizeof(waveText), "ウェーブ %d / %d", waveNumber, kWaveCount);
+    DrawCombatHudShade(drawList,
+        ImVec2(origin.x + drawSize.x - 315.0f * hudScale, origin.y),
+        ImVec2(origin.x + drawSize.x, origin.y + 182.0f * hudScale), true);
+    DrawCombatHudText(drawList, scoreAnchor, 13.0f * hudScale, IM_COL32(210, 222, 235, 230), "スコア", true);
+    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 17.0f * hudScale),
+        32.0f * hudScale, IM_COL32(249, 250, 253, 255), scoreText, true);
+    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 58.0f * hudScale),
+        14.0f * hudScale, IM_COL32(207, 220, 233, 230), bossSpawned_ ? "ボス戦" : waveText, true);
 
     DrawBossHud();
     DrawStageCueHud();
@@ -6482,6 +6502,7 @@ void GameRuntime::DrawHud()
     DrawLockOnHud();
     DrawHitConfirmHud();
     DrawPlayerDamageHud();
+    DrawDefeatChainHud();
     DrawFeverHud();
 }
 
@@ -6539,7 +6560,7 @@ void GameRuntime::DrawBossHud()
         barMax.y);
     const std::string hpText = std::to_string(hp) + " / " + std::to_string(maxHp);
     const std::string bossTitle =
-        "HOSTILE ENTITY  /  BOSS  /  PHASE " + std::to_string(bossPhase_);
+        "BOSS  -  " + std::to_string(bossPhase_) + "段階目";
 
     DrawSystemHudPanel(
         drawList,
@@ -6573,12 +6594,12 @@ void GameRuntime::DrawBossHud()
         const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 0.34f);
         const float statusRate = counterActive ? counterRate : attackStatusRate;
         const char* statusLabel = counterActive ?
-            "COUNTER WINDOW  /  DAMAGE x2" :
+            "反撃チャンス  ダメージ2倍" :
             bossAttackPattern_ == 0 ?
-                "INCOMING  /  FAN VOLLEY" :
+                "拡散弾に注意" :
                 bossAttackPattern_ == 1 ?
-                    "INCOMING  /  SWEEP FIRE" :
-                    "INCOMING  /  CHARGE CANNON";
+                    "なぎ払いに注意" :
+                    "チャージ砲に注意";
         const ImU32 statusTextColor = counterActive ?
             IM_COL32(255, 234, 164, static_cast<int>(225.0f + pulse * 30.0f)) :
             IM_COL32(255, 184, 146, static_cast<int>(225.0f + pulse * 30.0f));
@@ -6695,8 +6716,8 @@ void GameRuntime::DrawStageCueHud()
         drawList->AddText(
             ImVec2(panelMin.x + 34.0f, panelMin.y + 8.0f),
             IM_COL32(255, 174, 212, 235),
-            "SYSTEM ALERT  /  COMBAT PHASE UPDATE");
-        const char* phaseText = "BOSS OVERDRIVE  /  PHASE 2";
+            "ボスの攻撃が変化");
+        const char* phaseText = "第2段階";
         const ImVec2 phaseTextSize = ImGui::CalcTextSize(phaseText);
         drawList->AddText(
             ImVec2(center.x - phaseTextSize.x * 0.5f, center.y - 5.0f),
@@ -6729,10 +6750,10 @@ void GameRuntime::DrawStageCueHud()
         drawList->AddText(
             ImVec2(panelMin.x + 32.0f, panelMin.y + 7.0f),
             IM_COL32(255, 205, 210, 225),
-            "SYSTEM ALERT  /  THREAT DETECTED");
+            "大型敵を確認");
 
         const char* warningText =
-            bossSpawned_ ? "BOSS APPROACHING" : "WARNING";
+            bossSpawned_ ? "ボス接近" : "警告";
         const ImVec2 textSize = ImGui::CalcTextSize(warningText);
         drawList->AddText(
             ImVec2(center.x - textSize.x * 0.5f + 2.0f, center.y - textSize.y * 0.5f + 2.0f),
@@ -6758,6 +6779,87 @@ void GameRuntime::DrawStageCueHud()
             IM_COL32(255, 72, 142, (std::clamp)(alpha, 0, 150)),
             4.0f);
     }
+}
+
+void GameRuntime::DrawDefeatChainHud()
+{
+    const bool isChainActive = defeatChainCount_ >= 2;
+    const bool isBreakNoticeVisible =
+        !isChainActive && defeatChainBreakFlashTimer_ > 0;
+    if (!isChainActive && !isBreakNoticeVisible) {
+        return;
+    }
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    Math::Vector2 hudMin{};
+    Math::Vector2 hudSize{};
+    GetEffectiveHudViewportRect(hudMin, hudSize);
+    const ImVec2 origin(hudMin.x, hudMin.y);
+    const ImVec2 drawSize(hudSize.x, hudSize.y);
+    const float hudScale = GetCombatHudScale(hudSize);
+    const float panelWidth = 196.0f * hudScale;
+    const ImVec2 panelMin(
+        origin.x + drawSize.x - 28.0f * hudScale - panelWidth,
+        origin.y + 112.0f * hudScale);
+    const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 38.0f * hudScale);
+    const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 0.22f);
+
+    ImU32 accentColor = IM_COL32(104, 221, 255, 220);
+    if (isBreakNoticeVisible) {
+        const int alpha = static_cast<int>(
+            100.0f + 145.0f *
+            static_cast<float>(defeatChainBreakFlashTimer_) /
+            static_cast<float>(kDefeatChainBreakFlashFrames));
+        accentColor = IM_COL32(255, 96, 116, (std::clamp)(alpha, 0, 255));
+    } else {
+        switch (GetDefeatChainScoreMultiplier()) {
+        case 4:
+            accentColor = IM_COL32(255, 112, 220, static_cast<int>(220.0f + pulse * 30.0f));
+            break;
+        case 3:
+            accentColor = IM_COL32(255, 142, 72, static_cast<int>(215.0f + pulse * 30.0f));
+            break;
+        case 2:
+            accentColor = IM_COL32(255, 222, 92, static_cast<int>(205.0f + pulse * 35.0f));
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (isBreakNoticeVisible) {
+        DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
+            15.0f * hudScale, accentColor, "チェイン終了", true);
+        return;
+    }
+
+    const int totalScoreMultiplier =
+        GetDefeatChainScoreMultiplier() *
+        (feverTimer_ > 0 ? kFeverScoreMultiplier : 1);
+    char chainText[32]{};
+    char multiplierText[32]{};
+    std::snprintf(chainText, sizeof(chainText), "%d CHAIN", defeatChainCount_);
+    std::snprintf(multiplierText, sizeof(multiplierText), "x%d", totalScoreMultiplier);
+    DrawCombatHudText(drawList, ImVec2(panelMin.x, panelMin.y + 5.0f * hudScale),
+        17.0f * hudScale, IM_COL32(235, 242, 250, 245), chainText);
+    DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
+        25.0f * hudScale, accentColor, multiplierText, true);
+
+    const ImVec2 timerMin(panelMin.x, panelMax.y - 5.0f * hudScale);
+    const ImVec2 timerMax(panelMax.x, panelMax.y - 2.0f * hudScale);
+    const float timerRate = std::clamp(
+        static_cast<float>(defeatChainTimer_) /
+            static_cast<float>(kDefeatChainDurationFrames),
+        0.0f,
+        1.0f);
+    drawList->AddRectFilled(timerMin, timerMax, IM_COL32(12, 22, 36, 230), 2.0f);
+    drawList->AddRectFilled(
+        timerMin,
+        ImVec2(
+            timerMin.x + (timerMax.x - timerMin.x) * timerRate,
+            timerMax.y),
+        accentColor,
+        2.0f);
 }
 
 void GameRuntime::DrawFeverHud()
@@ -6795,27 +6897,20 @@ void GameRuntime::DrawFeverHud()
             (std::clamp)(alpha, 0, 255));
     };
 
-    const float barWidth = std::clamp(drawSize.x * 0.35f, 340.0f, 520.0f);
+    const float hudScale = GetCombatHudScale(hudSize);
+    const float barWidth = 410.0f * hudScale;
     const ImVec2 panelMin(
         origin.x + drawSize.x * 0.5f - barWidth * 0.5f,
-        origin.y + drawSize.y - 58.0f);
-    const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 40.0f);
-    const ImVec2 barMin(panelMin.x + 10.0f, panelMin.y + 23.0f);
-    const ImVec2 barMax(panelMax.x - 10.0f, panelMax.y - 7.0f);
+        origin.y + drawSize.y - 88.0f * hudScale);
+    const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 64.0f * hudScale);
+    const ImVec2 barMin(panelMin.x + 16.0f * hudScale, panelMin.y + 40.0f * hudScale);
+    const ImVec2 barMax(panelMax.x - 16.0f * hudScale, barMin.y + 10.0f * hudScale);
     const ImVec2 fillMax(
         barMin.x + (barMax.x - barMin.x) * std::clamp(rate, 0.0f, 1.0f),
         barMax.y);
-    const ImU32 borderColor = isActive || isReady ?
-        rainbowColor(0.0f, isReady ? 245 : 225) :
-        IM_COL32(106, 210, 255, 155);
-
-    DrawSystemHudPanel(
-        drawList,
-        panelMin,
-        panelMax,
-        borderColor,
-        21.0f);
-    drawList->AddRectFilled(barMin, barMax, IM_COL32(16, 25, 42, 235), 3.0f);
+    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(9, 15, 25, 150), 7.0f * hudScale);
+    drawList->AddRectFilled(barMin, barMax, IM_COL32(10, 18, 30, 210), 2.0f * hudScale);
+    drawList->PushClipRect(barMin, barMax, true);
     if (fillMax.x > barMin.x) {
         if (isActive || isReady) {
             constexpr int kRainbowBarSegments = 18;
@@ -6853,10 +6948,10 @@ void GameRuntime::DrawFeverHud()
             drawList->AddRectFilledMultiColor(
                 barMin,
                 fillMax,
-                IM_COL32(72, 220, 255, 245),
-                IM_COL32(255, 82, 218, 245),
-                IM_COL32(255, 130, 112, 235),
-                IM_COL32(96, 190, 255, 235));
+                IM_COL32(124, 185, 224, 245),
+                IM_COL32(205, 183, 243, 245),
+                IM_COL32(184, 166, 226, 235),
+                IM_COL32(105, 164, 205, 235));
         }
         drawList->AddLine(
             ImVec2(barMin.x + 2.0f, barMin.y + 2.0f),
@@ -6864,39 +6959,31 @@ void GameRuntime::DrawFeverHud()
             IM_COL32(255, 255, 255, 150),
             1.0f);
     }
-    drawList->AddRect(barMin, barMax, IM_COL32(212, 238, 255, 110), 3.0f);
-    for (int segment = 1; segment < 10; ++segment) {
-        const float x = barMin.x + (barMax.x - barMin.x) *
-            (static_cast<float>(segment) / 10.0f);
-        drawList->AddLine(
-            ImVec2(x, barMin.y + 1.0f),
-            ImVec2(x, barMax.y - 1.0f),
-            IM_COL32(7, 15, 28, 125),
-            1.0f);
-    }
+    drawList->PopClipRect();
 
-    const char* status = isActive ? "FULL DRIVE  /  SCORE x3" :
-        isReady ? "E  /  ACTIVATE" : "SYNC: HIT  DESTROY  JUST DODGE";
-    drawList->AddText(
-        ImVec2(panelMin.x + 32.0f, panelMin.y + 4.0f),
-        isActive || isReady ? rainbowColor(0.12f, 255) : IM_COL32(152, 230, 255, 235),
-        "FEVER LINK");
-    const ImVec2 statusSize = ImGui::CalcTextSize(status);
-    drawList->AddText(
-        ImVec2(panelMax.x - statusSize.x - 10.0f, panelMin.y + 5.0f),
-        isReady ?
-            IM_COL32(255, 232, 122, static_cast<int>(205.0f + pulse * 50.0f)) :
-            IM_COL32(218, 230, 244, 220),
-        status);
+    char status[64]{};
+    if (isActive) {
+        std::snprintf(status, sizeof(status), "%.1f秒 / スコアx%d",
+            static_cast<float>(feverTimer_) / 60.0f,
+            kFeverScoreMultiplier * GetDefeatChainScoreMultiplier());
+    } else if (isReady) {
+        std::snprintf(status, sizeof(status), "発動する");
+    } else {
+        std::snprintf(status, sizeof(status), "%d%%", feverGauge_ * 100 / kFeverGaugeMax);
+    }
+    DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 10.0f * hudScale),
+        22.0f * hudScale,
+        isActive || isReady ? IM_COL32(255, 242, 209, 255) : IM_COL32(232, 234, 247, 245),
+        "FEVER");
+    DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y + 15.0f * hudScale),
+        15.0f * hudScale, IM_COL32(228, 234, 244, 245), status, true);
 
     if (isReady) {
-        drawList->AddRect(
-            ImVec2(panelMin.x - 4.0f, panelMin.y - 4.0f),
-            ImVec2(panelMax.x + 4.0f, panelMax.y + 4.0f),
-            rainbowColor(0.42f, static_cast<int>(65.0f + pulse * 105.0f)),
-            7.0f,
-            0,
-            3.0f);
+        const ImVec2 keyMin(barMax.x - 98.0f * hudScale, panelMin.y + 10.0f * hudScale);
+        const ImVec2 keyMax(keyMin.x + 25.0f * hudScale, keyMin.y + 23.0f * hudScale);
+        drawList->AddRectFilled(keyMin, keyMax, IM_COL32(244, 236, 213, 245), 4.0f * hudScale);
+        DrawCombatHudText(drawList, ImVec2(keyMin.x + 7.0f * hudScale, keyMin.y + 3.0f * hudScale),
+            17.0f * hudScale, IM_COL32(22, 28, 40, 255), "E");
     }
 
     if (isActive) {
@@ -6953,313 +7040,32 @@ void GameRuntime::DrawFeverHud()
     }
 
     if (feverActivationFlashTimer_ > 0) {
-        const float remainingRate =
-            static_cast<float>(feverActivationFlashTimer_) /
+        const float remaining = static_cast<float>(feverActivationFlashTimer_) /
             static_cast<float>(kFeverActivationFlashFrames);
-        const float elapsedRate = 1.0f - remainingRate;
-        const auto smooth01 = [](float value) {
-            const float clamped = std::clamp(value, 0.0f, 1.0f);
-            return clamped * clamped * (3.0f - 2.0f * clamped);
-        };
-        const float lineOpen = smooth01(elapsedRate / 0.15f);
-        const float panelOpen = smooth01((elapsedRate - 0.07f) / 0.19f);
-        const float closeRate = smooth01(remainingRate / 0.22f);
-        const float visibility = (std::min)(panelOpen, closeRate);
-        const float textReveal = smooth01((elapsedRate - 0.20f) / 0.17f) * closeRate;
-        const float statusReveal = smooth01((elapsedRate - 0.33f) / 0.14f) * closeRate;
-        const ImVec2 center(
-            origin.x + drawSize.x * 0.5f,
-            origin.y + drawSize.y * 0.30f);
-        const float targetWidth = std::clamp(drawSize.x * 0.48f, 500.0f, 720.0f);
-        const float targetHeight = std::clamp(drawSize.y * 0.18f, 132.0f, 164.0f);
-        const float currentWidth = targetWidth * lineOpen;
-        const float currentHeight = targetHeight * panelOpen;
-        const ImVec2 panelMin(
-            center.x - currentWidth * 0.5f,
-            center.y - currentHeight * 0.5f);
-        const ImVec2 panelMax(
-            center.x + currentWidth * 0.5f,
-            center.y + currentHeight * 0.5f);
-        const int panelAlpha = static_cast<int>(visibility * 255.0f);
-
-        const float guideHalfWidth = targetWidth * 0.54f * lineOpen;
-        drawList->AddLine(
-            ImVec2(center.x - guideHalfWidth, center.y),
-            ImVec2(center.x + guideHalfWidth, center.y),
-            IM_COL32(220, 255, 252, static_cast<int>(remainingRate * 220.0f)),
-            2.0f);
-        drawList->AddLine(
-            ImVec2(center.x - guideHalfWidth * 0.76f, center.y + 4.0f),
-            ImVec2(center.x + guideHalfWidth * 0.76f, center.y + 4.0f),
-            IM_COL32(70, 213, 211, static_cast<int>(remainingRate * 125.0f)),
-            1.0f);
-
-        if (currentHeight > 2.0f) {
-            const float cut = 13.0f * panelOpen;
-            const ImVec2 panelPoints[] = {
-                ImVec2(panelMin.x, panelMin.y),
-                ImVec2(panelMax.x - cut, panelMin.y),
-                ImVec2(panelMax.x, panelMin.y + cut),
-                ImVec2(panelMax.x, panelMax.y),
-                ImVec2(panelMin.x + cut, panelMax.y),
-                ImVec2(panelMin.x, panelMax.y - cut)
-            };
-            ImVec2 shadowPoints[6]{};
-            for (int index = 0; index < 6; ++index) {
-                shadowPoints[index] = ImVec2(
-                    panelPoints[index].x + 5.0f,
-                    panelPoints[index].y + 7.0f);
-            }
-            drawList->AddConvexPolyFilled(
-                shadowPoints,
-                6,
-                IM_COL32(0, 0, 0, static_cast<int>(visibility * 112.0f)));
-            drawList->AddConvexPolyFilled(
-                panelPoints,
-                6,
-                IM_COL32(10, 28, 38, static_cast<int>(visibility * 228.0f)));
-            drawList->AddPolyline(
-                panelPoints,
-                6,
-                IM_COL32(224, 255, 252, panelAlpha),
-                ImDrawFlags_Closed,
-                1.8f);
-            drawList->AddRectFilledMultiColor(
-                ImVec2(panelMin.x + 4.0f, panelMin.y + 4.0f),
-                ImVec2(panelMax.x - 4.0f, panelMin.y + 30.0f * panelOpen),
-                IM_COL32(37, 111, 116, static_cast<int>(visibility * 178.0f)),
-                IM_COL32(20, 67, 76, static_cast<int>(visibility * 116.0f)),
-                IM_COL32(13, 43, 53, static_cast<int>(visibility * 72.0f)),
-                IM_COL32(24, 81, 88, static_cast<int>(visibility * 110.0f)));
-
-            drawList->PushClipRect(
-                ImVec2(panelMin.x + 12.0f, panelMin.y + 3.0f),
-                ImVec2(panelMax.x - 12.0f, panelMax.y - 3.0f),
-                true);
-            const int textAlpha = static_cast<int>(textReveal * 255.0f);
-            const int statusAlpha = static_cast<int>(statusReveal * 255.0f);
-            const ImVec2 diamondCenter(panelMin.x + 30.0f, panelMin.y + 25.0f);
-            drawList->AddQuadFilled(
-                ImVec2(diamondCenter.x, diamondCenter.y - 7.0f),
-                ImVec2(diamondCenter.x + 7.0f, diamondCenter.y),
-                ImVec2(diamondCenter.x, diamondCenter.y + 7.0f),
-                ImVec2(diamondCenter.x - 7.0f, diamondCenter.y),
-                IM_COL32(158, 239, 114, statusAlpha));
-            drawList->AddText(
-                ImVec2(panelMin.x + 48.0f, panelMin.y + 14.0f),
-                IM_COL32(216, 248, 247, static_cast<int>(textAlpha * 0.82f)),
-                "SYSTEM MESSAGE");
-
-            const char* message = "FEVER MODE ACTIVATED";
-            const float messageFontSize = std::clamp(drawSize.x * 0.021f, 23.0f, 30.0f);
-            const ImVec2 messageSize = ImGui::GetFont()->CalcTextSizeA(
-                messageFontSize,
-                100000.0f,
-                0.0f,
-                message);
-            drawList->AddText(
-                ImGui::GetFont(),
-                messageFontSize,
-                ImVec2(center.x - messageSize.x * 0.5f, panelMin.y + 55.0f),
-                IM_COL32(238, 255, 252, textAlpha),
-                message);
-
-            const char* detail = "FULL DRIVE ONLINE  /  SCORE MULTIPLIER x3";
-            const ImVec2 detailSize = ImGui::CalcTextSize(detail);
-            drawList->AddText(
-                ImVec2(center.x - detailSize.x * 0.5f, panelMin.y + 93.0f),
-                IM_COL32(126, 218, 215, static_cast<int>(textAlpha * 0.88f)),
-                detail);
-
-            const char* activeText = "LINK ESTABLISHED   ACTIVE";
-            const ImVec2 activeSize = ImGui::CalcTextSize(activeText);
-            drawList->AddText(
-                ImVec2(panelMax.x - activeSize.x - 23.0f, panelMax.y - 24.0f),
-                IM_COL32(166, 242, 116, statusAlpha),
-                activeText);
-            for (int segment = 0; segment < 12; ++segment) {
-                const float segmentRate = static_cast<float>(segment) / 12.0f;
-                const float x = panelMin.x + 24.0f + targetWidth * 0.35f * segmentRate;
-                drawList->AddRectFilled(
-                    ImVec2(x, panelMax.y - 20.0f),
-                    ImVec2(x + 8.0f, panelMax.y - 17.0f),
-                    IM_COL32(
-                        104,
-                        226,
-                        199,
-                        static_cast<int>(statusAlpha * (0.38f + 0.62f * segmentRate))));
-            }
-            const float scanX = Lerp(
-                panelMin.x + 8.0f,
-                panelMax.x - 8.0f,
-                std::fmod(cameraTimer_ * 0.42f, 1.0f));
-            drawList->AddLine(
-                ImVec2(scanX, panelMin.y + 5.0f),
-                ImVec2(scanX, panelMax.y - 5.0f),
-                IM_COL32(218, 255, 250, static_cast<int>(visibility * 62.0f)),
-                1.0f);
-            drawList->PopClipRect();
-
-            const ImU32 bracketColor =
-                IM_COL32(184, 247, 236, static_cast<int>(visibility * 210.0f));
-            drawList->AddLine(
-                ImVec2(panelMin.x - 12.0f, center.y - 24.0f),
-                ImVec2(panelMin.x - 12.0f, center.y + 24.0f),
-                bracketColor,
-                2.0f);
-            drawList->AddLine(
-                ImVec2(panelMax.x + 12.0f, center.y - 24.0f),
-                ImVec2(panelMax.x + 12.0f, center.y + 24.0f),
-                bracketColor,
-                2.0f);
-        }
-    }
-
-    if (kUseLegacyFeverActivationBanner && feverActivationFlashTimer_ > 0) {
-        const float flashRate =
-            static_cast<float>(feverActivationFlashTimer_) /
-            static_cast<float>(kFeverActivationFlashFrames);
-        const float elapsed = 1.0f - flashRate;
-        const float bannerAlpha = std::clamp(flashRate * 2.5f, 0.0f, 1.0f);
-        const char* banner = "FEVER TIME";
-        const float fontSize = 34.0f + std::sin(elapsed * std::numbers::pi_v<float>) * 9.0f;
-        const ImVec2 textSize =
-            ImGui::GetFont()->CalcTextSizeA(fontSize, 100000.0f, 0.0f, banner);
-        const ImVec2 bannerPosition(
-            origin.x + drawSize.x * 0.5f - textSize.x * 0.5f,
-            origin.y + drawSize.y * 0.24f);
-        const ImVec2 burstCenter(
-            origin.x + drawSize.x * 0.5f,
-            bannerPosition.y + fontSize * 0.48f);
-        const float burstEase =
-            1.0f - (1.0f - elapsed) * (1.0f - elapsed) * (1.0f - elapsed);
-        const int burstAlpha = static_cast<int>(bannerAlpha * (155.0f - elapsed * 55.0f));
-
-        constexpr int kBurstRayCount = 28;
-        for (int ray = 0; ray < kBurstRayCount; ++ray) {
-            const float rayRate =
-                static_cast<float>(ray) / static_cast<float>(kBurstRayCount);
-            const float angle =
-                rayRate * kTwoPi + elapsed * 0.42f;
-            const float innerRadius = 42.0f + burstEase * 68.0f;
-            const float outerRadius =
-                innerRadius + 58.0f + PseudoRandom01(ray, 5.7f) * 72.0f;
-            drawList->AddLine(
-                ImVec2(
-                    burstCenter.x + std::cos(angle) * innerRadius,
-                    burstCenter.y + std::sin(angle) * innerRadius),
-                ImVec2(
-                    burstCenter.x + std::cos(angle) * outerRadius,
-                    burstCenter.y + std::sin(angle) * outerRadius),
-                rainbowColor(rayRate + elapsed * 0.18f, burstAlpha),
-                2.0f + PseudoRandom01(ray, 2.3f) * 2.4f);
-        }
-
-        constexpr int kBurstRingCount = 3;
-        constexpr int kBurstRingArcs = 12;
-        for (int ring = 0; ring < kBurstRingCount; ++ring) {
-            const float ringRate =
-                std::fmod(elapsed + static_cast<float>(ring) * 0.27f, 1.0f);
-            const float ringRadius = 62.0f + ringRate * 190.0f;
-            const int ringAlpha =
-                static_cast<int>(bannerAlpha * (1.0f - ringRate) * 165.0f);
-            for (int arc = 0; arc < kBurstRingArcs; ++arc) {
-                const float arcRate0 =
-                    static_cast<float>(arc) / static_cast<float>(kBurstRingArcs);
-                const float arcRate1 =
-                    static_cast<float>(arc + 1) / static_cast<float>(kBurstRingArcs);
-                drawList->PathArcTo(
-                    burstCenter,
-                    ringRadius,
-                    arcRate0 * kTwoPi + 0.025f,
-                    arcRate1 * kTwoPi - 0.025f,
-                    8);
-                drawList->PathStroke(
-                    rainbowColor(arcRate0 + ringRate, ringAlpha),
-                    0,
-                    2.5f);
-            }
-        }
-
-        constexpr int kConfettiCount = 24;
-        for (int index = 0; index < kConfettiCount; ++index) {
-            const float seedX = PseudoRandom01(index, 3.1f);
-            const float seedY = PseudoRandom01(index, 7.9f);
-            const float fallRate = std::fmod(
-                seedY + elapsed * (0.32f + PseudoRandom01(index, 1.4f) * 0.34f),
-                1.0f);
-            const float x =
-                origin.x + drawSize.x * (0.07f + seedX * 0.86f) +
-                std::sin(elapsed * 8.0f + static_cast<float>(index)) * 8.0f;
-            const float y = origin.y + drawSize.y * (0.05f + fallRate * 0.64f);
-            const float width = 3.0f + PseudoRandom01(index, 6.2f) * 4.0f;
-            const float height = 6.0f + PseudoRandom01(index, 9.6f) * 7.0f;
-            drawList->AddRectFilled(
-                ImVec2(x - width, y - height),
-                ImVec2(x + width, y + height),
-                rainbowColor(seedX + elapsed * 0.24f, static_cast<int>(bannerAlpha * 205.0f)),
-                1.5f);
-        }
-
-        const ImVec2 plateMin(
-            bannerPosition.x - 30.0f,
-            bannerPosition.y - 8.0f);
-        const ImVec2 plateMax(
-            bannerPosition.x + textSize.x + 30.0f,
-            bannerPosition.y + fontSize + 26.0f);
+        const float elapsed = 1.0f - remaining;
+        const float visibility = std::clamp(elapsed / 0.12f, 0.0f, 1.0f) *
+            std::clamp(remaining / 0.28f, 0.0f, 1.0f);
+        const float fontSize = (42.0f + 5.0f * (1.0f - elapsed)) * hudScale;
+        const char* title = "FEVER!";
+        const float titleWidth = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, title).x;
+        const ImVec2 center(origin.x + drawSize.x * 0.5f,
+            origin.y + drawSize.y * 0.23f - elapsed * 8.0f * hudScale);
+        DrawCombatHudText(drawList, ImVec2(center.x - titleWidth * 0.5f, center.y),
+            fontSize, IM_COL32(255, 248, 223, static_cast<int>(255.0f * visibility)), title);
+        const char* detail = "連射・スピード強化";
+        const float detailSize = 18.0f * hudScale;
+        const float detailWidth = ImGui::GetFont()->CalcTextSizeA(detailSize, FLT_MAX, 0.0f, detail).x;
+        DrawCombatHudText(drawList, ImVec2(center.x - detailWidth * 0.5f, center.y + 51.0f * hudScale),
+            detailSize, IM_COL32(239, 234, 250, static_cast<int>(230.0f * visibility)), detail);
+        // 虹はフィーバーの目印として短いアクセントに残す。
+        const float halfWidth = 90.0f * hudScale;
         drawList->AddRectFilledMultiColor(
-            plateMin,
-            plateMax,
-            IM_COL32(5, 7, 18, static_cast<int>(bannerAlpha * 62.0f)),
-            IM_COL32(15, 5, 22, static_cast<int>(bannerAlpha * 112.0f)),
-            IM_COL32(5, 12, 24, static_cast<int>(bannerAlpha * 45.0f)),
-            IM_COL32(12, 5, 22, static_cast<int>(bannerAlpha * 96.0f)));
-        drawList->AddText(
-            ImGui::GetFont(),
-            fontSize,
-            ImVec2(bannerPosition.x + 3.0f, bannerPosition.y + 3.0f),
-            IM_COL32(0, 0, 0, static_cast<int>(210.0f * bannerAlpha)),
-            banner);
-        float glyphX = bannerPosition.x;
-        for (int index = 0; banner[index] != '\0'; ++index) {
-            const char glyph[] = { banner[index], '\0' };
-            const ImVec2 glyphSize =
-                ImGui::GetFont()->CalcTextSizeA(fontSize, 100000.0f, 0.0f, glyph);
-            if (banner[index] != ' ') {
-                drawList->AddText(
-                    ImGui::GetFont(),
-                    fontSize,
-                    ImVec2(glyphX, bannerPosition.y),
-                    rainbowColor(
-                        static_cast<float>(index) * 0.105f,
-                        static_cast<int>(255.0f * bannerAlpha)),
-                    glyph);
-            }
-            glyphX += glyphSize.x;
-        }
-
-        const char* jackpotText = "RAINBOW JACKPOT // SCORE x3";
-        const float jackpotFontSize = 15.0f + pulse * 2.0f;
-        const ImVec2 jackpotSize = ImGui::GetFont()->CalcTextSizeA(
-            jackpotFontSize,
-            100000.0f,
-            0.0f,
-            jackpotText);
-        const ImVec2 jackpotPosition(
-            burstCenter.x - jackpotSize.x * 0.5f,
-            bannerPosition.y + fontSize + 2.0f);
-        drawList->AddText(
-            ImGui::GetFont(),
-            jackpotFontSize,
-            ImVec2(jackpotPosition.x + 2.0f, jackpotPosition.y + 2.0f),
-            IM_COL32(0, 0, 0, static_cast<int>(220.0f * bannerAlpha)),
-            jackpotText);
-        drawList->AddText(
-            ImGui::GetFont(),
-            jackpotFontSize,
-            jackpotPosition,
-            IM_COL32(255, 245, 182, static_cast<int>(245.0f * bannerAlpha)),
-            jackpotText);
+            ImVec2(center.x - halfWidth, center.y + 44.0f * hudScale),
+            ImVec2(center.x + halfWidth, center.y + 46.0f * hudScale),
+            rainbowColor(0.0f, static_cast<int>(230.0f * visibility)),
+            rainbowColor(0.6f, static_cast<int>(230.0f * visibility)),
+            rainbowColor(0.6f, static_cast<int>(230.0f * visibility)),
+            rainbowColor(0.0f, static_cast<int>(230.0f * visibility)));
     }
 }
 
@@ -7395,7 +7201,7 @@ void GameRuntime::DrawHitConfirmHud()
         std::snprintf(
             comboLabel,
             sizeof(comboLabel),
-            "CHAIN x%d",
+            "BURST x%d",
             hitConfirmComboCount_);
         const ImVec2 comboSize = ImGui::CalcTextSize(comboLabel);
         drawList->AddText(
@@ -7609,7 +7415,7 @@ void GameRuntime::DrawResultOverlay()
     drawList->AddText(
         ImVec2(panelMin.x + 24.0f, panelMin.y + 12.0f),
         IM_COL32(226, 250, 247, 235),
-        "SYSTEM RESULT");
+        "リザルト");
     drawList->AddText(
         ImVec2(center.x - titleSize.x * 0.5f, panelMin.y + 43.0f),
         isGameClear_ ?
@@ -7663,8 +7469,8 @@ void GameRuntime::DrawResultOverlay()
     std::snprintf(valueText, sizeof(valueText), "%d", justDodgeCount_);
     drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 3.0f, "JUST DODGE", valueText);
 
-    std::snprintf(valueText, sizeof(valueText), "%d", feverActivationCount_);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 4.0f, "FEVER", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", maxDefeatChainCount_);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 4.0f, "MAX CHAIN", valueText);
     drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 4.0f, "RANK", rank);
 
     drawList->AddLine(
@@ -7941,6 +7747,7 @@ void GameRuntime::UpdateEnemies()
         if ((*iterator)->IsDead()) {
             if ((*iterator)->HasEscaped()) {
                 ++escapedEnemyCount_;
+                BreakEnemyDefeatChain();
             }
             const Enemy* removedEnemy = iterator->get();
             for (auto targetIterator = homingBulletTargets_.begin();
@@ -8122,6 +7929,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     TriggerPlayerImpactMoment(isChargedHit, isBossHit, isDestroyed);
                 }
                 if (isDestroyed) {
+                    RegisterEnemyDefeatChain();
                     if (isFeverHit) {
                         AddFeverEnemyHitEffect(
                             enemyAimPosition,
@@ -8211,6 +8019,7 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
             const int incomingDamage = bullet->GetDamage();
             bullet->Kill();
             ++playerDamageCount_;
+            BreakEnemyDefeatChain();
             player_->Damage(
                 feverTimer_ > 0 ?
                     (std::max)(1, (incomingDamage + 1) / 2) :

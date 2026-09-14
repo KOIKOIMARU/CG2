@@ -211,7 +211,7 @@ private:
     void InitializeRailScenery();
     void UpdateRailScenery();
     void RenderShadowMap();
-    void DrawRailScenery();
+    void DrawRailScenery(ModelDrawPass drawPass);
     void InitializeContactShadows();
     void DrawContactShadows();
     void DrawContactShadowObject(
@@ -297,6 +297,10 @@ private:
     void ActivateFever();
     void AddFeverGauge(int amount);
     void AddScore(int baseScore);
+    void UpdateDefeatChain();
+    void RegisterEnemyDefeatChain();
+    void BreakEnemyDefeatChain();
+    int GetDefeatChainScoreMultiplier() const;
     void UpdatePlayerShooting();
     void UpdateEnemyActions();
     void UpdateBossActions();
@@ -323,6 +327,7 @@ private:
     void DrawBossHud();
     void DrawStageCueHud();
     void DrawFeverHud();
+    void DrawDefeatChainHud();
     void DrawLockOnHud();
     void DrawHitConfirmHud();
     void DrawPlayerDamageHud();
@@ -379,6 +384,8 @@ private:
     std::vector<HitEffect> hitEffects_;
     std::vector<std::unique_ptr<Object3d>> hitEffectObjectPool_;
     std::vector<RailSceneryObject> railSceneryObjects_;
+    // 初期化時に容量を確保し、建物の半透明部分を奥から手前へ並べるために再利用する。
+    std::vector<const RailSceneryObject*> transparentSceneryDrawOrder_;
     std::vector<DepthCueEffect> depthCueEffects_;
     std::vector<RewardHeart> rewardHearts_;
     std::array<PlayerDodgeAfterimage, 16> playerDodgeAfterimages_;
@@ -447,6 +454,10 @@ private:
     int playerDamageCount_ = 0;
     int feverActivationCount_ = 0;
     int justDodgeCount_ = 0;
+    int defeatChainCount_ = 0;
+    int defeatChainTimer_ = 0;
+    int defeatChainBreakFlashTimer_ = 0;
+    int maxDefeatChainCount_ = 0;
     int resultTransitionTimer_ = -1;
     int chargeTimer_ = 0;
     int chargeFlashTimer_ = 0;

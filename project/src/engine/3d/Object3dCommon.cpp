@@ -1,4 +1,5 @@
 #include "engine/3d/Object3dCommon.h"
+#include "engine/3d/Model.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/Logger.h"
 #include "engine/base/SrvManager.h"
@@ -192,7 +193,7 @@ void Object3dCommon::CreateRootSignature() {
 	descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	// RootParameter作成
-	D3D12_ROOT_PARAMETER rootParameters[11] = {};
+	D3D12_ROOT_PARAMETER rootParameters[kModelMaterialColorRootParameter + 1] = {};
 
 	// b0: MaterialCB (PixelShader)
 	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -267,6 +268,12 @@ void Object3dCommon::CreateRootSignature() {
 	rootParameters[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	rootParameters[10].DescriptorTable.pDescriptorRanges = &descriptorRange[3];
 	rootParameters[10].DescriptorTable.NumDescriptorRanges = 1;
+
+	// オブジェクト全体の色と独立した、メッシュごとの元の塗り分け。
+	rootParameters[kModelMaterialColorRootParameter].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+	rootParameters[kModelMaterialColorRootParameter].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	rootParameters[kModelMaterialColorRootParameter].Constants.ShaderRegister = 7;
+	rootParameters[kModelMaterialColorRootParameter].Constants.Num32BitValues = 4;
 
 	// ルートシグネチャのセットアップ
 	descriptionRootSignature.pParameters = rootParameters;

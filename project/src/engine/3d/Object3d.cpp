@@ -111,7 +111,7 @@ void Object3d::UpdateAnimation(float deltaTime)
 
 
 
-void Object3d::Draw()
+void Object3d::Draw(ModelDrawPass drawPass)
 {
     auto commandList = object3dCommon_->GetDxCommon()->GetCommandList();
     auto* srvManager = object3dCommon_->GetSrvManager();
@@ -162,12 +162,12 @@ void Object3d::Draw()
             model_->Draw(
                 &computeOutputVertexBufferView_,
                 materialResource_.Get(),
-                textureOverride);
+                textureOverride, drawPass);
         } else {
             model_->Draw(
                 nullptr,
                 materialResource_.Get(),
-                textureOverride);
+                textureOverride, drawPass);
         }
     }
 }

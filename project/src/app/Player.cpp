@@ -22,6 +22,9 @@ constexpr float kPlayerMoveBankAngle = 0.34f;
 constexpr float kPlayerMoveYawAngle = 0.055f;
 constexpr float kPlayerMovePitchAngle = 0.075f;
 constexpr float kPlayerPoseResponse = 0.17f;
+// 塗装色を残すため、通常時は薄い青みだけを掛ける。発光はエンジン側で表現する。
+constexpr Math::Vector4 kPlayerHullColor{ 0.78f, 0.88f, 1.0f, 1.0f };
+constexpr Math::Vector4 kPlayerInvincibleColor{ 0.52f, 0.85f, 1.0f, 1.0f };
 
 Math::Vector3 CalculateModelLocalCenterOffset(const Model* model)
 {
@@ -82,12 +85,14 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     object_->Initialize(object3dCommon);
     object_->SetModel(model);
     object_->SetScale(objectScale_);
-    object_->SetColor({ 0.75f, 0.95f, 1.0f, 1.0f });
-    object_->SetEnvironmentCoefficient(0.13f);
-    object_->SetShininess(56.0f);
-    object_->SetSpecularColor({ 0.66f, 0.78f, 0.88f });
-    object_->SetRoughness(0.34f);
-    object_->SetMetallic(0.28f);
+    object_->SetColor(kPlayerHullColor);
+    // 面の向きで明暗を分け、空の映り込みで暗い部品まで白くならないようにする。
+    object_->SetLightingMode(1);
+    object_->SetEnvironmentCoefficient(0.025f);
+    object_->SetShininess(80.0f);
+    object_->SetSpecularColor({ 0.18f, 0.23f, 0.30f });
+    object_->SetRoughness(0.58f);
+    object_->SetMetallic(0.12f);
 
     modelLocalCenterOffset_ = CalculateModelLocalCenterOffset(model);
     UpdateObjectTransform();
@@ -193,8 +198,7 @@ void Player::Update(Input* input, float timeScale)
     objectRotate_ = rotate;
     object_->SetColor(
         invincibleTimer_ > 0 ?
-        Math::Vector4{ 0.55f, 0.95f, 1.0f, 1.0f } :
-        Math::Vector4{ 0.75f, 0.95f, 1.0f, 1.0f });
+        kPlayerInvincibleColor : kPlayerHullColor);
     UpdateObjectTransform();
 }
 

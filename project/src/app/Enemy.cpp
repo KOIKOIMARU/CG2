@@ -217,18 +217,20 @@ void Enemy::Initialize(
     phase_ = position.x * 0.75f + position.y * 1.35f;
     object_->SetScale(baseScale_);
     object_->SetColor(baseColor_);
+    // 遠くの機体は陰側を潰さず、白い反射を抑えて赤・紫などの識別色を残す。
+    object_->SetLightingMode(2);
     if (behavior_ == Behavior::Boss) {
-        object_->SetEnvironmentCoefficient(0.09f);
-        object_->SetShininess(46.0f);
-        object_->SetSpecularColor({ 0.50f, 0.46f, 0.62f });
-        object_->SetRoughness(0.40f);
-        object_->SetMetallic(0.46f);
+        object_->SetEnvironmentCoefficient(0.030f);
+        object_->SetShininess(72.0f);
+        object_->SetSpecularColor({ 0.24f, 0.19f, 0.30f });
+        object_->SetRoughness(0.56f);
+        object_->SetMetallic(0.18f);
     } else {
-        object_->SetEnvironmentCoefficient(0.06f);
-        object_->SetShininess(42.0f);
-        object_->SetSpecularColor({ 0.42f, 0.32f, 0.38f });
-        object_->SetRoughness(0.46f);
-        object_->SetMetallic(0.34f);
+        object_->SetEnvironmentCoefficient(0.020f);
+        object_->SetShininess(64.0f);
+        object_->SetSpecularColor({ 0.22f, 0.16f, 0.18f });
+        object_->SetRoughness(0.64f);
+        object_->SetMetallic(0.10f);
     }
     if (textureOverride && textureOverride[0] != '\0') {
         object_->SetTextureFilePath(textureOverride);

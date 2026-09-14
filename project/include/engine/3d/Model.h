@@ -14,6 +14,8 @@ using Microsoft::WRL::ComPtr;
 using namespace Math;
 
 constexpr uint32_t kNumMaxInfluence = 4;
+// Object3dの共通RootSignatureで、メッシュごとの材質色を渡すスロット。
+constexpr uint32_t kModelMaterialColorRootParameter = 11;
 
 // ===========================
 //  モデル用データ構造
@@ -32,7 +34,12 @@ struct MaterialData {
     float roughness = 0.66f;
     float metallic = 0.0f;
     float normalStrength = 0.0f;
+    // glTFのbaseColorFactor。Object3dの演出用カラーとは別に保持する。
+    Vector4 baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+    bool alphaBlend = false; // glTFのBLEND材質。壁などの不透明面とは別のパスで描く。
 };
+
+enum class ModelDrawPass { All, Opaque, Transparent };
 
 struct ModelDrawRange {
     uint32_t indexOffset = 0;
@@ -124,7 +131,9 @@ public:
     void Draw(
         const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView = nullptr,
         ID3D12Resource* overrideMaterialResource = nullptr,
-        const std::string* overrideTextureFilePath = nullptr);
+        const std::string* overrideTextureFilePath = nullptr,
+        ModelDrawPass drawPass = ModelDrawPass::All);
+    bool HasTransparentMaterials() const;
     void SetEnvironmentCoefficient(float coefficient);
     float GetEnvironmentCoefficient() const;
     void SetColor(const Vector4& color);

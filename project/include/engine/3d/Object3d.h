@@ -88,7 +88,8 @@ class Object3d {
 public:
     void Initialize(Object3dCommon* object3dCommon);
     void Update();
-    void Draw();
+    void Draw(ModelDrawPass drawPass = ModelDrawPass::All);
+    bool HasTransparentMaterials() const { return model_ && model_->HasTransparentMaterials(); }
     void DrawShadow(const Matrix4x4& lightViewProjection);
     void UpdateAnimation(float deltaTime);
 

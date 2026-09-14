@@ -9,6 +9,7 @@
 #include <numbers>
 
 #include <assimp/Importer.hpp>
+#include <assimp/GltfMaterial.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
@@ -358,9 +359,7 @@ std::string GetAssimpMaterialTexturePath(
     aiString materialNameString;
     if (material->Get(AI_MATKEY_NAME, materialNameString) == AI_SUCCESS) {
         const std::string materialName = materialNameString.C_Str();
-        if (materialName.find("Glass") != std::string::npos) {
-            return ResolveAssimpFallbackTexture(directoryPath, "T_dark_interior.png");
-        }
+        // ガラスへ室内画像を貼ると、実際の室内面と二重になる。ガラスは材質色で描く。
         if (materialName.find("FakeInterior") != std::string::npos ||
             materialName.find("Interior") != std::string::npos) {
             return ResolveAssimpFallbackTexture(directoryPath, "T_lit_interior_1.png");
@@ -414,6 +413,24 @@ MaterialData GetAssimpMaterialData(
     MaterialData materialData;
     materialData.textureFilePath =
         GetAssimpMaterialTexturePath(material, directoryPath);
+    if (material) {
+        aiString alphaMode;
+        materialData.alphaBlend =
+            material->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS &&
+            std::string(alphaMode.C_Str()) == "BLEND";
+        aiColor4D baseColor(1.0f, 1.0f, 1.0f, 1.0f);
+        if (material->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS ||
+            material->Get(AI_MATKEY_COLOR_DIFFUSE, baseColor) == AI_SUCCESS) {
+            materialData.baseColor = { baseColor.r, baseColor.g, baseColor.b, baseColor.a };
+        }
+        // テクスチャを持たない塗装面にUVチェッカーを掛けず、材質色をそのまま表示する。
+        // 参照先が壊れているテクスチャは従来どおりチェッカーで見つけられるようにする。
+        if (material->GetTextureCount(aiTextureType_BASE_COLOR) == 0 &&
+            material->GetTextureCount(aiTextureType_DIFFUSE) == 0 &&
+            materialData.textureFilePath == kDefaultTextureFilePath) {
+            materialData.textureFilePath = "resources/human/white.png";
+        }
+    }
     materialData.normalTextureFilePath =
         GetAssimpNormalTexturePath(material, directoryPath);
     materialData.normalStrength =
@@ -708,7 +725,8 @@ void Model::Initialize(ModelCommon* modelCommon, const ModelData& modelData)
 void Model::Draw(
     const D3D12_VERTEX_BUFFER_VIEW* overrideVertexBufferView,
     ID3D12Resource* overrideMaterialResource,
-    const std::string* overrideTextureFilePath)
+    const std::string* overrideTextureFilePath,
+    ModelDrawPass drawPass)
 {
     auto dxCommon = modelCommon_->GetDxCommon();
     auto commandList = dxCommon->GetCommandList();
@@ -744,11 +762,21 @@ void Model::Draw(
             drawRange.materialIndex < modelData_.materials.size() ?
             drawRange.materialIndex :
             0;
+        const bool alphaBlend = modelData_.materials[materialIndex].alphaBlend;
+        if ((drawPass == ModelDrawPass::Opaque && alphaBlend) ||
+            (drawPass == ModelDrawPass::Transparent && !alphaBlend)) {
+            continue;
+        }
         const std::string& textureFilePath =
             overrideTextureFilePath ? *overrideTextureFilePath :
             modelData_.materials[materialIndex].textureFilePath;
         const std::string& normalTextureFilePath =
             modelData_.materials[materialIndex].normalTextureFilePath;
+
+        // Root Constantsは描画コマンドへ値をコピーするので、共有CBの上書きや追加確保が不要。
+        commandList->SetGraphicsRoot32BitConstants(
+            kModelMaterialColorRootParameter, 4,
+            &modelData_.materials[materialIndex].baseColor, 0);
 
         srvManager->SetGraphicsRootDescriptorTable(
             3,
@@ -767,6 +795,12 @@ void Model::Draw(
             0
         );
     }
+}
+
+bool Model::HasTransparentMaterials() const
+{
+    return std::any_of(modelData_.materials.begin(), modelData_.materials.end(),
+        [](const MaterialData& material) { return material.alphaBlend; });
 }
 
 void Model::CreateVertexBuffer()
