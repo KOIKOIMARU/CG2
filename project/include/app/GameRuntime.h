@@ -26,6 +26,7 @@ class SrvManager;
 
 class GameRuntime {
 public:
+    enum class PlayMode { Game, Tutorial };
     GameRuntime();
     ~GameRuntime();
 
@@ -43,7 +44,7 @@ public:
         SpriteCommon* spriteCommon,
         ImGuiManager* imguiManager,
         Input* input);
-    void Initialize();
+    void Initialize(PlayMode mode = PlayMode::Game);
     void Finalize();
     void Update();
     void Draw();
@@ -52,10 +53,12 @@ public:
     int GetPostEffectMode() const;
     const Math::Matrix4x4& GetProjectionMatrix() const;
     bool IsExitRequested() const { return isExitRequested_; }
+    bool IsTutorial() const { return playMode_ == PlayMode::Tutorial; }
     int GetPlayerHp() const;
     int GetPlayerMaxHp() const { return 100; }
 
 private:
+    PlayMode playMode_ = PlayMode::Game; // 入場時に確定。本編と練習の進行・成績を混在させない。
     enum class HitEffectType {
         EnemyImpact,
         EnemyDestroy,
@@ -326,6 +329,7 @@ private:
     void DrawHud();
     void DrawBossHud();
     void DrawStageCueHud();
+    void DrawTutorialGuideHud();
     void DrawFeverHud();
     void DrawDefeatChainHud();
     void DrawLockOnHud();
@@ -393,7 +397,8 @@ private:
     std::array<PlayerExhaustParticle, 64> playerExhaustParticles_;
     std::array<ContactShadow, 32> contactShadows_;
     std::array<bool, 5> stageRailEventTriggered_{};
-    std::array<bool, 24> stageEnemyEventTriggered_{};
+    // 配置データの件数に合わせて開始時に確保する。プレイ中は増減させない。
+    std::vector<bool> stageEnemyEventTriggered_;
     std::array<WaveTuning, 3> waveTuning_{ {
         { 6, 42, 30.0f },
         { 8, 38, 34.0f },
@@ -542,6 +547,8 @@ private:
     bool hitConfirmDestroyed_ = false;
     bool stageTimelineWasBlocked_ = false;
     int stageEncounterBreatherTimer_ = 0;
+    const char* tutorialGuideText_ = nullptr; // チュートリアルの配置イベントに対応する操作案内。
+    int tutorialGuideTimer_ = 0; // 案内の残り表示フレーム。初回の編隊出現で設定する。
     int postEffectMode_ = 12;
     bool isGameOver_ = false;
     bool isGameClear_ = false;

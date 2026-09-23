@@ -11,6 +11,8 @@ param(
 
     [switch]$SkipBuild,
 
+    [switch]$Tutorial,
+
     [switch]$CaptureFrames,
 
     [switch]$CaptureFromGameplay,
@@ -133,6 +135,12 @@ $arguments =
     "--smoke-test $gameplayText " +
     "--smoke-timeout $startupTimeoutText " +
     "--smoke-log `"$smokeLogPath`""
+if ($Tutorial) {
+    if ($StartPhase -ne 'Opening') {
+        throw 'Tutorial cannot be combined with a main-game StartPhase.'
+    }
+    $arguments += ' --smoke-tutorial'
+}
 
 $diagnosticEnvironmentName = 'CG2_D3D12_DIAGNOSTIC_LOG'
 $startPhaseEnvironmentName = 'CG2_DEBUG_START_PHASE'

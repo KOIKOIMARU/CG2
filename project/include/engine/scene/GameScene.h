@@ -5,7 +5,7 @@
 
 class GameScene : public BaseScene {
 public:
-    GameScene();
+    explicit GameScene(GameRuntime::PlayMode mode = GameRuntime::PlayMode::Game);
     ~GameScene() override;
 
     static bool PreloadResourcesStep(DirectXCommon* dxCommon, SrvManager* srvManager);
@@ -23,7 +23,9 @@ public:
 
     int GetPostEffectMode() const;
     const Math::Matrix4x4& GetProjectionMatrix() const;
+    bool IsTutorial() const { return mode_ == GameRuntime::PlayMode::Tutorial; }
 
 private:
+    GameRuntime::PlayMode mode_; // SceneFactoryで指定する入場先。途中では切り替えない。
     GameRuntime runtime_;
 };

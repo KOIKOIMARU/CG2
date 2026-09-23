@@ -176,17 +176,23 @@ void MyGame::UpdateSmokeTest()
 
     const auto now = std::chrono::steady_clock::now();
     auto* sceneManager = SceneManager::GetInstance();
+    auto* titleScene = dynamic_cast<TitleScene*>(sceneManager->GetCurrentScene());
 
     if (!smokeGameplayStarted_) {
-        if (dynamic_cast<GameScene*>(sceneManager->GetCurrentScene())) {
+        if (auto* gameScene = dynamic_cast<GameScene*>(sceneManager->GetCurrentScene())) {
+            if (gameScene->IsTutorial() != smokeTestOptions_.tutorial) {
+                FailSmokeTest("wrong_play_mode", 6);
+                return;
+            }
             smokeGameplayStarted_ = true;
             smokeGameplayStartTime_ = now;
-            WriteSmokeLog("SMOKE_TEST_GAMEPLAY_ENTERED");
+            WriteSmokeLog(smokeTestOptions_.tutorial ?
+                "SMOKE_TEST_GAMEPLAY_ENTERED mode=tutorial" :
+                "SMOKE_TEST_GAMEPLAY_ENTERED mode=game");
         } else if (!smokeAutoStartRequested_ &&
-                   dynamic_cast<TitleScene*>(sceneManager->GetCurrentScene()) &&
-                   sceneManager->IsScenePrepared(SceneType::Game)) {
+                   titleScene && GameScene::AreResourcesPreloaded()) {
             smokeAutoStartRequested_ = true;
-            sceneManager->SetNextScene(SceneType::Game);
+            titleScene->RequestStart(smokeTestOptions_.tutorial);
             WriteSmokeLog("SMOKE_TEST_AUTO_START_REQUESTED");
         }
 

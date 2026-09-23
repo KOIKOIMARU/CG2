@@ -10,6 +10,7 @@ class AbstractSceneFactory;
 
 struct SmokeTestOptions {
     bool enabled = false;
+    bool tutorial = false; // スモークテストの入場先。通常起動には影響しない。
     double gameplaySeconds = 15.0;
     double startupTimeoutSeconds = 120.0;
     std::filesystem::path logPath;

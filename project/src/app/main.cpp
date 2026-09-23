@@ -51,6 +51,8 @@ SmokeTestOptions ParseSmokeTestOptions()
                     ++index;
                 }
             }
+        } else if (argument == L"--smoke-tutorial") {
+            options.tutorial = true;
         } else if (argument == L"--smoke-timeout" &&
                    index + 1 < argumentCount) {
             double seconds = 0.0;

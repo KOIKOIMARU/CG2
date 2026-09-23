@@ -11,6 +11,9 @@ std::unique_ptr<BaseScene> SceneFactory::CreateScene(SceneType sceneType) {
     case SceneType::Game:
         return std::make_unique<GameScene>();
 
+    case SceneType::Tutorial:
+        return std::make_unique<GameScene>(GameRuntime::PlayMode::Tutorial);
+
     case SceneType::Editor:
         return std::make_unique<EditorScene>();
 

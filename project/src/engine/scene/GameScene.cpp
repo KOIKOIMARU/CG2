@@ -3,7 +3,7 @@
 #include "engine/scene/SceneManager.h"
 #include "engine/scene/SceneType.h"
 
-GameScene::GameScene() = default;
+GameScene::GameScene(GameRuntime::PlayMode mode) : mode_(mode) {}
 GameScene::~GameScene() = default;
 
 bool GameScene::PreloadResourcesStep(DirectXCommon* dxCommon, SrvManager* srvManager)
@@ -49,7 +49,7 @@ void GameScene::Initialize()
         spriteCommon_,
         imguiManager_,
         input_);
-    runtime_.Initialize();
+    runtime_.Initialize(mode_);
 }
 
 void GameScene::Finalize()
