@@ -56,6 +56,11 @@ SmokeTestOptions ParseSmokeTestOptions()
 #ifdef _DEBUG
         } else if (argument == L"--smoke-playthrough") {
             options.playthrough = true;
+        } else if (argument == L"--smoke-phantom") {
+            options.phantom = true;
+        } else if (argument == L"--smoke-phantom-preview") {
+            options.phantom = true;
+            options.phantomPreview = true;
 #endif
         } else if (argument == L"--smoke-timeout" &&
                    index + 1 < argumentCount) {

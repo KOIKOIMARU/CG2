@@ -900,10 +900,11 @@ void GameRuntime::Initialize(PlayMode mode)
     InitializePlayerFlightAura();
     InitializePlayerExhaustParticles();
     InitializeContactShadows();
+    InitializePhantomRaid();
 
     sound_ = std::make_unique<SoundManager>();
     if (sound_->Initialize()) {
-        // 同時発音枠は合計20。連射は小さめ、命中・撃破を聞き分けられる音量にする。
+        // 同時発音枠は合計25。連射は小さめ、命中・撃破を聞き分けられる音量にする。
         sound_->Load("shot", "resources/audio/combat/shot.wav", 4, 0.30f, 0.065f);
         sound_->Load("charge", "resources/audio/combat/charge.wav", 3, 0.44f, 0.09f);
         sound_->Load("hit", "resources/audio/combat/hit.wav", 3, 0.42f, 0.05f);
@@ -913,6 +914,9 @@ void GameRuntime::Initialize(PlayMode mode)
         sound_->Load("fever", "resources/audio/combat/fever.wav", 1, 0.60f, 0.5f);
         sound_->Load("clear", "resources/audio/combat/clear.wav", 1, 0.60f, 1.0f);
         sound_->Load("fail", "resources/audio/combat/fail.wav", 1, 0.50f, 1.0f);
+        sound_->Load("skill_ready", "resources/audio/combat/skill_ready.wav", 1, 0.50f, 0.5f);
+        sound_->Load("slash", "resources/audio/combat/slash.wav", 3, 0.62f, 0.035f);
+        sound_->Load("slash_finish", "resources/audio/combat/slash_finish.wav", 1, 0.70f, 0.4f);
     }
 
 #ifdef ENABLE_DEBUG_GUI
@@ -938,6 +942,10 @@ void GameRuntime::Initialize(PlayMode mode)
 
 void GameRuntime::Finalize()
 {
+    for (auto& slash : phantomSlashes_) {
+        slash.ghost.reset();
+    }
+    ResetPhantomRaid();
     sound_.reset(); // 再生を止めてボイスを破棄してから波形を解放する。
     sceneObjects_.clear();
     rewardHearts_.clear();
@@ -1002,6 +1010,13 @@ void GameRuntime::Finalize()
 
 void GameRuntime::Update()
 {
+#ifdef _DEBUG
+    if (phantomPreviewPaused_) {
+        DrawPhantomRaidOverlay();
+        DrawHud();
+        return;
+    }
+#endif
     if (HandleRuntimeShortcuts()) {
         return;
     }
@@ -1016,9 +1031,12 @@ void GameRuntime::Update()
     UpdateRailProgress();
     UpdatePlayerAndCamera();
     UpdateFever();
+    UpdatePhantomRaid();
 
     if (!isGameOver_ && !isGameClear_) {
-        UpdatePlayerShooting();
+        if (!IsPhantomRaidActive()) {
+            UpdatePlayerShooting();
+        }
         UpdateEnemyActions();
     }
 
@@ -1027,6 +1045,7 @@ void GameRuntime::Update()
     UpdateDefeatChain();
     AdvanceEnemyWaveIfCleared();
     UpdateLockOnTarget();
+    DrawPhantomRaidOverlay();
     DrawHud();
     DrawPerformanceOverlay();
     DrawResultOverlay();
@@ -1402,6 +1421,7 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     homingBulletTargets_.clear();
     justDodgedEnemyBullets_.clear();
     enemies_.clear();
+    ResetPhantomRaid();
 
     while (!playerBullets_.empty()) {
         playerBulletPool_.push_back(std::move(playerBullets_.front()));
@@ -1742,8 +1762,13 @@ void GameRuntime::UpdateWorldEntities()
 
 void GameRuntime::UpdateGameplayCollisions()
 {
+    if (isGameOver_ || isGameClear_) {
+        return;
+    }
     CheckBulletEnemyCollisions();
-    CheckEnemyBulletPlayerCollisions();
+    if (!isGameClear_) {
+        CheckEnemyBulletPlayerCollisions();
+    }
 }
 
 void GameRuntime::UpdateResultAndSceneObjects()
@@ -2953,6 +2978,7 @@ void GameRuntime::Draw()
     DrawRailScenery(ModelDrawPass::Transparent);
     DrawBulletEffectObjects();
     DrawHitEffectObjects();
+    DrawPhantomRaidObjects();
     if (gpuPlayerExhaustEnabled_ && camera_) {
         ParticleManager* particleManager = ParticleManager::GetInstance();
         particleManager->Update(
@@ -4350,6 +4376,7 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
     }
 
     ++justDodgeCount_;
+    GrantPhantomRaid();
     PlaySfx("dodge");
     AddScore(kJustDodgeScoreBonus);
     AddFeverGauge(22);
@@ -5799,6 +5826,19 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             }
             ImGui::EndDisabled();
 
+            ImGui::SeparatorText("ファントムレイド");
+            ImGui::BeginDisabled(isGameOver_ || isGameClear_ || IsPhantomRaidActive());
+            if (ImGui::Button("残像連撃を準備", ImVec2(halfButtonWidth, 0.0f))) {
+                phantomCooldown_ = 0.0f;
+                GrantPhantomRaid();
+            }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!phantomReady_);
+            if (ImGui::Button("残像連撃 [Q]", ImVec2(halfButtonWidth, 0.0f))) {
+                TryActivatePhantomRaid();
+            }
+            ImGui::EndDisabled();
+            ImGui::EndDisabled();
             ImGui::SeparatorText("フェーズ移動");
             const bool phaseJumpDisabled = isGameOver_ || isGameClear_;
             ImGui::BeginDisabled(phaseJumpDisabled);
@@ -6664,6 +6704,7 @@ void GameRuntime::DrawControlsHelp()
     ImGui::TextUnformatted("SPACEを離す: チャージ → 次の一発が強力に");
     ImGui::TextUnformatted("A・D + SHIFT: 回避 / 敵弾すれすれでジャスト回避");
     ImGui::TextUnformatted("ゲージ満タンで E: フィーバー");
+    ImGui::TextUnformatted("ジャスト回避で準備 → Q: 残像連撃 / フィーバー中は強化");
     ImGui::Separator();
     ImGui::TextUnformatted("硬い敵にはチャージ。ボスの反撃チャンスは威力2倍。");
     ImGui::TextUnformatted("撃破をつなぐとチェイン倍率UP。被弾すると途切れる。");
@@ -7990,6 +8031,11 @@ void GameRuntime::UpdateEnemies()
                 BreakEnemyDefeatChain();
             }
             const Enemy* removedEnemy = iterator->get();
+            for (auto& target : phantomTargets_) {
+                if (target.enemy == removedEnemy) {
+                    target.enemy = nullptr;
+                }
+            }
             for (auto targetIterator = homingBulletTargets_.begin();
                 targetIterator != homingBulletTargets_.end();) {
                 if (targetIterator->second == removedEnemy) {
@@ -8008,6 +8054,11 @@ void GameRuntime::UpdateEnemies()
 float GameRuntime::GetCinematicWorldTimeScale() const
 {
     float timeScale = 1.0f;
+    if (IsPhantomRaidActive()) {
+        timeScale = phantomClock_ < 12.0f ? 0.20f :
+            (phantomClock_ < PhantomFinisherTime() ? 0.35f :
+                (phantomClock_ < PhantomFinisherTime() + 5.0f ? 0.05f : 0.65f));
+    }
     if (justDodgeSlowTimer_ > 0) {
         timeScale = (std::min)(timeScale, kJustDodgeRailSlowScale);
     }
@@ -8170,52 +8221,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     TriggerPlayerImpactMoment(isChargedHit, isBossHit, isDestroyed);
                 }
                 if (isDestroyed) {
-                    RegisterEnemyDefeatChain();
-                    if (isFeverHit) {
-                        AddFeverEnemyHitEffect(
-                            enemyAimPosition,
-                            isBossHit ? 1.72f : 1.08f);
-                    } else {
-                        AddEnemyHitEffect(
-                            enemyAimPosition,
-                            isBossHit ? 2.0f : (isChargedHit ? 1.32f : 1.0f));
-                    }
-                    SpawnRewardHearts(
-                        enemyAimPosition,
-                        isBossHit ? 14 : (isChargedHit ? 6 : 4));
-                    AddScore(isBossHit ? 1500 : 100);
-                    ++defeatedEnemyCount_;
-                    ++defeatedEnemyCountInWave_;
-                    if (isBossHit) {
-                        bossDefeatFlashTimer_ = kBossDefeatFlashDuration;
-                        if (isFeverHit) {
-                            AddFeverEnemyHitEffect(
-                                { enemyAimPosition.x - 2.2f, enemyAimPosition.y + 0.5f, enemyAimPosition.z - 0.8f },
-                                1.34f);
-                            AddFeverEnemyHitEffect(
-                                { enemyAimPosition.x + 2.2f, enemyAimPosition.y - 0.3f, enemyAimPosition.z + 0.4f },
-                                1.26f);
-                            AddFeverEnemyHitEffect(
-                                { enemyAimPosition.x, enemyAimPosition.y + 1.2f, enemyAimPosition.z + 1.1f },
-                                1.18f);
-                        } else {
-                            AddEnemyHitEffect(
-                                { enemyAimPosition.x - 2.2f, enemyAimPosition.y + 0.5f, enemyAimPosition.z - 0.8f },
-                                1.55f);
-                            AddEnemyHitEffect(
-                                { enemyAimPosition.x + 2.2f, enemyAimPosition.y - 0.3f, enemyAimPosition.z + 0.4f },
-                                1.45f);
-                            AddEnemyHitEffect(
-                                { enemyAimPosition.x, enemyAimPosition.y + 1.2f, enemyAimPosition.z + 1.1f },
-                                1.35f);
-                        }
-                        AddCameraShake(0.34f, 58);
-                        bossDefeated_ = true;
-                        currentWaveIndex_ = kWaveCount - 1;
-                        isGameClear_ = true;
-                        resultTransitionTimer_ = 120;
-                        stageCombatBeatName_ = "Boss destroyed";
-                    }
+                    OnEnemyDestroyed(*enemy, isChargedHit, isFeverHit);
                 }
                 if (bullet->IsDead()) {
                     break;
@@ -8225,9 +8231,48 @@ void GameRuntime::CheckBulletEnemyCollisions()
     }
 }
 
+void GameRuntime::OnEnemyDestroyed(Enemy& enemy, bool charged, bool fever)
+{
+    // 弾とスキルで撃破数・報酬・ボスクリア処理が食い違わないよう共有する。
+    const bool boss = enemy.IsBoss();
+    const Math::Vector3 position = enemy.GetAimPosition();
+    RegisterEnemyDefeatChain();
+    if (fever) {
+        AddFeverEnemyHitEffect(position, boss ? 1.72f : 1.08f);
+    } else {
+        AddEnemyHitEffect(position, boss ? 2.0f : (charged ? 1.32f : 1.0f));
+    }
+    SpawnRewardHearts(position, boss ? 14 : (charged ? 6 : 4));
+    AddScore(boss ? 1500 : 100);
+    ++defeatedEnemyCount_;
+    ++defeatedEnemyCountInWave_;
+    if (boss) {
+        bossDefeatFlashTimer_ = kBossDefeatFlashDuration;
+        if (fever) {
+            AddFeverEnemyHitEffect({ position.x - 2.2f, position.y + 0.5f, position.z - 0.8f }, 1.34f);
+            AddFeverEnemyHitEffect({ position.x + 2.2f, position.y - 0.3f, position.z + 0.4f }, 1.26f);
+            AddFeverEnemyHitEffect({ position.x, position.y + 1.2f, position.z + 1.1f }, 1.18f);
+        } else {
+            AddEnemyHitEffect({ position.x - 2.2f, position.y + 0.5f, position.z - 0.8f }, 1.55f);
+            AddEnemyHitEffect({ position.x + 2.2f, position.y - 0.3f, position.z + 0.4f }, 1.45f);
+            AddEnemyHitEffect({ position.x, position.y + 1.2f, position.z + 1.1f }, 1.35f);
+        }
+        AddCameraShake(0.34f, 58);
+        bossDefeated_ = true;
+        currentWaveIndex_ = kWaveCount - 1;
+        isGameClear_ = true;
+        resultTransitionTimer_ = 120;
+        stageCombatBeatName_ = "Boss destroyed";
+    }
+}
+
 void GameRuntime::CheckEnemyBulletPlayerCollisions()
 {
     if (!player_ || player_->IsDead()) {
+        return;
+    }
+    // 技の攻撃区間だけ保護。ここではジャスト回避を発生させず、自己再充填を防ぐ。
+    if (IsPhantomRaidActive() && phantomClock_ < PhantomFinisherTime() + 7.0f) {
         return;
     }
 

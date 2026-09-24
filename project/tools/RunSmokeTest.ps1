@@ -13,6 +13,8 @@ param(
 
     [switch]$Tutorial,
     [switch]$Playthrough,
+    [switch]$Phantom,
+    [switch]$PhantomPreview,
 
     [switch]$CaptureFrames,
 
@@ -147,6 +149,12 @@ if ($Playthrough) {
         throw 'Playthrough requires Debug, main game, and Opening.'
     }
     $arguments += ' --smoke-playthrough'
+}
+if ($Phantom -or $PhantomPreview) {
+    if ($Configuration -ne 'Debug' -or $Tutorial -or $StartPhase -ne 'Opening' -or $Playthrough) {
+        throw 'Phantom requires Debug, main game, Opening, and cannot combine with Playthrough.'
+    }
+    $arguments += $(if ($PhantomPreview) { ' --smoke-phantom-preview' } else { ' --smoke-phantom' })
 }
 
 $diagnosticEnvironmentName = 'CG2_D3D12_DIAGNOSTIC_LOG'

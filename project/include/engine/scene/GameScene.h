@@ -26,6 +26,7 @@ public:
     bool IsTutorial() const { return mode_ == GameRuntime::PlayMode::Tutorial; }
 #ifdef _DEBUG
     bool RunPlaythroughProbe(const std::string& logPath) { return runtime_.RunPlaythroughProbe(logPath); }
+    bool RunPhantomProbe(const std::string& logPath, bool preview) { return runtime_.RunPhantomProbe(logPath, preview); }
 #endif
 
 private:

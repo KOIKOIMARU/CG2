@@ -63,6 +63,7 @@ void TitleScene::Update()
     ImGui::TextUnformatted("連射: SPACE長押し    チャージ: SPACEを離してため、次の一発");
     ImGui::TextUnformatted("回避: A・D + SHIFT    敵弾の近くで回避するとジャスト回避");
     ImGui::TextUnformatted("フィーバー: ゲージ満タンで E    連射・威力・スピードを強化");
+    ImGui::TextUnformatted("残像連撃: ジャスト回避で準備 → Qで発動 / フィーバー中は5連撃");
     ImGui::Spacing();
     ImGui::TextUnformatted("連射で削る / 硬い敵にはチャージ / 危険な弾は回避で抜ける");
     ImGui::TextUnformatted("ボスの攻撃後に出る「反撃チャンス」はダメージ2倍");

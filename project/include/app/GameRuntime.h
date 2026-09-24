@@ -60,9 +60,51 @@ public:
     int GetPlayerMaxHp() const { return 100; }
 #ifdef _DEBUG
     bool RunPlaythroughProbe(const std::string& logPath);
+    bool RunPhantomProbe(const std::string& logPath, bool preview = false);
 #endif
 
 private:
+#ifdef _DEBUG
+    bool phantomPreviewPaused_ = false; // 明示的な映像確認テストだけで演出をコマ止めする。
+#endif
+    struct PhantomTarget {
+        Enemy* enemy = nullptr; // 毎回enemies_への所属を確認してから参照する。
+        Math::Vector3 position{}; // 最新の狙い位置。敵が消えた後も斬撃の表示位置として保持。
+        int marks = 0; // 雑魚への斬撃は刻印し、最後にまとめてダメージを与える。
+    };
+    struct PhantomSlash {
+        std::unique_ptr<Object3d> ghost; // 使い回す自機の残像モデル。
+        Math::Vector3 position{}; // この一撃が命中したワールド座標。
+        float angle = 0.0f; // 画面上の斬る方向。ラジアン。
+        float age = -1.0f; // 60fps換算の経過時間。負値は非表示。
+    };
+    void InitializePhantomRaid();
+    void ResetPhantomRaid();
+    void GrantPhantomRaid();
+    bool TryActivatePhantomRaid();
+    void UpdatePhantomRaid();
+    void DrawPhantomRaidObjects();
+    void DrawPhantomRaidOverlay();
+    Enemy* FindPhantomTarget(const Enemy* target) const;
+    void DealPhantomDamage(Enemy& enemy, int damage);
+    bool IsPhantomRaidActive() const { return phantomClock_ >= 0.0f; }
+    float PhantomFinisherTime() const { return 12.0f + static_cast<float>(phantomStrikeCount_) * 7.0f; }
+    std::array<PhantomTarget, 5> phantomTargets_{};
+    std::array<PhantomSlash, 5> phantomSlashes_{}; // 起動時に確保し、技の最中には生成しない。
+    bool phantomReady_ = false; // 未使用の発動権を1回だけ保持。
+    bool phantomEmpowered_ = false; // 発動した瞬間のフィーバー状態を固定。
+    bool phantomFinished_ = false; // 最後の一撃を二重に処理しないための状態。
+    float phantomClock_ = -1.0f; // 60fps換算の演出時間。ワールドのスローに巻き込まない。
+    float phantomCooldown_ = 0.0f; // 発動後の再取得禁止時間。60fps換算。
+    float phantomReadyFlash_ = 0.0f;
+    float phantomNoTargetNotice_ = 0.0f;
+    int phantomTargetCount_ = 0;
+    int phantomStrikeCount_ = 3;
+    int phantomNextStrike_ = 0;
+    int phantomActivationCount_ = 0;
+    int phantomDefeatCount_ = 0;
+    Math::Vector3 phantomFinishPosition_{};
+    Math::Vector3 phantomModelCenter_{};
     void PlaySfx(const char* key);
     std::unique_ptr<SoundManager> sound_;
     bool resultSoundPlayed_ = false;
@@ -362,6 +404,7 @@ private:
     int GetRequiredEnemyDefeatsForClear() const;
     const Enemy* GetBossEnemy() const;
     void CheckBulletEnemyCollisions();
+    void OnEnemyDestroyed(Enemy& enemy, bool charged, bool fever);
     void CheckEnemyBulletPlayerCollisions();
     void UpdateGameCamera();
     void AddCameraShake(float power, int duration);
