@@ -24,6 +24,9 @@ public:
     int GetPostEffectMode() const;
     const Math::Matrix4x4& GetProjectionMatrix() const;
     bool IsTutorial() const { return mode_ == GameRuntime::PlayMode::Tutorial; }
+#ifdef _DEBUG
+    bool RunPlaythroughProbe(const std::string& logPath) { return runtime_.RunPlaythroughProbe(logPath); }
+#endif
 
 private:
     GameRuntime::PlayMode mode_; // SceneFactoryで指定する入場先。途中では切り替えない。

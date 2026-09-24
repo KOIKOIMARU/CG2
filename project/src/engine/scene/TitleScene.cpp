@@ -43,8 +43,8 @@ void TitleScene::Update()
         sceneManager_->SetNextScene(requestedScene_);
     }
 
-    ImGui::SetNextWindowPos(ImVec2(350.0f, 180.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(580.0f, 280.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(660.0f, 385.0f), ImGuiCond_Always);
     ImGui::Begin("タイトル", nullptr, ImGuiWindowFlags_NoResize);
     ImGui::TextUnformatted("3Dレールシューティング");
     ImGui::Separator();
@@ -56,9 +56,18 @@ void TitleScene::Update()
         RequestStart(true);
     }
     ImGui::TextUnformatted("チュートリアルは操作練習用です。本編とは別に遊べます。");
-    ImGui::TextUnformatted("移動: WASD / 方向キー");
-    ImGui::TextUnformatted("ショット: Space");
-    ImGui::TextUnformatted("F2: タイトルへ戻る");
+    ImGui::Separator();
+    ImGui::TextUnformatted("目的: 道中の敵を突破し、最後のボスを撃破する");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("移動: WASD / 方向キー    照準: マウス");
+    ImGui::TextUnformatted("連射: SPACE長押し    チャージ: SPACEを離してため、次の一発");
+    ImGui::TextUnformatted("回避: A・D + SHIFT    敵弾の近くで回避するとジャスト回避");
+    ImGui::TextUnformatted("フィーバー: ゲージ満タンで E    連射・威力・スピードを強化");
+    ImGui::Spacing();
+    ImGui::TextUnformatted("連射で削る / 硬い敵にはチャージ / 危険な弾は回避で抜ける");
+    ImGui::TextUnformatted("ボスの攻撃後に出る「反撃チャンス」はダメージ2倍");
+    ImGui::Separator();
+    ImGui::TextUnformatted("H: 操作を確認    F2: タイトルへ戻る    結果画面で R: 再挑戦");
     if (!resourcesReady) {
         ImGui::Separator();
         ImGui::Text(

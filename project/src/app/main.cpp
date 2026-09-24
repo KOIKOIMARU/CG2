@@ -53,6 +53,10 @@ SmokeTestOptions ParseSmokeTestOptions()
             }
         } else if (argument == L"--smoke-tutorial") {
             options.tutorial = true;
+#ifdef _DEBUG
+        } else if (argument == L"--smoke-playthrough") {
+            options.playthrough = true;
+#endif
         } else if (argument == L"--smoke-timeout" &&
                    index + 1 < argumentCount) {
             double seconds = 0.0;

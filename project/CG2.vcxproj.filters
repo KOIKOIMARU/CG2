@@ -240,6 +240,9 @@
     <ClCompile Include="src\app\GameRuntime.cpp">
       <Filter>src\app</Filter>
     </ClCompile>
+    <ClCompile Include="src\app\GameRuntimeProbe.cpp">
+      <Filter>src\app</Filter>
+    </ClCompile>
     <ClCompile Include="src\app\Player.cpp">
       <Filter>src\app</Filter>
     </ClCompile>

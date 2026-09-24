@@ -6,6 +6,7 @@
 #include "engine/3d/TextureManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/io/Input.h"
+#include "engine/audio/SoundManager.h"
 #include "engine/scene/SceneSerializer.h"
 
 #include <imgui.h>
@@ -509,6 +510,13 @@ void DrawSystemHudPanel(
 GameRuntime::GameRuntime() = default;
 GameRuntime::~GameRuntime() = default;
 
+void GameRuntime::PlaySfx(const char* key)
+{
+    if (sound_) {
+        sound_->Play(key);
+    }
+}
+
 void GameRuntime::SetSystems(
     DirectXCommon* dxCommon,
     SrvManager* srvManager,
@@ -698,6 +706,9 @@ void GameRuntime::Initialize(PlayMode mode)
 {
     playMode_ = mode;
     isExitRequested_ = false;
+    isRetryRequested_ = false;
+    showControlsHelp_ = false;
+    resultSoundPlayed_ = false;
     isGameClear_ = false;
     isGameOver_ = false;
     bossWarningTriggered_ = false;
@@ -890,6 +901,20 @@ void GameRuntime::Initialize(PlayMode mode)
     InitializePlayerExhaustParticles();
     InitializeContactShadows();
 
+    sound_ = std::make_unique<SoundManager>();
+    if (sound_->Initialize()) {
+        // 同時発音枠は合計20。連射は小さめ、命中・撃破を聞き分けられる音量にする。
+        sound_->Load("shot", "resources/audio/combat/shot.wav", 4, 0.30f, 0.065f);
+        sound_->Load("charge", "resources/audio/combat/charge.wav", 3, 0.44f, 0.09f);
+        sound_->Load("hit", "resources/audio/combat/hit.wav", 3, 0.42f, 0.05f);
+        sound_->Load("destroy", "resources/audio/combat/destroy.wav", 3, 0.60f, 0.07f);
+        sound_->Load("damage", "resources/audio/combat/damage.wav", 2, 0.58f, 0.15f);
+        sound_->Load("dodge", "resources/audio/combat/dodge.wav", 2, 0.50f, 0.12f);
+        sound_->Load("fever", "resources/audio/combat/fever.wav", 1, 0.60f, 0.5f);
+        sound_->Load("clear", "resources/audio/combat/clear.wav", 1, 0.60f, 1.0f);
+        sound_->Load("fail", "resources/audio/combat/fail.wav", 1, 0.50f, 1.0f);
+    }
+
 #ifdef ENABLE_DEBUG_GUI
     char* debugStartPhase = nullptr;
     size_t debugStartPhaseLength = 0;
@@ -913,6 +938,7 @@ void GameRuntime::Initialize(PlayMode mode)
 
 void GameRuntime::Finalize()
 {
+    sound_.reset(); // 再生を止めてボイスを破棄してから波形を解放する。
     sceneObjects_.clear();
     rewardHearts_.clear();
     for (PlayerDodgeAfterimage& afterimage : playerDodgeAfterimages_) {
@@ -1004,6 +1030,7 @@ void GameRuntime::Update()
     DrawHud();
     DrawPerformanceOverlay();
     DrawResultOverlay();
+    DrawControlsHelp();
 #ifdef ENABLE_DEBUG_GUI
     DrawEditorOverlayGuiRich();
 #endif
@@ -1013,6 +1040,14 @@ void GameRuntime::Update()
 
 bool GameRuntime::HandleRuntimeShortcuts()
 {
+    if (input_ && input_->TriggerKey(DIK_H)) {
+        showControlsHelp_ = !showControlsHelp_;
+    }
+    if ((isGameOver_ || isGameClear_) && resultTransitionTimer_ <= 0 &&
+        input_ && input_->TriggerKey(DIK_R)) {
+        isRetryRequested_ = true;
+        return true;
+    }
 #ifdef ENABLE_DEBUG_GUI
     if (input_ && input_->TriggerKey(DIK_F1)) {
         isEditorOverlayVisible_ = !isEditorOverlayVisible_;
@@ -1251,6 +1286,7 @@ void GameRuntime::ActivateFever()
     }
 
     feverGauge_ = 0;
+    PlaySfx("fever");
     ++feverActivationCount_;
     feverTimer_ = kFeverDurationFrames;
     feverActivationFlashTimer_ = kFeverActivationFlashFrames;
@@ -1712,6 +1748,10 @@ void GameRuntime::UpdateGameplayCollisions()
 
 void GameRuntime::UpdateResultAndSceneObjects()
 {
+    if ((isGameClear_ || isGameOver_) && !resultSoundPlayed_) {
+        PlaySfx(isGameClear_ ? "clear" : "fail");
+        resultSoundPlayed_ = true;
+    }
     if (bossWarningTimer_ > 0) {
         --bossWarningTimer_;
     }
@@ -3251,6 +3291,7 @@ void GameRuntime::FirePlayerBullet()
     }
     playerBullets_.push_back(std::move(bullet));
     ++playerShotsFired_;
+    PlaySfx(isCharged || isFeverShot ? "charge" : "shot");
     maxActivePlayerBullets_ =
         (std::max)(maxActivePlayerBullets_, playerBullets_.size());
     chargeTimer_ = feverTimer_ > 0 ? kChargeShotMax : 0;
@@ -4309,6 +4350,7 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
     }
 
     ++justDodgeCount_;
+    PlaySfx("dodge");
     AddScore(kJustDodgeScoreBonus);
     AddFeverGauge(22);
     if (defeatChainCount_ > 0) {
@@ -6453,7 +6495,7 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
 
 void GameRuntime::DrawHud()
 {
-    if (!player_) {
+    if (!player_ || ((isGameClear_ || isGameOver_) && resultTransitionTimer_ <= 0)) {
         return;
     }
 
@@ -6599,6 +6641,37 @@ void GameRuntime::DrawHud()
     DrawPlayerDamageHud();
     DrawDefeatChainHud();
     DrawFeverHud();
+}
+
+void GameRuntime::DrawControlsHelp()
+{
+    if (!showControlsHelp_) {
+        if (!isGameOver_ && !isGameClear_) {
+            Math::Vector2 min{};
+            Math::Vector2 size{};
+            GetEffectiveHudViewportRect(min, size);
+            ImGui::GetForegroundDrawList()->AddText(
+                ImVec2(min.x + 20.0f, min.y + size.y - 28.0f),
+                IM_COL32(220, 232, 240, 210), "H: 操作・戦い方");
+        }
+        return;
+    }
+    ImGui::SetNextWindowPos(ImVec2(20.0f, 180.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("操作・戦い方 [H]", &showControlsHelp_,
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::TextUnformatted("WASD / 方向キー: 移動    マウス: 照準");
+    ImGui::TextUnformatted("SPACE長押し: 連射");
+    ImGui::TextUnformatted("SPACEを離す: チャージ → 次の一発が強力に");
+    ImGui::TextUnformatted("A・D + SHIFT: 回避 / 敵弾すれすれでジャスト回避");
+    ImGui::TextUnformatted("ゲージ満タンで E: フィーバー");
+    ImGui::Separator();
+    ImGui::TextUnformatted("硬い敵にはチャージ。ボスの反撃チャンスは威力2倍。");
+    ImGui::TextUnformatted("撃破をつなぐとチェイン倍率UP。被弾すると途切れる。");
+    ImGui::TextUnformatted("※ この案内を開いていてもゲームは進みます。");
+    if (ImGui::Button("閉じる [H]")) {
+        showControlsHelp_ = false;
+    }
+    ImGui::End();
 }
 
 void GameRuntime::DrawTutorialGuideHud()
@@ -7495,6 +7568,9 @@ void GameRuntime::DrawResultOverlay()
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
         ImGui::TextUnformatted("練習を終了しました。");
         ImGui::TextUnformatted("本編はタイトルの「ゲーム開始」から遊べます。");
+        if (ImGui::Button("もう一度練習 [R]", ImVec2(300.0f, 36.0f))) {
+            isRetryRequested_ = true;
+        }
         if (ImGui::Button("タイトルへ戻る [F2]", ImVec2(300.0f, 36.0f))) {
             isExitRequested_ = true;
         }
@@ -7511,7 +7587,7 @@ void GameRuntime::DrawResultOverlay()
     const ImVec2 center(
         origin.x + drawSize.x * 0.5f,
         origin.y + drawSize.y * 0.46f);
-    const ImVec2 panelSize(520.0f, 286.0f);
+    const ImVec2 panelSize(520.0f, 330.0f);
     const ImVec2 panelMin(
         center.x - panelSize.x * 0.5f,
         center.y - panelSize.y * 0.5f);
@@ -7520,7 +7596,7 @@ void GameRuntime::DrawResultOverlay()
         center.y + panelSize.y * 0.5f);
 
     const char* title = isGameClear_ ? "MISSION CLEAR" : "GAME OVER";
-    const char* guide = "F2: タイトルへ戻る";
+    const char* guide = "R: 再挑戦 / F2: タイトルへ戻る";
     const ImVec2 titleSize = ImGui::CalcTextSize(title);
     const ImVec2 guideSize = ImGui::CalcTextSize(guide);
 
@@ -7611,14 +7687,41 @@ void GameRuntime::DrawResultOverlay()
     drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 4.0f, "RANK", rank);
 
     drawList->AddLine(
-        ImVec2(panelMin.x + 22.0f, panelMax.y - 40.0f),
-        ImVec2(panelMax.x - 22.0f, panelMax.y - 40.0f),
+        ImVec2(panelMin.x + 22.0f, panelMax.y - 78.0f),
+        ImVec2(panelMax.x - 22.0f, panelMax.y - 78.0f),
         IM_COL32(118, 156, 174, 120),
         1.0f);
     drawList->AddText(
-        ImVec2(center.x - guideSize.x * 0.5f, panelMax.y - 29.0f),
+        ImVec2(center.x - guideSize.x * 0.5f, panelMax.y - 62.0f),
         IM_COL32(225, 235, 245, 225),
         guide);
+    // キーボードを知らない初見の人も、結果から次のプレイへ戻れる。
+    ImGui::SetNextWindowPos(ImVec2(panelMin.x + 20.0f, panelMax.y - 48.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 44.0f), ImGuiCond_Always);
+    ImGui::Begin("Result actions", nullptr, ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav);
+    const auto resultButton = [drawList, resultAccent](const char* label) {
+        const bool clicked = ImGui::InvisibleButton(label, ImVec2(218.0f, 30.0f));
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        // HUDパネルと同じ前景レイヤーへ描き、パネルの裏にボタンが隠れないようにする。
+        drawList->AddRectFilled(min, max, ImGui::IsItemHovered() ?
+            IM_COL32(54, 80, 98, 255) : IM_COL32(29, 47, 63, 255), 3.0f);
+        drawList->AddRect(min, max, resultAccent, 3.0f);
+        const ImVec2 size = ImGui::CalcTextSize(label);
+        drawList->AddText(ImVec2((min.x + max.x - size.x) * 0.5f,
+            (min.y + max.y - size.y) * 0.5f), IM_COL32(235, 247, 250, 255), label);
+        return clicked;
+    };
+    if (resultButton("再挑戦 [R]")) {
+        isRetryRequested_ = true;
+    }
+    ImGui::SameLine();
+    if (resultButton("タイトル [F2]")) {
+        isExitRequested_ = true;
+    }
+    ImGui::End();
 }
 
 void GameRuntime::DrawPerformanceOverlay()
@@ -8046,6 +8149,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                 bullet->RegisterHit();
                 ++playerHitCount_;
                 const bool isDestroyed = enemy->Damage(damage);
+                PlaySfx(isDestroyed ? "destroy" : "hit");
                 AddFeverGauge(
                     isDestroyed ?
                         (isBossHit ? 25 : (isChargedHit ? 16 : 13)) :
@@ -8152,10 +8256,16 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
                 AddCameraShake(0.018f, 4);
                 continue;
             }
+            // Player側の無敵フラグも尊重し、保護中の弾でチェインを切らない。
+            if (player_->IsInvincible()) {
+                bullet->Kill();
+                continue;
+            }
             const Math::Vector3 incomingVelocity = bullet->GetVelocity();
             const int incomingDamage = bullet->GetDamage();
             bullet->Kill();
             ++playerDamageCount_;
+            PlaySfx("damage");
             BreakEnemyDefeatChain();
             player_->Damage(
                 feverTimer_ > 0 ?

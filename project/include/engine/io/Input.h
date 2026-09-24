@@ -5,6 +5,9 @@
 #include <dinput.h>
 #include "engine/base/Math.h"
 #include "engine/base/WinApp.h"
+#ifdef _DEBUG
+#include <array>
+#endif
 
 // 入力
 class Input {
@@ -32,6 +35,13 @@ public:
 	bool TriggerKey(BYTE keyNumber);
 
 	const Math::Vector2& GetMousePosition() const { return mousePosition_; }
+#ifdef _DEBUG
+    // 通しテスト専用。OSへ入力は送らず、通常のPushKey/TriggerKey経路を検証する。
+    void SetTestFrame(const std::array<BYTE, 256>& keys, const Math::Vector2& mouse) {
+        memcpy(key, keys.data(), sizeof(key));
+        mousePosition_ = mouse;
+    }
+#endif
 
 private:
 	// メンバ変数

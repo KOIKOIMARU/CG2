@@ -23,6 +23,7 @@ class Model;
 class Skybox;
 class SpriteCommon;
 class SrvManager;
+class SoundManager;
 
 class GameRuntime {
 public:
@@ -53,11 +54,18 @@ public:
     int GetPostEffectMode() const;
     const Math::Matrix4x4& GetProjectionMatrix() const;
     bool IsExitRequested() const { return isExitRequested_; }
+    bool IsRetryRequested() const { return isRetryRequested_; }
     bool IsTutorial() const { return playMode_ == PlayMode::Tutorial; }
     int GetPlayerHp() const;
     int GetPlayerMaxHp() const { return 100; }
+#ifdef _DEBUG
+    bool RunPlaythroughProbe(const std::string& logPath);
+#endif
 
 private:
+    void PlaySfx(const char* key);
+    std::unique_ptr<SoundManager> sound_;
+    bool resultSoundPlayed_ = false;
     PlayMode playMode_ = PlayMode::Game; // 入場時に確定。本編と練習の進行・成績を混在させない。
     enum class HitEffectType {
         EnemyImpact,
@@ -330,6 +338,7 @@ private:
     void DrawBossHud();
     void DrawStageCueHud();
     void DrawTutorialGuideHud();
+    void DrawControlsHelp();
     void DrawFeverHud();
     void DrawDefeatChainHud();
     void DrawLockOnHud();
@@ -552,6 +561,8 @@ private:
     int postEffectMode_ = 12;
     bool isGameOver_ = false;
     bool isGameClear_ = false;
+    bool isRetryRequested_ = false; // 結果画面から同じモードを新規開始する。
+    bool showControlsHelp_ = false; // Hで開閉。本編の進行や配置は変更しない。
     bool isEditorOverlayVisible_ = false;
     bool isPerformanceOverlayVisible_ = false;
     bool isPostEffectBypassEnabled_ = false;

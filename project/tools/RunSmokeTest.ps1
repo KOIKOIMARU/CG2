@@ -12,6 +12,7 @@ param(
     [switch]$SkipBuild,
 
     [switch]$Tutorial,
+    [switch]$Playthrough,
 
     [switch]$CaptureFrames,
 
@@ -140,6 +141,12 @@ if ($Tutorial) {
         throw 'Tutorial cannot be combined with a main-game StartPhase.'
     }
     $arguments += ' --smoke-tutorial'
+}
+if ($Playthrough) {
+    if ($Configuration -ne 'Debug' -or $Tutorial -or $StartPhase -ne 'Opening') {
+        throw 'Playthrough requires Debug, main game, and Opening.'
+    }
+    $arguments += ' --smoke-playthrough'
 }
 
 $diagnosticEnvironmentName = 'CG2_D3D12_DIAGNOSTIC_LOG'

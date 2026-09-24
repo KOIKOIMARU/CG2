@@ -11,6 +11,7 @@ class AbstractSceneFactory;
 struct SmokeTestOptions {
     bool enabled = false;
     bool tutorial = false; // スモークテストの入場先。通常起動には影響しない。
+    bool playthrough = false; // Debug専用。通常の射撃・被弾ルールでクリアと再挑戦を検証。
     double gameplaySeconds = 15.0;
     double startupTimeoutSeconds = 120.0;
     std::filesystem::path logPath;
@@ -38,5 +39,6 @@ private:
     bool smokeAutoStartRequested_ = false;
     bool smokeGameplayStarted_ = false;
     bool smokeTestFinished_ = false;
+    bool playthroughComplete_ = false;
     uint64_t smokeGameplayFrameCount_ = 0;
 };

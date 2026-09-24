@@ -98,6 +98,14 @@ void MyGame::Update() {
 
     imguiManager_->Begin();
 
+#ifdef _DEBUG
+    if (smokeTestOptions_.enabled && smokeTestOptions_.playthrough) {
+        if (auto* game = dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
+            playthroughComplete_ = game->RunPlaythroughProbe(smokeTestOptions_.logPath.string());
+        }
+    }
+#endif
+
     SceneManager::GetInstance()->Update();
 
     imguiManager_->End();
@@ -213,7 +221,12 @@ void MyGame::UpdateSmokeTest()
     ++smokeGameplayFrameCount_;
     const double gameplayElapsedSeconds =
         std::chrono::duration<double>(now - smokeGameplayStartTime_).count();
-    if (gameplayElapsedSeconds >= smokeTestOptions_.gameplaySeconds) {
+    if (smokeTestOptions_.playthrough && !playthroughComplete_ &&
+        gameplayElapsedSeconds >= smokeTestOptions_.gameplaySeconds) {
+        FailSmokeTest("playthrough_timeout", 7);
+        return;
+    }
+    if (playthroughComplete_ || gameplayElapsedSeconds >= smokeTestOptions_.gameplaySeconds) {
         std::ostringstream message;
         message << "SMOKE_TEST_PASS gameplay_elapsed_seconds="
                 << std::fixed << std::setprecision(3)
