@@ -7514,7 +7514,7 @@ void GameRuntime::DrawResultOverlay()
         ImGui::Begin("チュートリアル終了", nullptr,
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
         ImGui::TextUnformatted("練習を終了しました。");
-        ImGui::TextUnformatted("本編はタイトルの「出撃する」から遊べます。");
+        ImGui::TextUnformatted("本編はタイトルの「ゲーム開始」から遊べます。");
         if (ImGui::Button("もう一度練習 [R]", ImVec2(300.0f, 36.0f))) {
             isRetryRequested_ = true;
         }
