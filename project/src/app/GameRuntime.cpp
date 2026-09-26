@@ -6450,19 +6450,6 @@ void GameRuntime::DrawHud()
         1.0f);
     const bool isChargeReady = chargeTimer_ >= chargeShotThreshold_;
     const float hudScale = GetCombatHudScale(hudSize);
-    auto drawBar = [drawList, hudScale](
-                       const ImVec2& min,
-                       const ImVec2& max,
-                       float rate,
-                       ImU32 fillColor) {
-        const ImVec2 fillMax(
-            min.x + (max.x - min.x) * (std::clamp)(rate, 0.0f, 1.0f),
-            max.y);
-        drawList->AddRectFilled(min, max, CombatHud::Track, 2.0f * hudScale);
-        if (fillMax.x > min.x) {
-            drawList->AddRectFilled(min, fillMax, fillColor, 2.0f * hudScale);
-        }
-    };
     if (hpRate <= 0.34f && !isGameOver_) {
         const int alertAlpha = static_cast<int>(
             14.0f + (0.34f - hpRate) * 60.0f +
@@ -6502,37 +6489,35 @@ void GameRuntime::DrawHud()
             clearAlertColor);
     }
 
-    const ImVec2 playerAnchor(origin.x + 32.0f * hudScale, origin.y + 22.0f * hudScale);
-    const ImVec2 hpBarMin(playerAnchor.x, playerAnchor.y + 48.0f * hudScale);
-    const ImVec2 hpBarMax(hpBarMin.x + 196.0f * hudScale, hpBarMin.y + 5.0f * hudScale);
-    const ImVec2 chargeBarMin(playerAnchor.x, playerAnchor.y + 86.0f * hudScale);
-    const ImVec2 chargeBarMax(chargeBarMin.x + 196.0f * hudScale, chargeBarMin.y + 3.0f * hudScale);
+    const ImVec2 playerAnchor(origin.x + 24.0f * hudScale, origin.y + 24.0f * hudScale);
+    const auto hpPoint = [&](float x, float y) {
+        return ImVec2(playerAnchor.x + x * hudScale, playerAnchor.y + y * hudScale);
+    };
     char hpText[16]{};
-    char maxHpText[24]{};
     std::snprintf(hpText, sizeof(hpText), "%d", hp);
-    std::snprintf(maxHpText, sizeof(maxHpText), "/ %d", maxHp);
-    const ImU32 hpColor =
-        hpRate <= 0.34f ? CombatHud::Danger : CombatHud::White;
-
-    DrawCombatHudShade(drawList, origin,
-        ImVec2(origin.x + 280.0f * hudScale, origin.y + 140.0f * hudScale), false);
-    DrawCombatHudText(drawList, ImVec2(playerAnchor.x, playerAnchor.y + 19.0f * hudScale),
-        17.0f * hudScale, CombatHud::Muted, "HP", false, true);
-    const float hpNumberX = playerAnchor.x + 29.0f * hudScale;
-    DrawCombatHudText(drawList, ImVec2(hpNumberX, playerAnchor.y),
-        40.0f * hudScale, hpColor, hpText, false, true);
-    const float hpNumberWidth = CombatHud::Width(hpText, 40.0f * hudScale, true);
-    DrawCombatHudText(drawList,
-        ImVec2(hpNumberX + 7.0f * hudScale + hpNumberWidth, playerAnchor.y + 20.0f * hudScale),
-        18.0f * hudScale, CombatHud::Muted, maxHpText, false, true);
-    drawBar(hpBarMin, hpBarMax, hpRate, hpColor);
-    DrawCombatHudText(drawList, ImVec2(chargeBarMin.x, chargeBarMin.y - 21.0f * hudScale),
-        13.0f * hudScale, CombatHud::Muted, "チャージ");
-    drawBar(
-        chargeBarMin,
-        chargeBarMax,
-        chargeRate,
-        isChargeReady ? CombatHud::White : CombatHud::Muted);
+    const bool critical = hpRate <= 0.34f;
+    const float damageKick = playerDamageHudTimer_ > 0 ?
+        std::clamp(static_cast<float>(playerDamageHudTimer_) /
+            static_cast<float>(playerDamageHudDuration_), 0.0f, 1.0f) : 0.0f;
+    const float badgeShift = std::sin(damageKick * 18.0f) * damageKick * 3.0f;
+    DrawCombatHudShade(drawList, origin, hpPoint(315, 110), false);
+    CombatHud::CutPlate(drawList, hpPoint(badgeShift, 0), hpPoint(104 + badgeShift, 76),
+        critical ? CombatHud::Danger : CombatHud::Vermilion, 17.0f * hudScale);
+    DrawCombatHudText(drawList, hpPoint(28 + badgeShift, 3), 14.0f * hudScale,
+        CombatHud::Ink, "HP", false, true);
+    CombatHud::SpeedText(drawList, hpPoint(12 + badgeShift, 15), 58.0f * hudScale,
+        CombatHud::White, hpText);
+    // HPは厚い一本、チャージは三本の短い刃。文字を読まずに用途を区別できる。
+    CombatHud::CutMeter(drawList, hpPoint(112, 15), hpPoint(268, 33), hpRate,
+        critical ? CombatHud::Danger : CombatHud::White, 5.0f * hudScale);
+    DrawCombatHudText(drawList, hpPoint(112, 44), 13.0f * hudScale,
+        isChargeReady ? CombatHud::Energy : CombatHud::Muted, "チャージ");
+    for (int index = 0; index < 3; ++index) {
+        const float x = 112.0f + 53.0f * static_cast<float>(index);
+        CombatHud::CutMeter(drawList, hpPoint(x, 65), hpPoint(x + 48, 73),
+            chargeRate * 3.0f - static_cast<float>(index),
+            isChargeReady ? CombatHud::Energy : CombatHud::White, 3.0f * hudScale);
+    }
 
     const ImVec2 scoreAnchor(origin.x + drawSize.x - 32.0f * hudScale, playerAnchor.y);
     const int waveNumber = currentWaveIndex_ < kWaveCount ? currentWaveIndex_ + 1 : kWaveCount;
@@ -6547,11 +6532,11 @@ void GameRuntime::DrawHud()
     DrawCombatHudShade(drawList,
         ImVec2(origin.x + drawSize.x - 280.0f * hudScale, origin.y),
         ImVec2(origin.x + drawSize.x, origin.y + 156.0f * hudScale), true);
-    DrawCombatHudText(drawList, scoreAnchor, 14.0f * hudScale, CombatHud::Muted,
+    DrawCombatHudText(drawList, scoreAnchor, 14.0f * hudScale, CombatHud::Vermilion,
         IsTutorial() ? "練習スコア" : "スコア", true);
-    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 17.0f * hudScale),
-        40.0f * hudScale, CombatHud::White, scoreText, true, true);
-    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 62.0f * hudScale),
+    CombatHud::SpeedText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 14.0f * hudScale),
+        52.0f * hudScale, CombatHud::White, scoreText, true);
+    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 71.0f * hudScale),
         14.0f * hudScale, CombatHud::Muted, bossSpawned_ ? "ボス戦" : waveText, true);
 
     DrawBossHud();
@@ -6674,16 +6659,16 @@ void GameRuntime::DrawBossHud()
         shade, shade, clear, clear);
     draw->AddRectFilledMultiColor(p(416, -24), p(480, shadeBottom),
         shade, clear, clear, clear);
-    DrawCombatHudText(draw, p(0, 0), 17.0f * scale, CombatHud::White, "ボス");
-    draw->AddRectFilled(p(0, 29), p(416, 35), CombatHud::Track);
-    draw->AddRectFilled(p(0, 29), p(416.0f * hpRate, 35), CombatHud::Danger);
+    CombatHud::SpeedText(draw, p(0, -8), 28.0f * scale, CombatHud::Vermilion, "BOSS");
+    CombatHud::CutMeter(draw, p(0, 29), p(416, 41), hpRate,
+        CombatHud::Vermilion, 5.0f * scale);
 
     if (counter || attacking) {
         // 敵の状態と反撃可能時間だけを提示し、注意文やHPの重複数値は出さない。
         const char* label = counter ? "反撃 ×2" :
             bossAttackPattern_ == 0 ? "拡散弾" :
             bossAttackPattern_ == 1 ? "なぎ払い" : "チャージ砲";
-        const ImU32 color = counter ? CombatHud::Gold : CombatHud::Danger;
+        const ImU32 color = counter ? CombatHud::Energy : CombatHud::Danger;
         const int duration = counter ? bossCounterDuration_ :
             bossAttackPattern_ == 0 ? (bossPhase_ >= 2 ? 24 : 32) :
             bossAttackPattern_ == 1 ? (bossPhase_ >= 2 ? 20 : 28) :
@@ -6693,8 +6678,7 @@ void GameRuntime::DrawBossHud()
                 static_cast<float>((std::max)(duration, 1)), 0.0f, 1.0f);
         const float rate = counter ? remaining : 1.0f - remaining;
         DrawCombatHudText(draw, p(416, 0), 16.0f * scale, color, label, true);
-        draw->AddRectFilled(p(0, 43), p(416, 45), CombatHud::Track);
-        draw->AddRectFilled(p(0, 43), p(416.0f * rate, 45), color);
+        CombatHud::CutMeter(draw, p(0, 48), p(416, 53), rate, color, 2.0f * scale);
     }
 }
 void GameRuntime::DrawStageCueHud()
@@ -6790,12 +6774,12 @@ void GameRuntime::DrawDefeatChainHud()
     const ImVec2 origin(hudMin.x, hudMin.y);
     const ImVec2 drawSize(hudSize.x, hudSize.y);
     const float hudScale = GetCombatHudScale(hudSize);
-    const float panelWidth = 196.0f * hudScale;
+    const float panelWidth = 210.0f * hudScale;
     const ImVec2 panelMin(
         origin.x + drawSize.x - 32.0f * hudScale - panelWidth,
         origin.y + 126.0f * hudScale);
-    const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 38.0f * hudScale);
-    ImU32 accentColor = CombatHud::White;
+    const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 55.0f * hudScale);
+    ImU32 accentColor = CombatHud::Energy;
     if (isBreakNoticeVisible) {
         const int alpha = static_cast<int>(
             100.0f + 145.0f *
@@ -6803,12 +6787,12 @@ void GameRuntime::DrawDefeatChainHud()
             static_cast<float>(kDefeatChainBreakFlashFrames));
         accentColor = IM_COL32(255, 96, 116, (std::clamp)(alpha, 0, 255));
     } else {
-        accentColor = GetDefeatChainScoreMultiplier() >= 3 ? CombatHud::Gold : CombatHud::White;
+        accentColor = feverTimer_ > 0 ? CombatHud::Gold : CombatHud::Energy;
     }
 
     if (isBreakNoticeVisible) {
-        DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
-            15.0f * hudScale, accentColor, "チェイン終了", true);
+        CombatHud::SpeedText(drawList, ImVec2(panelMax.x, panelMin.y),
+            32.0f * hudScale, accentColor, "BREAK", true);
         return;
     }
 
@@ -6819,28 +6803,27 @@ void GameRuntime::DrawDefeatChainHud()
     char multiplierText[32]{};
     std::snprintf(chainText, sizeof(chainText), "%d 連続撃破", defeatChainCount_);
     std::snprintf(multiplierText, sizeof(multiplierText), "x%d", totalScoreMultiplier);
-    DrawCombatHudText(drawList, ImVec2(panelMin.x, panelMin.y + 5.0f * hudScale),
+    DrawCombatHudText(drawList, ImVec2(panelMin.x, panelMin.y + 15.0f * hudScale),
         15.0f * hudScale, CombatHud::White, chainText);
     if (totalScoreMultiplier > 1) {
-        DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
-            32.0f * hudScale, accentColor, multiplierText, true, true);
+        const float punch = 1.0f - std::clamp(
+            static_cast<float>(kDefeatChainDurationFrames - defeatChainTimer_) / 14.0f, 0.0f, 1.0f);
+        const float badgeWidth = (78.0f + punch * 6.0f) * hudScale;
+        CombatHud::CutPlate(drawList,
+            { panelMax.x - badgeWidth, panelMin.y - punch * 3.0f * hudScale },
+            { panelMax.x + 6.0f * hudScale, panelMin.y + 43.0f * hudScale }, accentColor, 9.0f * hudScale);
+        CombatHud::SpeedText(drawList, { panelMax.x - 6.0f * hudScale, panelMin.y - 3.0f * hudScale },
+            (42.0f + punch * 4.0f) * hudScale, CombatHud::Ink, multiplierText, true);
     }
 
     const ImVec2 timerMin(panelMin.x, panelMax.y - 5.0f * hudScale);
-    const ImVec2 timerMax(panelMax.x, panelMax.y - 2.0f * hudScale);
+    const ImVec2 timerMax(panelMax.x, panelMax.y + 1.0f * hudScale);
     const float timerRate = std::clamp(
         static_cast<float>(defeatChainTimer_) /
             static_cast<float>(kDefeatChainDurationFrames),
         0.0f,
         1.0f);
-    drawList->AddRectFilled(timerMin, timerMax, CombatHud::Track, 2.0f);
-    drawList->AddRectFilled(
-        timerMin,
-        ImVec2(
-            timerMin.x + (timerMax.x - timerMin.x) * timerRate,
-            timerMax.y),
-        accentColor,
-        2.0f);
+    CombatHud::CutMeter(drawList, timerMin, timerMax, timerRate, accentColor, 3.0f * hudScale);
 }
 
 void GameRuntime::DrawFeverHud()
@@ -6879,68 +6862,31 @@ void GameRuntime::DrawFeverHud()
     };
 
     const float hudScale = GetCombatHudScale(hudSize);
-    const float barWidth = 196.0f * hudScale;
-    const ImVec2 panelMin(
-        origin.x + 32.0f * hudScale,
-        origin.y + drawSize.y - 80.0f * hudScale);
-    const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 48.0f * hudScale);
-    const ImVec2 barMin(panelMin.x, panelMin.y + 35.0f * hudScale);
-    const ImVec2 barMax(panelMax.x, barMin.y + 5.0f * hudScale);
-    const ImVec2 fillMax(
-        barMin.x + (barMax.x - barMin.x) * std::clamp(rate, 0.0f, 1.0f),
-        barMax.y);
-    CombatHud::Shade(drawList, { origin.x, panelMin.y - 12.0f * hudScale },
-        { panelMax.x + 50.0f * hudScale, origin.y + drawSize.y });
-    drawList->AddRectFilled(barMin, barMax, CombatHud::Track);
-    drawList->PushClipRect(barMin, barMax, true);
-    if (fillMax.x > barMin.x) {
-        if (isActive || isReady) {
-            constexpr int kRainbowBarSegments = 18;
-            const float filledWidth = fillMax.x - barMin.x;
-            for (int segment = 0; segment < kRainbowBarSegments; ++segment) {
-                const float segmentRate0 =
-                    static_cast<float>(segment) / static_cast<float>(kRainbowBarSegments);
-                const float segmentRate1 =
-                    static_cast<float>(segment + 1) / static_cast<float>(kRainbowBarSegments);
-                const ImVec2 segmentMin(
-                    barMin.x + filledWidth * segmentRate0,
-                    barMin.y);
-                const ImVec2 segmentMax(
-                    barMin.x + filledWidth * segmentRate1 + 1.0f,
-                    barMax.y);
-                drawList->AddRectFilledMultiColor(
-                    segmentMin,
-                    segmentMax,
-                    rainbowColor(segmentRate0 * 0.82f, 245),
-                    rainbowColor(segmentRate1 * 0.82f, 245),
-                    rainbowColor(segmentRate1 * 0.82f + 0.05f, 225),
-                    rainbowColor(segmentRate0 * 0.82f + 0.05f, 225));
-            }
-            const float sweepRate = std::fmod(cameraTimer_ * 0.022f, 1.0f);
-            const float sweepX = barMin.x + filledWidth * sweepRate;
-            const float sweepHalfWidth = 7.0f + pulse * 4.0f;
-            drawList->AddRectFilledMultiColor(
-                ImVec2((std::max)(barMin.x, sweepX - sweepHalfWidth), barMin.y + 1.0f),
-                ImVec2((std::min)(fillMax.x, sweepX + sweepHalfWidth), barMax.y - 1.0f),
-                IM_COL32(255, 255, 255, 15),
-                IM_COL32(255, 255, 255, 180),
-                IM_COL32(255, 255, 255, 115),
-                IM_COL32(255, 255, 255, 10));
-        } else {
-            drawList->AddRectFilled(barMin, fillMax, CombatHud::White);
+    const ImVec2 anchor(origin.x + 24.0f * hudScale, origin.y + drawSize.y - 112.0f * hudScale);
+    const auto p = [&](float x, float y) {
+        return ImVec2(anchor.x + x * hudScale, anchor.y + y * hudScale);
+    };
+    CombatHud::CutPlate(drawList, p(0, 5), p(265, 83), CombatHud::Ink, 19.0f * hudScale);
+    CombatHud::SpeedText(drawList, p(20, 1), 43.0f * hudScale,
+        isActive ? CombatHud::Energy : CombatHud::Fever, "FEVER");
+    // 十二枚の翼が埋まり、発動時には同じ形のまま虹へ切り替わる。
+    // 常設の説明や%表示ではなく、シルエットの変化をフィーバーの目印にする。
+    for (int index = 0; index < 12; ++index) {
+        const float x = 13.0f + static_cast<float>(index) * 19.5f;
+        const ImU32 color = isActive || isReady ? rainbowColor(static_cast<float>(index) / 14.0f, 255) :
+            CombatHud::Fever;
+        CombatHud::CutMeter(drawList, p(x, 58), p(x + 17, 73),
+            rate * 12.0f - static_cast<float>(index), color, 4.0f * hudScale);
+        // 未充填でもゲージの全長が分かるよう、暗い翼を下地に残す。
+        if (rate * 12.0f <= static_cast<float>(index)) {
+            CombatHud::CutPlate(drawList, p(x, 58), p(x + 17, 73), IM_COL32(72, 61, 84, 255), 4.0f * hudScale);
         }
     }
-    drawList->PopClipRect();
-    DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 5.0f * hudScale),
-        17.0f * hudScale, isActive ? CombatHud::Gold : CombatHud::Muted, "フィーバー");
-    // 通常時はゲージだけ。時間制限がある発動中だけ残り秒数を見せる。
     if (isActive) {
         char status[32]{};
         std::snprintf(status, sizeof(status), "%.1fs", static_cast<float>(feverTimer_) / 60.0f);
-        DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y - 4.0f * hudScale),
-            30.0f * hudScale, CombatHud::Gold, status, true, true);
+        CombatHud::SpeedText(drawList, p(245, 8), 35.0f * hudScale, CombatHud::White, status, true);
     }
-
     if (isActive) {
         const int edgeAlpha = static_cast<int>(45.0f + pulse * 38.0f);
         constexpr int kHorizontalEdgeSegments = 16;
@@ -7000,13 +6946,19 @@ void GameRuntime::DrawFeverHud()
         const float elapsed = 1.0f - remaining;
         const float visibility = std::clamp(elapsed / 0.12f, 0.0f, 1.0f) *
             std::clamp(remaining / 0.28f, 0.0f, 1.0f);
-        const float fontSize = (42.0f + 5.0f * (1.0f - elapsed)) * hudScale;
-        const char* title = "FEVER!";
+        const float fontSize = (94.0f + 18.0f * (1.0f - elapsed)) * hudScale;
+        const char* title = "FEVER";
         const float titleWidth = CombatHud::Width(title, fontSize, true);
         const ImVec2 center(origin.x + drawSize.x * 0.5f,
             origin.y + drawSize.y * 0.23f - elapsed * 8.0f * hudScale);
-        DrawCombatHudText(drawList, ImVec2(center.x - titleWidth * 0.5f, center.y),
-            fontSize, IM_COL32(255, 248, 223, static_cast<int>(255.0f * visibility)), title, false, true);
+        const float sweep = (1.0f - std::clamp(elapsed / 0.18f, 0.0f, 1.0f)) * 60.0f * hudScale;
+        CombatHud::CutPlate(drawList,
+            { center.x - titleWidth * 0.5f - 24.0f * hudScale + sweep, center.y + 12.0f * hudScale },
+            { center.x + titleWidth * 0.5f + 35.0f * hudScale + sweep, center.y + 100.0f * hudScale },
+            IM_COL32(255, 83, 49, static_cast<int>(235.0f * visibility)), 24.0f * hudScale);
+        CombatHud::SpeedText(drawList,
+            { center.x - titleWidth * 0.5f - sweep, center.y - 3.0f * hudScale },
+            fontSize, IM_COL32(241, 240, 235, static_cast<int>(255.0f * visibility)), title);
     }
 }
 
@@ -7290,17 +7242,20 @@ void GameRuntime::DrawResultOverlay()
         }
     }
 
-    const ImU32 resultAccent = isGameClear_ ? CombatHud::Gold : CombatHud::Danger;
+    const ImU32 resultAccent = isGameClear_ ? CombatHud::Energy : CombatHud::Vermilion;
     drawList->AddRectFilled(panelMin, panelMax, IM_COL32(20, 21, 22, 248));
-    CombatHud::Text(drawList, p(32, 20), 32.0f * scale, CombatHud::White,
+    // 結果の見出しと評価を一枚のレースステッカーのように見せる。
+    CombatHud::CutPlate(drawList, p(-14, 14), p(272, 67), resultAccent, 13.0f * scale);
+    CombatHud::Text(drawList, p(25, 21), 36.0f * scale, CombatHud::Ink,
         isGameClear_ ? "任務達成" : "作戦失敗");
-    CombatHud::Text(drawList, p(32, 76), 15.0f * scale, CombatHud::Muted, "獲得スコア");
+    CombatHud::Text(drawList, p(32, 81), 14.0f * scale, CombatHud::Muted, "獲得スコア");
     char valueText[96]{};
     std::snprintf(valueText, sizeof(valueText), "%06d", score_);
-    CombatHud::Text(drawList, p(32, 95), 52.0f * scale, CombatHud::White, valueText, false, true);
+    CombatHud::SpeedText(drawList, p(30, 97), 58.0f * scale, CombatHud::White, valueText);
     if (isGameClear_) {
-        CombatHud::Text(drawList, p(608, 76), 15.0f * scale, CombatHud::Muted, "評価", true);
-        CombatHud::Text(drawList, p(608, 94), 56.0f * scale, resultAccent, rank, true, true);
+        CombatHud::CutPlate(drawList, p(490, 14), p(625, 150), resultAccent, 27.0f * scale);
+        CombatHud::Text(drawList, p(539, 20), 14.0f * scale, CombatHud::Ink, "評価");
+        CombatHud::SpeedText(drawList, p(516, 33), 116.0f * scale, CombatHud::Ink, rank);
     }
     drawList->AddLine(p(32, 160), p(608, 160), IM_COL32(160, 160, 156, 70));
 
@@ -7346,23 +7301,25 @@ void GameRuntime::DrawResultOverlay()
     ImGui::Begin("Result actions", nullptr, ImGuiWindowFlags_NoDecoration |
         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav);
-    const auto resultButton = [drawList, scale](const char* label) {
+    const auto resultButton = [drawList, scale](const char* label, bool primary) {
         const bool clicked = ImGui::InvisibleButton(label, ImVec2(276.0f * scale, 40.0f * scale));
         const ImVec2 min = ImGui::GetItemRectMin();
         const ImVec2 max = ImGui::GetItemRectMax();
         // HUDパネルと同じ前景レイヤーへ描き、パネルの裏にボタンが隠れないようにする。
-        drawList->AddRectFilled(min, max, ImGui::IsItemHovered() ?
-            IM_COL32(63, 64, 65, 255) : IM_COL32(36, 37, 38, 255));
+        const bool highlighted = primary || ImGui::IsItemHovered();
+        CombatHud::CutPlate(drawList, min, max, highlighted ?
+            (ImGui::IsItemHovered() ? CombatHud::White : CombatHud::Vermilion) :
+            IM_COL32(45, 44, 51, 255), 9.0f * scale);
         const float width = CombatHud::Width(label, 18.0f * scale);
         CombatHud::Text(drawList, ImVec2((min.x + max.x - width) * 0.5f,
-            min.y + 9.0f * scale), 18.0f * scale, CombatHud::White, label);
+            min.y + 9.0f * scale), 18.0f * scale, highlighted ? CombatHud::Ink : CombatHud::White, label);
         return clicked;
     };
-    if (resultButton("再挑戦")) {
+    if (resultButton("再挑戦", true)) {
         isRetryRequested_ = true;
     }
     ImGui::SameLine(0.0f, 24.0f * scale);
-    if (resultButton("タイトル")) {
+    if (resultButton("タイトル", false)) {
         isExitRequested_ = true;
     }
     ImGui::End();

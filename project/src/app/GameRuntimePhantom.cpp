@@ -409,10 +409,14 @@ void GameRuntime::DrawPhantomRaidOverlay()
             }
         }
         const char* title = "残像連撃";
-        const float textSize = 28.0f * hudScale;
+        const float textSize = 38.0f * hudScale;
         const float width = CombatHud::Width(title, textSize);
-        PhantomText(draw, { min.x + (size.x - width) * 0.5f, min.y + size.y - 134.0f * hudScale },
-            textSize, gold ? CombatHud::Gold : CombatHud::White, title);
+        const float titleX = min.x + (size.x - width) * 0.5f;
+        const float titleY = min.y + size.y - 152.0f * hudScale;
+        CombatHud::CutPlate(draw, { titleX - 21.0f * hudScale, titleY - 3.0f * hudScale },
+            { titleX + width + 25.0f * hudScale, titleY + 45.0f * hudScale },
+            gold ? CombatHud::Gold : CombatHud::Vermilion, 12.0f * hudScale);
+        PhantomText(draw, { titleX, titleY }, textSize, CombatHud::Ink, title);
     }
     for (const auto& slash : phantomSlashes_) {
         if (slash.age < 0.0f) {
@@ -426,21 +430,39 @@ void GameRuntime::DrawPhantomRaidOverlay()
                 fade, phantomEmpowered_);
         }
     }
-    const ImVec2 panel{ min.x + size.x - 230.0f * hudScale, min.y + size.y - 82.0f * hudScale };
+    const ImVec2 panel{ min.x + size.x - 284.0f * hudScale, min.y + size.y - 113.0f * hudScale };
     const auto p = [&](float x, float y) { return ImVec2(panel.x + x * hudScale, panel.y + y * hudScale); };
-    CombatHud::Shade(draw, p(-40.0f, -12.0f), { min.x + size.x, min.y + size.y }, true);
-    // 常設表示は技名・キー・アイコンだけ。枠と「使用可能」の重複説明は置かない。
-    const ImU32 hudAccent = gold ? CombatHud::Gold : CombatHud::White;
-    const ImU32 iconColor = phantomReady_ || active ? hudAccent : IM_COL32(121, 121, 119, 255);
-    CombatHud::BladeIcon(draw, p(22, 22), 0.8f * hudScale, iconColor);
-    PhantomText(draw, p(54, 3), 17.0f * hudScale, CombatHud::White, "残像連撃");
-    CombatHud::Text(draw, p(198, -1), 25.0f * hudScale, iconColor, "Q", true, true);
+    const ImU32 hudAccent = gold ? CombatHud::Gold : CombatHud::Energy;
+    const bool ready = phantomReady_ || active;
+    const float readyBurst = std::clamp(phantomReadyFlash_ / 72.0f, 0.0f, 1.0f);
+    const float kick = readyBurst * readyBurst * 5.0f;
+    CombatHud::Shade(draw, p(-30, -12), { min.x + size.x, min.y + size.y }, true);
+    CombatHud::CutPlate(draw, p(18, 14), p(256, 83), CombatHud::Ink, 16.0f * hudScale);
+    // 主役は刃の紋章。回復時だけ色面が弾み、待機中には常時点滅させない。
+    CombatHud::CutPlate(draw, p(-kick, -kick), p(80 + kick, 83 + kick),
+        ready ? hudAccent : IM_COL32(66, 65, 73, 255), 18.0f * hudScale);
+    CombatHud::BladeIcon(draw, p(40, 39), 1.25f * hudScale,
+        ready ? CombatHud::Ink : CombatHud::Muted);
+    PhantomText(draw, p(95, 22), 22.0f * hudScale, CombatHud::White, "残像連撃");
+    CombatHud::CutPlate(draw, p(211, 53), p(246, 79), ready ? hudAccent : CombatHud::Track, 5.0f * hudScale);
+    CombatHud::Text(draw, p(222, 51), 27.0f * hudScale,
+        ready ? CombatHud::Ink : CombatHud::Muted, "Q", false, true);
+    if (readyBurst > 0.0f) {
+        const int alpha = static_cast<int>(210.0f * readyBurst * readyBurst);
+        const float travel = (1.0f - readyBurst) * 18.0f;
+        draw->AddLine(p(3 - travel, 15), p(17 - travel, -4),
+            IM_COL32(225, 250, 91, alpha), 3.0f * hudScale);
+        draw->AddLine(p(67 + travel, 86), p(83 + travel, 63),
+            IM_COL32(225, 250, 91, alpha), 3.0f * hudScale);
+    }
     if (!active && phantomNoTargetNotice_ > 0.0f) {
-        PhantomText(draw, p(54, 29), 14.0f * hudScale, CombatHud::Muted, "対象なし");
+        PhantomText(draw, p(95, 57), 14.0f * hudScale, CombatHud::Muted, "対象なし");
     } else if (!active && !phantomReady_ && phantomCooldown_ > 0.0f) {
         char cooldown[24]{};
         std::snprintf(cooldown, sizeof(cooldown), "%.1fs", static_cast<double>(phantomCooldown_ / 60.0f));
-        CombatHud::Text(draw, p(198, 25), 26.0f * hudScale, CombatHud::Muted, cooldown, true, true);
+        CombatHud::SpeedText(draw, p(94, 47), 34.0f * hudScale, CombatHud::White, cooldown);
+        const float recovery = 1.0f - std::clamp(phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f);
+        CombatHud::CutMeter(draw, p(4, 89), p(76, 94), recovery, hudAccent, 2.0f * hudScale);
     }
     draw->PopClipRect();
 }
