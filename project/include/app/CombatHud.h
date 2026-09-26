@@ -12,11 +12,8 @@ inline constexpr ImU32 Blue = IM_COL32(91, 206, 242, 255);
 inline constexpr ImU32 Gold = IM_COL32(231, 189, 109, 255);
 inline constexpr ImU32 Danger = IM_COL32(237, 100, 88, 255);
 inline constexpr ImU32 Track = IM_COL32(41, 42, 43, 220);
-// 機体のマーキングとエネルギーを別の色で識別する。タイトルの配色は変えない。
-inline constexpr ImU32 Vermilion = IM_COL32(255, 83, 49, 255);
-inline constexpr ImU32 Energy = IM_COL32(225, 250, 91, 255);
-inline constexpr ImU32 Ink = IM_COL32(24, 23, 30, 245);
-inline constexpr ImU32 Fever = IM_COL32(209, 128, 255, 255);
+// 戦闘計器のアクセント。通常は金、危険だけ赤、虹はフィーバー発動中に限定する。
+inline constexpr ImU32 GaugeGold = IM_COL32(255, 202, 70, 255);
 
 inline float Scale(const Math::Vector2& viewport)
 {
@@ -54,53 +51,47 @@ inline void Shade(ImDrawList* draw, ImVec2 min, ImVec2 max, bool right = false)
         right ? dark : clear, right ? clear : dark);
 }
 
-// 翼・斬撃と同じ傾きを持つ面。枠線ではなく色面の輪郭でHUDを識別する。
-inline void CutPlate(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 color, float cut)
-{
-    const ImVec2 points[] = {
-        { min.x + cut, min.y }, { max.x, min.y },
-        { max.x - cut, max.y }, { min.x, max.y }
-    };
-    draw->AddConvexPolyFilled(points, 4, color);
-}
-
-inline void CutMeter(ImDrawList* draw, ImVec2 min, ImVec2 max, float rate, ImU32 color, float cut)
-{
-    CutPlate(draw, min, max, Ink, cut);
-    rate = std::clamp(rate, 0.0f, 1.0f);
-    if (rate <= 0.0f) { return; }
-    const float edge = min.x + (max.x - min.x) * rate;
-    const ImVec2 plate[] = {
-        { min.x + cut, min.y }, { max.x, min.y },
-        { max.x - cut, max.y }, { min.x, max.y }
-    };
-    // 1px未満のクリップ矩形はD3D12側で空になるため、塗る多角形をCPUで切り出す。
-    ImVec2 filled[6]{};
-    int count = 0;
-    ImVec2 previous = plate[3];
-    for (const ImVec2 current : plate) {
-        const bool previousInside = previous.x <= edge;
-        const bool currentInside = current.x <= edge;
-        if (previousInside != currentInside) {
-            const float t = (edge - previous.x) / (current.x - previous.x);
-            filled[count++] = { edge, previous.y + (current.y - previous.y) * t };
-        }
-        if (currentInside) { filled[count++] = current; }
-        previous = current;
-    }
-    if (count >= 3) { draw->AddConvexPolyFilled(filled, count, color); }
-}
-
-// 英数字を前傾させ、和文の可読性は保つ。既存フォントを再利用し追加画像は不要。
-inline void SpeedText(ImDrawList* draw, ImVec2 position, float size, ImU32 color,
+// 数字も和文も同じ書体・同じ縁取りで描く。タイトルのロゴ用書体は変更しない。
+inline void Readout(ImDrawList* draw, ImVec2 position, float size, ImU32 color,
     const char* text, bool right = false)
 {
-    if (right) { position.x -= size * 0.12f; }
-    const int first = draw->VtxBuffer.Size;
-    Text(draw, position, size, color, text, right, true);
-    for (int index = first; index < draw->VtxBuffer.Size; ++index) {
-        auto& vertex = draw->VtxBuffer[index];
-        vertex.pos.x += (position.y + size - vertex.pos.y) * 0.12f;
+    if (right) { position.x -= Width(text, size); }
+    position.x = std::round(position.x);
+    position.y = std::round(position.y);
+    const int alpha = static_cast<int>((color >> IM_COL32_A_SHIFT) & 0xff);
+    const ImU32 outline = IM_COL32(12, 14, 18, alpha * 4 / 5);
+    for (const ImVec2 offset : { ImVec2(-1, 0), ImVec2(1, 0), ImVec2(0, -1), ImVec2(0, 1) }) {
+        draw->AddText(Font(), size, { position.x + offset.x, position.y + offset.y }, outline, text);
+    }
+    draw->AddText(Font(), size, position, color, text);
+}
+
+// 細い金属枠と上面のハイライトを持つ計器。微小な残量にもクリップ矩形を使わない。
+inline void Meter(ImDrawList* draw, ImVec2 min, ImVec2 max, float rate, ImU32 color, float scale)
+{
+    draw->AddRectFilled({ min.x - scale, min.y - scale }, { max.x + scale, max.y + scale }, IM_COL32(9, 12, 16, 240));
+    draw->AddRectFilled(min, max, IM_COL32(25, 29, 34, 230));
+    draw->AddRect(min, max, IM_COL32(179, 187, 194, 240), 0.0f, 0, scale);
+    const ImVec2 inner(min.x + 2.0f * scale, min.y + 2.0f * scale);
+    const ImVec2 end(max.x - 2.0f * scale, max.y - 2.0f * scale);
+    rate = std::clamp(rate, 0.0f, 1.0f);
+    if (rate <= 0.0f || end.x <= inner.x || end.y <= inner.y) { return; }
+    const float edge = inner.x + (end.x - inner.x) * rate;
+    draw->AddRectFilled(inner, { edge, end.y }, color);
+    draw->AddRectFilledMultiColor(inner, { edge, end.y }, IM_COL32(255, 255, 255, 75),
+        IM_COL32(255, 255, 255, 75), IM_COL32(0, 0, 0, 58), IM_COL32(0, 0, 0, 58));
+    draw->AddLine({ inner.x, inner.y }, { edge, inner.y }, IM_COL32(255, 246, 216, 180), scale);
+}
+
+inline void ShipIcon(ImDrawList* draw, ImVec2 center, float scale, ImU32 color)
+{
+    // 自機の正面シルエット。架空の残機数を表示せず、体力の所属だけを伝える。
+    draw->AddTriangleFilled({ center.x, center.y - 17 * scale },
+        { center.x + 5 * scale, center.y + 13 * scale }, { center.x - 5 * scale, center.y + 13 * scale }, color);
+    for (const float side : { -1.0f, 1.0f }) {
+        draw->AddTriangleFilled({ center.x + side * 4 * scale, center.y - 3 * scale },
+            { center.x + side * 23 * scale, center.y + 9 * scale },
+            { center.x + side * 5 * scale, center.y + 8 * scale }, color);
     }
 }
 
