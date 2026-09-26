@@ -9,12 +9,12 @@
 #include <numbers>
 
 namespace {
-constexpr int kDodgeDuration = 18;
-constexpr int kDodgeCooldown = 34;
-constexpr int kDodgeInvincibleDuration = 17;
-constexpr float kDodgeBaseSpeed = 0.24f;
-constexpr float kDodgePeakSpeed = 0.18f;
-constexpr float kDodgeSlowMinScale = 0.18f;
+constexpr float kDodgeDuration = 16.0f;
+constexpr float kDodgeCooldown = 28.0f;
+constexpr float kDodgeDistance = 4.4f;
+constexpr float kDodgeInputBufferDuration = 5.0f;
+// 成功演出で世界が止まっても、移動入力の手応えは残す。
+constexpr float kPlayerSlowMinScale = 0.75f;
 constexpr float kPlayerHorizontalLimit = 8.9f;
 constexpr float kPlayerLowerLimitY = -0.80f;
 constexpr float kPlayerUpperLimitY = 5.55f;
@@ -98,21 +98,17 @@ void Player::Initialize(Object3dCommon* object3dCommon, Model* model)
     UpdateObjectTransform();
 }
 
-void Player::Update(Input* input, float timeScale)
+void Player::Update(Input* input, float timeScale, float frameStep)
 {
     if (!input || !object_ || IsDead()) {
         return;
     }
 
-    const float motionScale = std::clamp(timeScale, 0.10f, 1.0f);
-    const float dodgeTimeStep = std::clamp(timeScale, kDodgeSlowMinScale, 1.0f);
-
-    if (dodgeCooldownTimer_ > 0) {
-        --dodgeCooldownTimer_;
-    }
-    if (invincibleTimer_ > 0) {
-        --invincibleTimer_;
-    }
+    const float controlStep = std::clamp(frameStep, 0.0f, 3.0f);
+    const float motionScale = std::clamp(timeScale, kPlayerSlowMinScale, 1.0f) * controlStep;
+    dodgeCooldownTimer_ = (std::max)(dodgeCooldownTimer_ - controlStep, 0.0f);
+    invincibleTimer_ = (std::max)(invincibleTimer_ - controlStep, 0.0f);
+    dodgeInputBuffer_ = (std::max)(dodgeInputBuffer_ - controlStep, 0.0f);
 
     Math::Vector3 inputMove{ 0.0f, 0.0f, 0.0f };
     Math::Vector3 dodgeMove{ 0.0f, 0.0f, 0.0f };
@@ -140,14 +136,19 @@ void Player::Update(Input* input, float timeScale)
 
     const bool dodgeTriggered =
         input->TriggerKey(DIK_LSHIFT) || input->TriggerKey(DIK_RSHIFT);
-    if (dodgeTriggered && dodgeCooldownTimer_ <= 0 && dodgeTimer_ <= 0.0f) {
-        dodgeDirection_ =
+    if (dodgeTriggered) {
+        dodgeInputBuffer_ = kDodgeInputBufferDuration;
+        bufferedDodgeDirection_ =
             horizontalInput != 0 ?
             (horizontalInput > 0 ? 1 : -1) :
             lastHorizontalDirection_;
-        dodgeTimer_ = static_cast<float>(kDodgeDuration);
+    }
+    if (dodgeInputBuffer_ > 0.0f && dodgeCooldownTimer_ <= 0.0f && dodgeTimer_ <= 0.0f) {
+        dodgeDirection_ = bufferedDodgeDirection_;
+        dodgeInputBuffer_ = 0.0f;
+        dodgeTimer_ = kDodgeDuration;
         dodgeCooldownTimer_ = kDodgeCooldown;
-        invincibleTimer_ = kDodgeInvincibleDuration;
+        invincibleTimer_ = kDodgeDuration;
     }
 
     const bool hasDodgePose = dodgeTimer_ > 0.0f;
@@ -168,20 +169,21 @@ void Player::Update(Input* input, float timeScale)
 
     Math::Vector3 rotate = movementRotate_;
     if (dodgeTimer_ > 0.0f) {
-        const float progress =
-            (static_cast<float>(kDodgeDuration) - dodgeTimer_) /
-            static_cast<float>(kDodgeDuration);
-        const float ease = std::sin(progress * std::numbers::pi_v<float>);
+        const float progress = 1.0f - dodgeTimer_ / kDodgeDuration;
+        dodgeTimer_ = (std::max)(dodgeTimer_ - controlStep, 0.0f);
+        const float nextProgress = 1.0f - dodgeTimer_ / kDodgeDuration;
+        // EaseOutQuadの差分で移動量を積分。初動を速くし、終端では滑らかに止める。
+        // 描画間隔が変わっても総移動距離は同じになる。
+        const auto distanceRate = [](float t) { return t * (2.0f - t); };
         inputMove.x = 0.0f;
         dodgeMove.x +=
             static_cast<float>(dodgeDirection_) *
-            (kDodgeBaseSpeed + kDodgePeakSpeed * ease) * dodgeTimeStep;
+            kDodgeDistance * (distanceRate(nextProgress) - distanceRate(progress));
         rotate.z +=
             static_cast<float>(dodgeDirection_) *
-            progress *
+            (nextProgress * nextProgress * (3.0f - 2.0f * nextProgress)) *
             2.0f *
             std::numbers::pi_v<float>;
-        dodgeTimer_ = (std::max)(dodgeTimer_ - dodgeTimeStep, 0.0f);
     }
 
     translate_.x =

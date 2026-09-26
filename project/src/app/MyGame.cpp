@@ -13,6 +13,7 @@
 #include "engine/scene/TitleScene.h"
 
 #include <chrono>
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -84,6 +85,7 @@ void MyGame::Initialize() {
 
 void MyGame::Update() {
     const auto updateBegin = std::chrono::steady_clock::now();
+    dxCommon_->EditFrameTiming().bufferCreates = 0;
     Framework::Update();
     if (endRequst_) {
         if (smokeTestOptions_.enabled && !smokeTestFinished_) {
@@ -158,9 +160,20 @@ void MyGame::Draw() {
     timing.frameCpuMs =
         timing.updateMs +
         ToMilliseconds(drawBegin, std::chrono::steady_clock::now());
+    if (smokeTestOptions_.enabled && smokeGameplayStarted_ &&
+        smokeFrameSampleCount_ < smokeFrameSamples_.size()) {
+        const float elapsed = std::chrono::duration<float>(
+            std::chrono::steady_clock::now() - smokeGameplayStartTime_).count();
+        if (elapsed < 10.0f) {
+            smokeFrameSamples_[smokeFrameSampleCount_++] = { elapsed, timing.frameCpuMs,
+                timing.updateMs, timing.sceneDrawMs,
+                timing.presentMs, timing.fenceWaitMs, timing.bufferCreates };
+        }
+    }
 }
 
 void MyGame::Finalize() {
+    WriteSmokePerformanceSummary();
     SceneManager::GetInstance()->FinalizeCurrentScene();
     ModelManager::GetInstance()->Finalize();
     sceneFactory_.reset();
@@ -239,6 +252,47 @@ void MyGame::UpdateSmokeTest()
         smokeTestFinished_ = true;
         exitCode_ = 0;
         endRequst_ = true;
+    }
+}
+
+void MyGame::WriteSmokePerformanceSummary() const
+{
+    if (!smokeTestOptions_.enabled || smokeFrameSampleCount_ == 0) {
+        return;
+    }
+    constexpr std::array<float, 4> bounds{ 0.0f, 2.0f, 5.0f, 10.0f };
+    for (size_t range = 0; range + 1 < bounds.size(); ++range) {
+        std::array<float, 720> frameTimes{};
+        size_t count = 0, over33 = 0;
+        uint32_t buffers = 0;
+        float frameTotal = 0.0f, updateTotal = 0.0f;
+        float drawTotal = 0.0f, presentTotal = 0.0f, fenceTotal = 0.0f;
+        for (size_t index = 0; index < smokeFrameSampleCount_; ++index) {
+            const auto& sample = smokeFrameSamples_[index];
+            if (sample.elapsed < bounds[range] || sample.elapsed >= bounds[range + 1]) { continue; }
+            frameTimes[count++] = sample.frame;
+            over33 += sample.frame > 33.333f ? 1u : 0u;
+            frameTotal += sample.frame;
+            updateTotal += sample.update;
+            drawTotal += sample.draw;
+            presentTotal += sample.present;
+            fenceTotal += sample.fence;
+            buffers += sample.buffers;
+        }
+        if (count == 0) { continue; }
+        std::sort(frameTimes.begin(), frameTimes.begin() + count);
+        const float divisor = static_cast<float>(count);
+        std::ostringstream message;
+        message << std::fixed << std::setprecision(2)
+            << "STARTUP_PERF seconds=" << bounds[range] << '-' << bounds[range + 1]
+            << " frames=" << count << " avg_ms=" << frameTotal / divisor
+            << " p95_ms=" << frameTimes[(count - 1) * 95 / 100]
+            << " max_ms=" << frameTimes[count - 1] << " over33=" << over33
+            << " update_avg_ms=" << updateTotal / divisor
+            << " draw_avg_ms=" << drawTotal / divisor
+            << " present_avg_ms=" << presentTotal / divisor << " fence_avg_ms=" << fenceTotal / divisor
+            << " buffer_creates=" << buffers;
+        WriteSmokeLog(message.str());
     }
 }
 

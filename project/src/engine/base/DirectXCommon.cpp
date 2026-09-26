@@ -1416,6 +1416,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource>
 DirectXCommon::CreateBufferResource(size_t sizeInBytes)
 {
     assert(device_);
+    ++frameTiming_.bufferCreates;
 
     // ヒープ設定（UploadHeap）
     D3D12_HEAP_PROPERTIES heapProps{};
@@ -1453,6 +1454,7 @@ DirectXCommon::CreateBufferResource(
     D3D12_RESOURCE_FLAGS resourceFlags)
 {
     assert(device_);
+    ++frameTiming_.bufferCreates;
 
     D3D12_HEAP_PROPERTIES heapProps{};
     heapProps.Type = heapType;

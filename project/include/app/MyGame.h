@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/base/Framework.h"
 #include <chrono>
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -33,6 +34,15 @@ private:
     void UpdateSmokeTest();
     void FailSmokeTest(std::string_view reason, int exitCode);
     void WriteSmokeLog(std::string_view message) const;
+    void WriteSmokePerformanceSummary() const;
+    struct SmokeFrameSample {
+        float elapsed = 0.0f, frame = 0.0f, update = 0.0f;
+        float draw = 0.0f, present = 0.0f, fence = 0.0f;
+        uint32_t buffers = 0;
+    };
+    // 先頭10秒を固定領域に記録し、終了後に集計。毎フレームのファイル書込を避ける。
+    std::array<SmokeFrameSample, 720> smokeFrameSamples_{};
+    size_t smokeFrameSampleCount_ = 0;
 
     std::unique_ptr<AbstractSceneFactory> sceneFactory_;
     SmokeTestOptions smokeTestOptions_;

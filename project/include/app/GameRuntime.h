@@ -81,6 +81,7 @@ private:
     void InitializePhantomRaid();
     void ResetPhantomRaid();
     void GrantPhantomRaid();
+    void RecoverPhantomRaidOnHit(bool charged, bool destroyed);
     bool TryActivatePhantomRaid();
     void UpdatePhantomRaid();
     void DrawPhantomRaidObjects();
@@ -91,11 +92,12 @@ private:
     float PhantomFinisherTime() const { return 12.0f + static_cast<float>(phantomStrikeCount_) * 7.0f; }
     std::array<PhantomTarget, 5> phantomTargets_{};
     std::array<PhantomSlash, 5> phantomSlashes_{}; // 起動時に確保し、技の最中には生成しない。
-    bool phantomReady_ = false; // 未使用の発動権を1回だけ保持。
+    static constexpr float kPhantomCooldownFrames = 8.0f * 60.0f;
+    bool phantomReady_ = true; // 開幕から使用可能。使用後は時間経過で自動回復する。
     bool phantomEmpowered_ = false; // 発動した瞬間のフィーバー状態を固定。
     bool phantomFinished_ = false; // 最後の一撃を二重に処理しないための状態。
     float phantomClock_ = -1.0f; // 60fps換算の演出時間。ワールドのスローに巻き込まない。
-    float phantomCooldown_ = 0.0f; // 発動後の再取得禁止時間。60fps換算。
+    float phantomCooldown_ = 0.0f; // 再使用までの時間。60fps換算。射撃命中で短縮する。
     float phantomReadyFlash_ = 0.0f;
     float phantomNoTargetNotice_ = 0.0f;
     int phantomTargetCount_ = 0;
@@ -339,7 +341,6 @@ private:
         const Math::Vector3& velocity,
         bool additive = true);
     void PrewarmHitEffectObjectPool();
-    void UpdateHitEffectObjectPoolWarmup();
     std::unique_ptr<Object3d> CreatePooledHitEffectObject();
     std::unique_ptr<Object3d> AcquireHitEffectObject();
     void RecycleHitEffectVisuals(HitEffect& effect);
@@ -409,7 +410,6 @@ private:
     void UpdateGameCamera();
     void AddCameraShake(float power, int duration);
     void PrewarmBulletPools();
-    void UpdateBulletPoolWarmup();
     std::unique_ptr<Bullet> CreatePooledPlayerBullet();
     std::unique_ptr<Bullet> CreatePooledEnemyBullet();
     std::unique_ptr<Bullet> AcquireBullet(std::vector<std::unique_ptr<Bullet>>& pool);
@@ -537,7 +537,6 @@ private:
     int playerDamageHudDuration_ = 1;
     int cameraShakeTimer_ = 0;
     int cameraShakeDuration_ = 1;
-    int bulletPoolWarmupTimer_ = 0;
     size_t playerBulletPoolMisses_ = 0;
     size_t enemyBulletPoolMisses_ = 0;
     size_t hitEffectObjectPoolMisses_ = 0;

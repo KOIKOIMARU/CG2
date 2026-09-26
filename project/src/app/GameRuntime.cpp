@@ -76,16 +76,13 @@ constexpr const char* kCityBuildingMediumModelPath =
 constexpr const char* kCityBuildingLargeModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Building_Large_2.gltf";
-constexpr int kInitialPlayerBulletPoolCount = 8;
-constexpr int kInitialEnemyBulletPoolCount = 8;
 constexpr int kTargetPlayerBulletPoolCount = 24;
 constexpr int kTargetEnemyBulletPoolCount = 24;
-constexpr int kBulletPoolWarmupStartDelayFrames = 6;
-constexpr int kBulletPoolWarmupIntervalFrames = 1;
-constexpr int kInitialHitEffectObjectPoolCount = 24;
+// TitleSceneのPrepareScene中に通常の予備数まで作る。開始直後の大量GPU確保を避ける。
+constexpr int kInitialPlayerBulletPoolCount = kTargetPlayerBulletPoolCount;
+constexpr int kInitialEnemyBulletPoolCount = kTargetEnemyBulletPoolCount;
 constexpr int kTargetHitEffectObjectPoolCount = 120;
-constexpr int kHitEffectPoolWarmupStartDelayFrames = 6;
-constexpr int kHitEffectPoolWarmupIntervalFrames = 1;
+constexpr int kInitialHitEffectObjectPoolCount = kTargetHitEffectObjectPoolCount;
 constexpr int kRewardHeartPoolCount = 40;
 constexpr int kRewardHeartScoreValue = 25;
 constexpr int kDepthCueEffectCount = 18;
@@ -261,7 +258,7 @@ constexpr StageEnemySpawnEvent kTutorialEnemySpawnEvents[] = {
     {  36.0f,  0.0f,  0.8f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.025f,  5,  5, 1.20f, "Dodge lesson", "WASDで移動 / A・D + SHIFTで回避" },
     {  48.0f, -4.6f,  0.8f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.020f,  4,  3, 1.12f, "Sweep lesson" },
     {  55.0f,  4.6f,  1.1f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.020f,  4,  3, 1.12f, "Sweep lesson" },
-    {  68.0f, -2.8f, -0.3f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway", "撃破でゲージをためる / 満タンで E : フィーバー" },
+    {  68.0f, -2.8f, -0.3f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway", "撃破でゲージをためる / 満タンで自動フィーバー" },
     {  72.0f,  0.0f,  0.8f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway" },
     {  76.0f,  2.8f, -0.3f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway" },
     {  88.0f, -3.2f,  1.3f, 48.0f, Enemy::Behavior::Sniper,         Enemy::EntryStyle::PopShooter, 0.040f,  8,  6, 1.18f, "Sniper lock" },
@@ -799,7 +796,6 @@ void GameRuntime::Initialize(PlayMode mode)
     nextPlayerDodgeAfterimageIndex_ = 0;
     wasPlayerDodging_ = false;
     cameraShakeTimer_ = 0;
-    bulletPoolWarmupTimer_ = 0;
     playerBulletPoolMisses_ = 0;
     enemyBulletPoolMisses_ = 0;
     hitEffectObjectPoolMisses_ = 0;
@@ -1026,8 +1022,6 @@ void GameRuntime::Update()
             std::clamp(dxCommon_->GetDeltaTime(), 0.0f, 0.10f);
     }
 
-    UpdateBulletPoolWarmup();
-    UpdateHitEffectObjectPoolWarmup();
     UpdateRailProgress();
     UpdatePlayerAndCamera();
     UpdateFever();
@@ -1222,7 +1216,8 @@ void GameRuntime::UpdateRailProgress()
 
 void GameRuntime::UpdatePlayerAndCamera()
 {
-    player_->Update(input_, GetCinematicWorldTimeScale());
+    const float controlStep = dxCommon_ ? dxCommon_->GetDeltaTime() * 60.0f : 1.0f;
+    player_->Update(input_, GetCinematicWorldTimeScale(), controlStep);
     player_->SetRailZ(railDistance_);
     UpdateGameCamera();
     if (skybox_) {
@@ -1290,11 +1285,12 @@ void GameRuntime::UpdateFever()
         return;
     }
 
-    if (isGameOver_ || isGameClear_ || !input_ ||
-        feverGauge_ < kFeverGaugeMax || !input_->TriggerKey(DIK_E)) {
+    if (isGameOver_ || isGameClear_ || !player_ || player_->IsDead() ||
+        feverGauge_ < kFeverGaugeMax) {
         return;
     }
 
+    // 命中・撃破などで満タンになった次の更新で自動発動。入力待ちは挟まない。
     ActivateFever();
 }
 
@@ -3007,36 +3003,6 @@ void GameRuntime::PrewarmBulletPools()
     }
 }
 
-void GameRuntime::UpdateBulletPoolWarmup()
-{
-    if (!object3dCommon_ || !bulletModel_) {
-        return;
-    }
-    if (isGameOver_ || isGameClear_) {
-        return;
-    }
-
-    ++bulletPoolWarmupTimer_;
-    if (bulletPoolWarmupTimer_ < kBulletPoolWarmupStartDelayFrames) {
-        return;
-    }
-    if ((bulletPoolWarmupTimer_ - kBulletPoolWarmupStartDelayFrames) %
-        kBulletPoolWarmupIntervalFrames != 0) {
-        return;
-    }
-    if (input_ && input_->PushKey(DIK_SPACE)) {
-        return;
-    }
-
-    if (playerBulletPool_.size() < static_cast<size_t>(kTargetPlayerBulletPoolCount)) {
-        playerBulletPool_.push_back(CreatePooledPlayerBullet());
-        return;
-    }
-    if (enemyBulletPool_.size() < static_cast<size_t>(kTargetEnemyBulletPoolCount)) {
-        enemyBulletPool_.push_back(CreatePooledEnemyBullet());
-    }
-}
-
 std::unique_ptr<Bullet> GameRuntime::CreatePooledPlayerBullet()
 {
     const Math::Vector3 offscreenPosition{ 0.0f, -1000.0f, -1000.0f };
@@ -3116,32 +3082,6 @@ void GameRuntime::PrewarmHitEffectObjectPool()
 
     hitEffectObjectPool_.reserve(kTargetHitEffectObjectPoolCount);
     for (int index = 0; index < kInitialHitEffectObjectPoolCount; ++index) {
-        hitEffectObjectPool_.push_back(CreatePooledHitEffectObject());
-    }
-}
-
-void GameRuntime::UpdateHitEffectObjectPoolWarmup()
-{
-    if (!object3dCommon_) {
-        return;
-    }
-    if (isGameOver_ || isGameClear_) {
-        return;
-    }
-    if (bulletPoolWarmupTimer_ < kHitEffectPoolWarmupStartDelayFrames) {
-        return;
-    }
-    if ((bulletPoolWarmupTimer_ - kHitEffectPoolWarmupStartDelayFrames) %
-        kHitEffectPoolWarmupIntervalFrames != 0) {
-        return;
-    }
-    if (input_ && input_->PushKey(DIK_SPACE)) {
-        return;
-    }
-    if (!hitEffects_.empty()) {
-        return;
-    }
-    if (hitEffectObjectPool_.size() < static_cast<size_t>(kTargetHitEffectObjectPoolCount)) {
         hitEffectObjectPool_.push_back(CreatePooledHitEffectObject());
     }
 }
@@ -4376,7 +4316,6 @@ void GameRuntime::TriggerJustDodge(Bullet& bullet, const Math::Vector3& worldPos
     }
 
     ++justDodgeCount_;
-    GrantPhantomRaid();
     PlaySfx("dodge");
     AddScore(kJustDodgeScoreBonus);
     AddFeverGauge(22);
@@ -5809,9 +5748,9 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             const float buttonSpacing = ImGui::GetStyle().ItemSpacing.x;
             const float halfButtonWidth =
                 (ImGui::GetContentRegionAvail().x - buttonSpacing) * 0.5f;
-            if (ImGui::Button("ゲージ MAX", ImVec2(halfButtonWidth, 0.0f))) {
+            if (ImGui::Button("MAX → 自動発動", ImVec2(halfButtonWidth, 0.0f))) {
                 feverGauge_ = kFeverGaugeMax;
-                editorStatusMessage_ = "フィーバーゲージを最大にしました。";
+                editorStatusMessage_ = "ゲージを最大にしました。通常更新時に自動発動します。";
             }
             ImGui::SameLine();
             if (ImGui::Button("即時発動", ImVec2(halfButtonWidth, 0.0f))) {
@@ -5828,7 +5767,7 @@ void GameRuntime::DrawEditorOverlayGuiRich()
 
             ImGui::SeparatorText("ファントムレイド");
             ImGui::BeginDisabled(isGameOver_ || isGameClear_ || IsPhantomRaidActive());
-            if (ImGui::Button("残像連撃を準備", ImVec2(halfButtonWidth, 0.0f))) {
+            if (ImGui::Button("残像連撃を即回復", ImVec2(halfButtonWidth, 0.0f))) {
                 phantomCooldown_ = 0.0f;
                 GrantPhantomRaid();
             }
@@ -6703,8 +6642,8 @@ void GameRuntime::DrawControlsHelp()
     ImGui::TextUnformatted("SPACE長押し: 連射");
     ImGui::TextUnformatted("SPACEを離す: チャージ → 次の一発が強力に");
     ImGui::TextUnformatted("A・D + SHIFT: 回避 / 敵弾すれすれでジャスト回避");
-    ImGui::TextUnformatted("ゲージ満タンで E: フィーバー");
-    ImGui::TextUnformatted("ジャスト回避で準備 → Q: 残像連撃 / フィーバー中は強化");
+    ImGui::TextUnformatted("ゲージ満タンで自動フィーバー");
+    ImGui::TextUnformatted("Q: 残像連撃 / 再使用8秒・射撃命中で短縮 / フィーバー中は強化");
     ImGui::Separator();
     ImGui::TextUnformatted("硬い敵にはチャージ。ボスの反撃チャンスは威力2倍。");
     ImGui::TextUnformatted("撃破をつなぐとチェイン倍率UP。被弾すると途切れる。");
@@ -7204,9 +7143,9 @@ void GameRuntime::DrawFeverHud()
             static_cast<float>(feverTimer_) / 60.0f,
             kFeverScoreMultiplier * GetDefeatChainScoreMultiplier());
     } else if (isReady) {
-        std::snprintf(status, sizeof(status), "発動する");
+        std::snprintf(status, sizeof(status), "自動発動");
     } else {
-        std::snprintf(status, sizeof(status), "%d%%", feverGauge_ * 100 / kFeverGaugeMax);
+        std::snprintf(status, sizeof(status), "%d%% / MAXで自動", feverGauge_ * 100 / kFeverGaugeMax);
     }
     DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 10.0f * hudScale),
         22.0f * hudScale,
@@ -7214,14 +7153,6 @@ void GameRuntime::DrawFeverHud()
         "FEVER");
     DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y + 15.0f * hudScale),
         15.0f * hudScale, IM_COL32(228, 234, 244, 245), status, true);
-
-    if (isReady) {
-        const ImVec2 keyMin(barMax.x - 98.0f * hudScale, panelMin.y + 10.0f * hudScale);
-        const ImVec2 keyMax(keyMin.x + 25.0f * hudScale, keyMin.y + 23.0f * hudScale);
-        drawList->AddRectFilled(keyMin, keyMax, IM_COL32(244, 236, 213, 245), 4.0f * hudScale);
-        DrawCombatHudText(drawList, ImVec2(keyMin.x + 7.0f * hudScale, keyMin.y + 3.0f * hudScale),
-            17.0f * hudScale, IM_COL32(22, 28, 40, 255), "E");
-    }
 
     if (isActive) {
         const int edgeAlpha = static_cast<int>(45.0f + pulse * 38.0f);
@@ -7868,15 +7799,13 @@ void GameRuntime::DrawPerformanceOverlay()
     std::snprintf(
         line,
         sizeof(line),
-        "pool P %zu/%d E %zu/%d  miss P/E %zu/%zu  warm %d/%d",
+        "pool P %zu/%d E %zu/%d  miss P/E %zu/%zu  preallocated",
         playerBulletPool_.size(),
         kTargetPlayerBulletPoolCount,
         enemyBulletPool_.size(),
         kTargetEnemyBulletPoolCount,
         playerBulletPoolMisses_,
-        enemyBulletPoolMisses_,
-        (std::min)(bulletPoolWarmupTimer_, kBulletPoolWarmupStartDelayFrames),
-        kBulletPoolWarmupStartDelayFrames);
+        enemyBulletPoolMisses_);
     drawList->AddText(
         ImVec2(panelMin.x + 12.0f, panelMin.y + 58.0f),
         IM_COL32(188, 210, 228, 220),
@@ -8200,6 +8129,7 @@ void GameRuntime::CheckBulletEnemyCollisions()
                 bullet->RegisterHit();
                 ++playerHitCount_;
                 const bool isDestroyed = enemy->Damage(damage);
+                RecoverPhantomRaidOnHit(isChargedHit, isDestroyed);
                 PlaySfx(isDestroyed ? "destroy" : "hit");
                 AddFeverGauge(
                     isDestroyed ?

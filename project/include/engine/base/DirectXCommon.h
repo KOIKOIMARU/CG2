@@ -115,6 +115,7 @@ public:
     float GetDeltaTime() const { return deltaTime_; }
 
     struct FrameTiming {
+        uint32_t bufferCreates = 0; // このフレームで新規確保したGPUバッファ数。
         float updateMs = 0.0f;
         float preDrawMs = 0.0f;
         float sceneDrawMs = 0.0f;

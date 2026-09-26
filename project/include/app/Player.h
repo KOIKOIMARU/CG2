@@ -12,7 +12,7 @@ class Object3dCommon;
 class Player {
 public:
     void Initialize(Object3dCommon* object3dCommon, Model* model);
-    void Update(Input* input, float timeScale = 1.0f);
+    void Update(Input* input, float timeScale = 1.0f, float frameStep = 1.0f);
     void Draw();
     void DrawShadow(const Math::Matrix4x4& lightViewProjection);
     void SetRailZ(float z);
@@ -39,9 +39,11 @@ private:
     Math::Vector3 modelLocalCenterOffset_{ 0.0f, 0.0f, 0.0f };
     float moveSpeed_ = 0.205f;
     float collisionRadius_ = 0.86f;
-    float dodgeTimer_ = 0.0f;
-    int dodgeCooldownTimer_ = 0;
-    int invincibleTimer_ = 0;
+    float dodgeTimer_ = 0.0f; // 回避の残り時間。60fps換算で、演出スローには引きずられない。
+    float dodgeCooldownTimer_ = 0.0f;
+    float invincibleTimer_ = 0.0f;
+    float dodgeInputBuffer_ = 0.0f; // 再使用直前に押されたSHIFTの受付猶予。
+    int bufferedDodgeDirection_ = 1; // 先行入力時の方向を保持し、発動時の意図しない反転を防ぐ。
     int dodgeDirection_ = 1;
     int lastHorizontalDirection_ = 1;
     int hp_ = 100;

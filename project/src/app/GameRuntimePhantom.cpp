@@ -10,7 +10,7 @@
 
 void GameRuntime::ResetPhantomRaid()
 {
-    phantomReady_ = false;
+    phantomReady_ = true;
     phantomEmpowered_ = false;
     phantomFinished_ = false;
     phantomClock_ = -1.0f;
@@ -68,6 +68,20 @@ void GameRuntime::GrantPhantomRaid()
     phantomReady_ = true; // 1回分を保持。時間切れで消さず、使いどころを選べる。
     phantomReadyFlash_ = 72.0f;
     PlaySfx("skill_ready");
+}
+
+void GameRuntime::RecoverPhantomRaidOnHit(bool charged, bool destroyed)
+{
+    if (phantomReady_ || IsPhantomRaidActive() || !player_ || player_->IsDead() || isGameOver_ || isGameClear_) {
+        return;
+    }
+    // 通常射撃の命中0.2秒、チャージ命中0.4秒、撃破はさらに0.5秒短縮。
+    // 連撃自身のダメージでは呼ばず、スキルによる自己再充填を防ぐ。
+    const float recovery = (charged ? 24.0f : 12.0f) + (destroyed ? 30.0f : 0.0f);
+    phantomCooldown_ = (std::max)(0.0f, phantomCooldown_ - recovery);
+    if (phantomCooldown_ <= 0.0f) {
+        GrantPhantomRaid();
+    }
 }
 
 Enemy* GameRuntime::FindPhantomTarget(const Enemy* target) const
@@ -142,7 +156,7 @@ bool GameRuntime::TryActivatePhantomRaid()
     phantomReadyFlash_ = 0.0f;
     phantomNoTargetNotice_ = 0.0f;
     phantomClock_ = 0.0f;
-    phantomCooldown_ = 360.0f; // 6秒以内の同じ弾幕からの再取得を防ぐ。
+    phantomCooldown_ = kPhantomCooldownFrames;
     ++phantomActivationCount_;
     for (auto& slash : phantomSlashes_) {
         slash.age = -1.0f;
@@ -190,6 +204,8 @@ void GameRuntime::UpdatePhantomRaid()
         return;
     }
     if (!IsPhantomRaidActive()) {
+        // 回避や命中がなくても時間経過だけで回復し、使いどころを自由に選べる。
+        GrantPhantomRaid();
         if (input_ && input_->TriggerKey(DIK_Q)) {
             TryActivatePhantomRaid();
         }
@@ -422,13 +438,19 @@ void GameRuntime::DrawPhantomRaidOverlay()
     } else if (phantomReady_) {
         std::snprintf(status, sizeof(status), gold ? "準備完了 / 強化5連撃" : "準備完了 / 3連撃");
     } else if (phantomCooldown_ > 0.0f) {
-        std::snprintf(status, sizeof(status), "再取得まで %.1f 秒", static_cast<double>(phantomCooldown_ / 60.0f));
+        std::snprintf(status, sizeof(status), "残り %.1f 秒 / 命中で短縮", static_cast<double>(phantomCooldown_ / 60.0f));
     } else {
-        std::snprintf(status, sizeof(status), "ジャスト回避で準備");
+        std::snprintf(status, sizeof(status), "回復中");
     }
     PhantomText(draw, { panel.x + 49.0f, panel.y + 31.0f }, 13.0f, IM_COL32(224, 237, 245, 255), status);
+    const float recovery = phantomReady_ ? 1.0f :
+        std::clamp(1.0f - phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f);
+    draw->AddRectFilled({ panel.x + 49.0f, panel.y + 51.0f },
+        { panel.x + 261.0f, panel.y + 54.0f }, IM_COL32(55, 75, 94, 200));
+    draw->AddRectFilled({ panel.x + 49.0f, panel.y + 51.0f },
+        { panel.x + 49.0f + 212.0f * recovery, panel.y + 54.0f }, accent);
     if (phantomReadyFlash_ > 0.0f) {
-        const char* notice = "JUST DODGE → Q  残像連撃 READY";
+        const char* notice = "Q  残像連撃 READY";
         const auto extent = ImGui::GetFont()->CalcTextSizeA(20.0f, FLT_MAX, 0.0f, notice);
         PhantomText(draw, { min.x + (size.x - extent.x) * 0.5f, min.y + size.y * 0.69f }, 20.0f, accent, notice);
     }
