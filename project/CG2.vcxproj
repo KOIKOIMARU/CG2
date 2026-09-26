@@ -497,6 +497,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <Text Include="resources\fonts\FONT_AWESOME_LICENSE.txt" />
     <Text Include="resources\fonts\ZEN_KAKU_GOTHIC_OFL.txt" />
     <Text Include="resources\fonts\BARLOW_OFL.txt" />
+    <Text Include="resources\fonts\RAJDHANI_OFL.txt" />
+    <Text Include="resources\fonts\MPLUS1P_OFL.txt" />
     <Text Include="resources\fonts\HUD_FONTS.md" />
   </ItemGroup>
   <ItemGroup>
@@ -510,6 +512,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="resources\fonts\fa-regular-400.ttf" />
     <None Include="resources\fonts\ZenKakuGothicNew-Medium.ttf" />
     <None Include="resources\fonts\BarlowCondensed-SemiBold.ttf" />
+    <None Include="resources\fonts\Rajdhani-SemiBold.ttf" />
+    <None Include="resources\fonts\MPLUS1p-Medium.ttf" />
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr" />
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k_cube.dds" />
     <None Include="resources\grass.png" />

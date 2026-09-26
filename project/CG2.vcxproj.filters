@@ -588,6 +588,8 @@
     </Text>
     <Text Include="resources\fonts\ZEN_KAKU_GOTHIC_OFL.txt"><Filter>resources\fonts</Filter></Text>
     <Text Include="resources\fonts\BARLOW_OFL.txt"><Filter>resources\fonts</Filter></Text>
+    <Text Include="resources\fonts\RAJDHANI_OFL.txt"><Filter>resources\fonts</Filter></Text>
+    <Text Include="resources\fonts\MPLUS1P_OFL.txt"><Filter>resources\fonts</Filter></Text>
     <Text Include="resources\fonts\HUD_FONTS.md"><Filter>resources\fonts</Filter></Text>
   </ItemGroup>
   <ItemGroup>
@@ -602,6 +604,8 @@
     </None>
     <None Include="resources\fonts\ZenKakuGothicNew-Medium.ttf"><Filter>resources\fonts</Filter></None>
     <None Include="resources\fonts\BarlowCondensed-SemiBold.ttf"><Filter>resources\fonts</Filter></None>
+    <None Include="resources\fonts\Rajdhani-SemiBold.ttf"><Filter>resources\fonts</Filter></None>
+    <None Include="resources\fonts\MPLUS1p-Medium.ttf"><Filter>resources\fonts</Filter></None>
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr">
       <Filter>resources\skybox</Filter>
     </None>

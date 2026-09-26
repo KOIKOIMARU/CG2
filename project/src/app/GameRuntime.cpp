@@ -6429,7 +6429,7 @@ void GameRuntime::DrawHud()
         return;
     }
 
-    ImGui::PushFont(CombatHud::Font(), 16.0f);
+    ImGui::PushFont(CombatHud::BattleFont(), 16.0f);
     DrawFeverBackdrop();
     DrawEnemyTypeTelegraphs();
 
@@ -6504,11 +6504,11 @@ void GameRuntime::DrawHud()
     DrawCombatHudText(drawList, hpPoint(244, -4), 24.0f * hudScale,
         critical ? CombatHud::Danger : CombatHud::White, hpText, true);
     CombatHud::Meter(drawList, hpPoint(54, 24), hpPoint(244, 40), hpRate,
-        critical ? CombatHud::Danger : CombatHud::GaugeGold, hudScale);
+        critical ? CombatHud::Danger : CombatHud::Health, hudScale);
     DrawCombatHudText(drawList, hpPoint(54, 48), 15.0f * hudScale,
         CombatHud::Muted, "チャージ");
     CombatHud::Meter(drawList, hpPoint(122, 51), hpPoint(244, 61), chargeRate,
-        isChargeReady ? CombatHud::GaugeGold : CombatHud::White, hudScale);
+        isChargeReady ? CombatHud::Energy : CombatHud::Mix(CombatHud::Energy, CombatHud::White, 0.25f), hudScale);
 
     const ImVec2 scoreAnchor(origin.x + drawSize.x - 32.0f * hudScale, playerAnchor.y);
     const int waveNumber = currentWaveIndex_ < kWaveCount ? currentWaveIndex_ + 1 : kWaveCount;
@@ -6518,7 +6518,7 @@ void GameRuntime::DrawHud()
     if (IsTutorial()) {
         std::snprintf(waveText, sizeof(waveText), "チュートリアル / F2で戻る");
     } else {
-        std::snprintf(waveText, sizeof(waveText), "区間  %02d / %02d", waveNumber, kWaveCount);
+        std::snprintf(waveText, sizeof(waveText), "WAVE  %02d / %02d", waveNumber, kWaveCount);
     }
     DrawCombatHudShade(drawList,
         ImVec2(origin.x + drawSize.x - 280.0f * hudScale, origin.y),
@@ -6552,7 +6552,7 @@ void GameRuntime::DrawControlsHelp()
     ImGui::SetNextWindowPos({ min.x + size.x * 0.5f, min.y + size.y * 0.5f },
         ImGuiCond_Always, { 0.5f, 0.5f });
     ImGui::SetNextWindowSize({ 560.0f * scale, 0.0f });
-    ImGui::PushFont(CombatHud::Font(), 18.0f * scale);
+    ImGui::PushFont(CombatHud::BattleFont(), 18.0f * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 28.0f * scale, 24.0f * scale });
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 12.0f * scale, 10.0f * scale });
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -6564,7 +6564,7 @@ void GameRuntime::DrawControlsHelp()
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 81, 82, 255));
     ImGui::Begin("##ControlsHelp", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::PushFont(CombatHud::Font(), 26.0f * scale);
+    ImGui::PushFont(CombatHud::BattleFont(), 26.0f * scale);
     ImGui::TextUnformatted("操作方法");
     ImGui::PopFont();
     ImGui::Dummy({ 0, 8.0f * scale });
@@ -6586,7 +6586,7 @@ void GameRuntime::DrawControlsHelp()
         ImGui::EndTable();
     }
     ImGui::Dummy({ 0, 8.0f * scale });
-    ImGui::PushFont(CombatHud::Font(), 14.0f * scale);
+    ImGui::PushFont(CombatHud::BattleFont(), 14.0f * scale);
     ImGui::TextDisabled("表示中もゲームは進行します");
     ImGui::PopFont();
     if (ImGui::Button("閉じる", { 120.0f * scale, 34.0f * scale })) { showControlsHelp_ = false; }
@@ -6742,7 +6742,7 @@ void GameRuntime::DrawStageCueHud()
         const float scale = GetCombatHudScale(hudSize);
         const char* label = phaseChange ? "第2段階" : "大型敵接近";
         const float fontSize = 30.0f * scale;
-        const float width = CombatHud::Width(label, fontSize);
+        const float width = CombatHud::ReadoutWidth(label, fontSize);
         DrawCombatHudText(drawList, ImVec2(center.x - width * 0.5f, center.y), fontSize,
             phaseChange ? IM_COL32(241, 240, 235, static_cast<int>(255.0f * fade)) :
                           IM_COL32(237, 100, 88, static_cast<int>(255.0f * fade)), label);
@@ -6853,7 +6853,7 @@ void GameRuntime::DrawFeverHud()
     CombatHud::Shade(drawList, p(-32, -16), p(280, 80));
     CombatHud::Readout(drawList, p(0, 0), 20.0f * hudScale,
         isActive ? CombatHud::GaugeGold : CombatHud::White, "FEVER");
-    CombatHud::Meter(drawList, p(0, 32), p(232, 47), rate, CombatHud::GaugeGold, hudScale);
+    CombatHud::Meter(drawList, p(0, 32), p(232, 47), rate, CombatHud::FeverCharge, hudScale);
     // 発動中だけ計器の中が虹に変わる。通常の画面へ色を散らさない。
     if (isActive || isReady) {
         for (int index = 0; index < 24; ++index) {
@@ -6861,10 +6861,10 @@ void GameRuntime::DrawFeverHud()
             if (part <= 0.0f) { break; }
             const float x = 2.0f + static_cast<float>(index) * 9.5f;
             drawList->AddRectFilledMultiColor(p(x, 34), p(x + 9.5f * part, 45),
-                rainbowColor(static_cast<float>(index) / 24.0f, 255),
-                rainbowColor(static_cast<float>(index + 1) / 24.0f, 255),
-                rainbowColor(static_cast<float>(index + 1) / 24.0f, 255),
-                rainbowColor(static_cast<float>(index) / 24.0f, 255));
+                CombatHud::SurfaceColor(rainbowColor(static_cast<float>(index) / 24.0f, 255)),
+                CombatHud::SurfaceColor(rainbowColor(static_cast<float>(index + 1) / 24.0f, 255)),
+                CombatHud::SurfaceColor(CombatHud::Mix(rainbowColor(static_cast<float>(index + 1) / 24.0f, 255), IM_COL32(0, 0, 0, 255), 0.30f)),
+                CombatHud::SurfaceColor(CombatHud::Mix(rainbowColor(static_cast<float>(index) / 24.0f, 255), IM_COL32(0, 0, 0, 255), 0.30f)));
         }
     }
     if (isActive) {
@@ -6933,7 +6933,7 @@ void GameRuntime::DrawFeverHud()
             std::clamp(remaining / 0.28f, 0.0f, 1.0f);
         const float fontSize = (64.0f + 12.0f * (1.0f - elapsed)) * hudScale;
         const char* title = "FEVER";
-        const float titleWidth = CombatHud::Width(title, fontSize);
+        const float titleWidth = CombatHud::ReadoutWidth(title, fontSize);
         const ImVec2 center(origin.x + drawSize.x * 0.5f,
             origin.y + drawSize.y * 0.23f - elapsed * 8.0f * hudScale);
         CombatHud::Readout(drawList,
@@ -7166,7 +7166,7 @@ void GameRuntime::DrawResultOverlay()
     }
 
     if (IsTutorial()) {
-        ImGui::PushFont(CombatHud::Font(), 18.0f);
+        ImGui::PushFont(CombatHud::BattleFont(), 18.0f);
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::Begin("チュートリアル終了", nullptr,
@@ -7222,8 +7222,7 @@ void GameRuntime::DrawResultOverlay()
     }
 
     const ImU32 resultAccent = isGameClear_ ? CombatHud::GaugeGold : CombatHud::Danger;
-    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(20, 21, 22, 248));
-    drawList->AddRect(panelMin, panelMax, IM_COL32(148, 156, 165, 190), 0.0f, 0, scale);
+    CombatHud::Panel(drawList, panelMin, panelMax, scale);
     drawList->AddRectFilled(p(0, 0), p(640, 4), resultAccent);
     CombatHud::Readout(drawList, p(32, 24), 30.0f * scale, resultAccent,
         isGameClear_ ? "任務達成" : "作戦失敗");
@@ -7285,10 +7284,10 @@ void GameRuntime::DrawResultOverlay()
         const ImVec2 max = ImGui::GetItemRectMax();
         // HUDパネルと同じ前景レイヤーへ描き、パネルの裏にボタンが隠れないようにする。
         const bool highlighted = primary || ImGui::IsItemHovered();
-        drawList->AddRectFilled(min, max, IM_COL32(38, 43, 49, 255), 2.0f * scale);
+        CombatHud::Panel(drawList, min, max, scale);
         drawList->AddRect(min, max, highlighted ? CombatHud::GaugeGold : CombatHud::Muted,
             2.0f * scale, 0, scale);
-        const float width = CombatHud::Width(label, 18.0f * scale);
+        const float width = CombatHud::ReadoutWidth(label, 18.0f * scale);
         CombatHud::Readout(drawList, ImVec2((min.x + max.x - width) * 0.5f,
             min.y + 9.0f * scale), 18.0f * scale, highlighted ? CombatHud::GaugeGold : CombatHud::White, label);
         return clicked;

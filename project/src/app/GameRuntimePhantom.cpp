@@ -410,7 +410,7 @@ void GameRuntime::DrawPhantomRaidOverlay()
         }
         const char* title = "残像連撃";
         const float textSize = 30.0f * hudScale;
-        const float width = CombatHud::Width(title, textSize);
+        const float width = CombatHud::ReadoutWidth(title, textSize);
         const float titleX = min.x + (size.x - width) * 0.5f;
         const float titleY = min.y + size.y - 152.0f * hudScale;
         PhantomText(draw, { titleX, titleY }, textSize, CombatHud::White, title);
@@ -429,12 +429,12 @@ void GameRuntime::DrawPhantomRaidOverlay()
     }
     const ImVec2 panel{ min.x + size.x - 264.0f * hudScale, min.y + size.y - 82.0f * hudScale };
     const auto p = [&](float x, float y) { return ImVec2(panel.x + x * hudScale, panel.y + y * hudScale); };
-    const ImU32 hudAccent = CombatHud::GaugeGold;
+    const ImU32 hudAccent = gold ? CombatHud::FeverCharge : CombatHud::Energy;
     const bool ready = phantomReady_ || active;
     const float readyBurst = std::clamp(phantomReadyFlash_ / 72.0f, 0.0f, 1.0f);
     CombatHud::Shade(draw, p(-30, -12), { min.x + size.x, min.y + size.y }, true);
     // 弾薬表示と同じ小さな枠。回復完了は紋章の点灯で伝え、巨大な色面を置かない。
-    draw->AddRectFilled(p(0, 0), p(48, 48), IM_COL32(17, 22, 28, 220), 3.0f * hudScale);
+    CombatHud::Panel(draw, p(0, 0), p(48, 48), hudScale);
     draw->AddRect(p(0, 0), p(48, 48), ready ? hudAccent : CombatHud::Muted,
         3.0f * hudScale, 0, hudScale);
     CombatHud::BladeIcon(draw, p(24, 24), 0.85f * hudScale, ready ? hudAccent : CombatHud::Muted);
@@ -446,7 +446,8 @@ void GameRuntime::DrawPhantomRaidOverlay()
         const int alpha = static_cast<int>(210.0f * readyBurst * readyBurst);
         const float travel = (1.0f - readyBurst) * 8.0f;
         draw->AddRect(p(-travel, -travel), p(48 + travel, 48 + travel),
-            IM_COL32(255, 202, 70, alpha), 3.0f * hudScale, 0, hudScale);
+            (hudAccent & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT),
+            3.0f * hudScale, 0, hudScale);
     }
     if (!active && phantomNoTargetNotice_ > 0.0f) {
         PhantomText(draw, p(62, 28), 14.0f * hudScale, CombatHud::Muted, "対象なし");
@@ -456,6 +457,6 @@ void GameRuntime::DrawPhantomRaidOverlay()
         CombatHud::Readout(draw, p(62, 27), 18.0f * hudScale, CombatHud::White, cooldown);
     }
     const float recovery = ready ? 1.0f : 1.0f - std::clamp(phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f);
-    CombatHud::Meter(draw, p(62, 52), p(230, 60), recovery, hudAccent, hudScale);
+    CombatHud::Meter(draw, p(62, 50), p(230, 61), recovery, hudAccent, hudScale);
     draw->PopClipRect();
 }

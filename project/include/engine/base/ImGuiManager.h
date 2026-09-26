@@ -106,6 +106,7 @@ public:
     // ゲーム表示用。エディタの標準フォントとは分け、数字は専用書体で読ませる。
     static ImFont* GetHudFont();
     static ImFont* GetHudNumberFont();
+    static ImFont* GetCombatFont(); // 戦闘用。角形英数字と和文を同じアトラスへ統合。
 #endif
 
     void ShowEditorController(EditorDebugSettings& settings);
@@ -125,6 +126,7 @@ private:
 #ifdef USE_IMGUI
     inline static ImFont* hudFont_ = nullptr; // アトラスが所有する日本語フォント。
     inline static ImFont* hudNumberFont_ = nullptr; // アトラスが所有する英数字フォント。
+    inline static ImFont* combatFont_ = nullptr; // タイトルとは独立した戦闘用の合成書体。
 #endif
     bool SaveInspectorTransforms(const ObjectInspectorSettings& inspector);
     bool LoadInspectorTransforms(const ObjectInspectorSettings& inspector);

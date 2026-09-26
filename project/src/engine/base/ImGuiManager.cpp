@@ -356,6 +356,20 @@ void ImGuiManager::Initialize(
     hudNumberFont_ = io.Fonts->AddFontFromFileTTF(
         "resources/fonts/BarlowCondensed-SemiBold.ttf", 48.0f);
 
+    // 数字と和文で書体を場当たり的に切り替えず、この一組を戦闘画面全体で共有する。
+    combatFont_ = io.Fonts->AddFontFromFileTTF(
+        "resources/fonts/Rajdhani-SemiBold.ttf", 48.0f);
+    if (combatFont_) {
+        ImFontConfig combatJapanese{};
+        combatJapanese.MergeMode = true;
+        combatJapanese.DstFont = combatFont_;
+        combatJapanese.GlyphOffset = ImVec2(0.0f, 2.0f);
+        static const ImWchar latinRange[] = { 0x0020, 0x00ff, 0 };
+        combatJapanese.GlyphExcludeRanges = latinRange;
+        io.Fonts->AddFontFromFileTTF("resources/fonts/MPLUS1p-Medium.ttf", 40.0f,
+            &combatJapanese, io.Fonts->GetGlyphRangesJapanese());
+    }
+
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 
     srvHeap_ = srvManager->GetDescriptorHeapComPtr();
@@ -405,6 +419,7 @@ void ImGuiManager::Finalize() {
 #ifdef USE_IMGUI
     hudFont_ = nullptr;
     hudNumberFont_ = nullptr;
+    combatFont_ = nullptr;
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImPlot::DestroyContext();
@@ -421,6 +436,11 @@ ImFont* ImGuiManager::GetHudFont()
 ImFont* ImGuiManager::GetHudNumberFont()
 {
     return hudNumberFont_ ? hudNumberFont_ : GetHudFont();
+}
+
+ImFont* ImGuiManager::GetCombatFont()
+{
+    return combatFont_ ? combatFont_ : GetHudFont();
 }
 #endif
 
