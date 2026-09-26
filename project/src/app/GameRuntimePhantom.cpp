@@ -408,10 +408,11 @@ void GameRuntime::DrawPhantomRaidOverlay()
                     IM_COL32(205, 239, 255, static_cast<int>((1.0f - age / 4.0f) * 34.0f)));
             }
         }
-        const char* title = gold ? "残像連撃・強化" : "残像連撃";
+        const char* title = "残像連撃";
         const float textSize = 28.0f * hudScale;
         const float width = CombatHud::Width(title, textSize);
-        PhantomText(draw, { min.x + (size.x - width) * 0.5f, min.y + size.y - 134.0f * hudScale }, textSize, accent, title);
+        PhantomText(draw, { min.x + (size.x - width) * 0.5f, min.y + size.y - 134.0f * hudScale },
+            textSize, gold ? CombatHud::Gold : CombatHud::White, title);
     }
     for (const auto& slash : phantomSlashes_) {
         if (slash.age < 0.0f) {
@@ -425,43 +426,21 @@ void GameRuntime::DrawPhantomRaidOverlay()
                 fade, phantomEmpowered_);
         }
     }
-    const ImVec2 panel{ min.x + size.x - 262.0f * hudScale, min.y + size.y - 100.0f * hudScale };
+    const ImVec2 panel{ min.x + size.x - 230.0f * hudScale, min.y + size.y - 82.0f * hudScale };
     const auto p = [&](float x, float y) { return ImVec2(panel.x + x * hudScale, panel.y + y * hudScale); };
-    CombatHud::Shade(draw, p(-48.0f, -12.0f), { min.x + size.x, min.y + size.y }, true);
-    const ImVec2 icon[] = { p(0, 0), p(47, 0), p(60, 13), p(60, 60), p(0, 60) };
-    draw->AddConvexPolyFilled(icon, 5, IM_COL32(9, 25, 38, 230));
-    draw->AddPolyline(icon, 5, phantomReady_ || active ? accent : CombatHud::Muted,
-        ImDrawFlags_Closed, hudScale);
-    CombatHud::BladeIcon(draw, p(29, 29), hudScale, phantomReady_ || active ? accent : CombatHud::Muted);
-    draw->AddRectFilled(p(-4, 43), p(16, 65), CombatHud::White);
-    CombatHud::Text(draw, p(1, 42), 22.0f * hudScale, IM_COL32(10, 24, 36, 255), "Q", false, true);
-    PhantomText(draw, p(76, 0), 18.0f * hudScale, CombatHud::White, "残像連撃");
-    char status[96]{};
-    if (active) {
-        std::snprintf(status, sizeof(status), "%d / %d", phantomNextStrike_, phantomStrikeCount_);
-    } else if (phantomNoTargetNotice_ > 0.0f) {
-        std::snprintf(status, sizeof(status), "対象なし");
-    } else if (phantomReady_) {
-        std::snprintf(status, sizeof(status), gold ? "強化・5連撃" : "使用可能");
-    } else if (phantomCooldown_ > 0.0f) {
-        std::snprintf(status, sizeof(status), "%.1f", static_cast<double>(phantomCooldown_ / 60.0f));
-    } else {
-        std::snprintf(status, sizeof(status), "回復中");
-    }
-    const bool numeric = active || (!phantomReady_ && phantomCooldown_ > 0.0f && phantomNoTargetNotice_ <= 0.0f);
-    CombatHud::Text(draw, p(76, numeric ? 19.0f : 29.0f), (numeric ? 34.0f : 15.0f) * hudScale,
-        phantomReady_ || active ? accent : CombatHud::Muted, status, false, numeric);
-    if (numeric && !active) {
-        PhantomText(draw, p(127, 35), 13.0f * hudScale, CombatHud::Muted, "秒");
-    }
-    const float recovery = phantomReady_ ? 1.0f :
-        std::clamp(1.0f - phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f);
-    draw->AddRectFilled(p(76, 58), p(230, 61), IM_COL32(26, 45, 59, 230));
-    draw->AddRectFilled(p(76, 58), p(76.0f + 154.0f * recovery, 61), accent);
-    if (phantomReadyFlash_ > 0.0f) {
-        // 回復通知はアイコンへ集約し、戦闘の中央へ毎回文章を出さない。
-        const int alpha = static_cast<int>(180.0f * std::clamp(phantomReadyFlash_ / 72.0f, 0.0f, 1.0f));
-        draw->AddPolyline(icon, 5, IM_COL32(235, 250, 255, alpha), ImDrawFlags_Closed, 3.0f * hudScale);
+    CombatHud::Shade(draw, p(-40.0f, -12.0f), { min.x + size.x, min.y + size.y }, true);
+    // 常設表示は技名・キー・アイコンだけ。枠と「使用可能」の重複説明は置かない。
+    const ImU32 hudAccent = gold ? CombatHud::Gold : CombatHud::White;
+    const ImU32 iconColor = phantomReady_ || active ? hudAccent : IM_COL32(121, 121, 119, 255);
+    CombatHud::BladeIcon(draw, p(22, 22), 0.8f * hudScale, iconColor);
+    PhantomText(draw, p(54, 3), 17.0f * hudScale, CombatHud::White, "残像連撃");
+    CombatHud::Text(draw, p(198, -1), 25.0f * hudScale, iconColor, "Q", true, true);
+    if (!active && phantomNoTargetNotice_ > 0.0f) {
+        PhantomText(draw, p(54, 29), 14.0f * hudScale, CombatHud::Muted, "対象なし");
+    } else if (!active && !phantomReady_ && phantomCooldown_ > 0.0f) {
+        char cooldown[24]{};
+        std::snprintf(cooldown, sizeof(cooldown), "%.1fs", static_cast<double>(phantomCooldown_ / 60.0f));
+        CombatHud::Text(draw, p(198, 25), 26.0f * hudScale, CombatHud::Muted, cooldown, true, true);
     }
     draw->PopClipRect();
 }

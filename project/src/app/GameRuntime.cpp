@@ -465,29 +465,14 @@ void DrawCombatHudText(
 // 枠を使わず、明るい背景でも数字を読める程度の局所的な下地だけを敷く。
 void DrawCombatHudShade(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, bool alignRight)
 {
-    const ImU32 dark = IM_COL32(7, 13, 23, 164);
-    const ImU32 clear = IM_COL32(7, 13, 23, 0);
+    const ImU32 dark = IM_COL32(12, 13, 14, 164);
+    const ImU32 clear = IM_COL32(12, 13, 14, 0);
     drawList->AddRectFilledMultiColor(min, max,
         alignRight ? clear : dark, alignRight ? dark : clear,
-        alignRight ? IM_COL32(7, 13, 23, 40) : clear,
-        alignRight ? clear : IM_COL32(7, 13, 23, 40));
+        alignRight ? IM_COL32(12, 13, 14, 40) : clear,
+        alignRight ? clear : IM_COL32(12, 13, 14, 40));
 }
 
-void DrawSystemHudPanel(
-    ImDrawList* drawList,
-    const ImVec2& min,
-    const ImVec2& max,
-    ImU32 accentColor,
-    float headerHeight = 29.0f)
-{
-    // 通知には背景を残し、飾りは見出し脇の短い色線に絞る。
-    drawList->AddRectFilled(min, max, IM_COL32(9, 15, 25, 218), 6.0f);
-    drawList->AddLine(
-        ImVec2(min.x + 16.0f, min.y + 8.0f),
-        ImVec2(min.x + 16.0f, min.y + headerHeight - 7.0f),
-        accentColor,
-        2.0f);
-}
 
 } // namespace
 
@@ -6319,10 +6304,6 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
                     IM_COL32(255, 154, 62, (std::clamp)(bossLineAlpha, 0, 255)),
                     1.5f + bossChargeRate * 1.8f);
             }
-            drawList->AddText(
-                ImVec2(muzzle.x + 25.0f, muzzle.y - 8.0f),
-                IM_COL32(255, 198, 126, (std::clamp)(bossLineAlpha, 0, 255)),
-                "CANNON CHARGE");
         }
 
         if (enemy->IsShield() && enemy->HasShield()) {
@@ -6354,16 +6335,6 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
                 IM_COL32(180, 248, 255, shieldAlpha / 2),
                 32,
                 1.0f);
-            char shieldLabel[32]{};
-            std::snprintf(
-                shieldLabel,
-                sizeof(shieldLabel),
-                "SHIELD %d",
-                enemy->GetShieldHp());
-            drawList->AddText(
-                ImVec2(center.x + radius + 7.0f, center.y - 8.0f),
-                IM_COL32(136, 236, 255, shieldAlpha),
-                shieldLabel);
         }
 
         if (enemy->IsSupport()) {
@@ -6383,10 +6354,6 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
                 IM_COL32(132, 255, 104, supportAlpha),
                 4,
                 2.5f);
-            drawList->AddText(
-                ImVec2(supportCenter.x + 21.0f, supportCenter.y - 9.0f),
-                IM_COL32(174, 255, 144, supportAlpha),
-                "SUPPORT BOOST");
 
             int linkCount = 0;
             constexpr int kMaxSupportLinks = 3;
@@ -6452,10 +6419,6 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
                 IM_COL32(255, 82, 124, (std::clamp)(lineAlpha, 0, 255)),
                 1.3f + chargeRate * 1.2f);
         }
-        drawList->AddText(
-            ImVec2(muzzle.x + 16.0f, muzzle.y - 7.0f),
-            IM_COL32(255, 156, 176, (std::clamp)(lineAlpha, 0, 255)),
-            chargeRate >= 0.72f ? "FIRING" : "CHARGING");
     }
 }
 
@@ -6495,7 +6458,7 @@ void GameRuntime::DrawHud()
         const ImVec2 fillMax(
             min.x + (max.x - min.x) * (std::clamp)(rate, 0.0f, 1.0f),
             max.y);
-        drawList->AddRectFilled(min, max, IM_COL32(14, 22, 33, 210), 2.0f * hudScale);
+        drawList->AddRectFilled(min, max, CombatHud::Track, 2.0f * hudScale);
         if (fillMax.x > min.x) {
             drawList->AddRectFilled(min, fillMax, fillColor, 2.0f * hudScale);
         }
@@ -6540,43 +6503,36 @@ void GameRuntime::DrawHud()
     }
 
     const ImVec2 playerAnchor(origin.x + 32.0f * hudScale, origin.y + 22.0f * hudScale);
-    const ImVec2 hpBarMin(playerAnchor.x, playerAnchor.y + 65.0f * hudScale);
-    const ImVec2 hpBarMax(hpBarMin.x + 216.0f * hudScale, hpBarMin.y + 7.0f * hudScale);
-    const ImVec2 chargeBarMin(playerAnchor.x, playerAnchor.y + 108.0f * hudScale);
-    const ImVec2 chargeBarMax(chargeBarMin.x + 216.0f * hudScale, chargeBarMin.y + 3.0f * hudScale);
+    const ImVec2 hpBarMin(playerAnchor.x, playerAnchor.y + 48.0f * hudScale);
+    const ImVec2 hpBarMax(hpBarMin.x + 196.0f * hudScale, hpBarMin.y + 5.0f * hudScale);
+    const ImVec2 chargeBarMin(playerAnchor.x, playerAnchor.y + 86.0f * hudScale);
+    const ImVec2 chargeBarMax(chargeBarMin.x + 196.0f * hudScale, chargeBarMin.y + 3.0f * hudScale);
     char hpText[16]{};
     char maxHpText[24]{};
     std::snprintf(hpText, sizeof(hpText), "%d", hp);
     std::snprintf(maxHpText, sizeof(maxHpText), "/ %d", maxHp);
     const ImU32 hpColor =
-        hpRate < 0.3f ? IM_COL32(255, 86, 94, 245) :
-        hpRate < 0.55f ? IM_COL32(255, 205, 88, 245) :
-                         CombatHud::Blue;
+        hpRate <= 0.34f ? CombatHud::Danger : CombatHud::White;
 
     DrawCombatHudShade(drawList, origin,
-        ImVec2(origin.x + 305.0f * hudScale, origin.y + 165.0f * hudScale), false);
-    DrawCombatHudText(drawList, playerAnchor, 14.0f * hudScale, CombatHud::Muted, "機体耐久");
-    DrawCombatHudText(drawList, ImVec2(playerAnchor.x, playerAnchor.y + 14.0f * hudScale),
-        48.0f * hudScale, hpRate <= 0.34f ? hpColor : CombatHud::White, hpText, false, true);
-    const float hpNumberWidth = CombatHud::Width(hpText, 48.0f * hudScale, true);
+        ImVec2(origin.x + 280.0f * hudScale, origin.y + 140.0f * hudScale), false);
+    DrawCombatHudText(drawList, ImVec2(playerAnchor.x, playerAnchor.y + 19.0f * hudScale),
+        17.0f * hudScale, CombatHud::Muted, "HP", false, true);
+    const float hpNumberX = playerAnchor.x + 29.0f * hudScale;
+    DrawCombatHudText(drawList, ImVec2(hpNumberX, playerAnchor.y),
+        40.0f * hudScale, hpColor, hpText, false, true);
+    const float hpNumberWidth = CombatHud::Width(hpText, 40.0f * hudScale, true);
     DrawCombatHudText(drawList,
-        ImVec2(playerAnchor.x + 8.0f * hudScale + hpNumberWidth, playerAnchor.y + 37.0f * hudScale),
-        20.0f * hudScale, CombatHud::Muted, maxHpText, false, true);
-    if (hpRate <= 0.34f) {
-        DrawCombatHudText(drawList, ImVec2(hpBarMax.x, playerAnchor.y + 13.0f * hudScale),
-            14.0f * hudScale, hpColor, "危険", true);
-    }
-    CombatHud::Segments(drawList, hpBarMin, hpBarMax, hpRate, hpColor, 10, 3.0f * hudScale);
+        ImVec2(hpNumberX + 7.0f * hudScale + hpNumberWidth, playerAnchor.y + 20.0f * hudScale),
+        18.0f * hudScale, CombatHud::Muted, maxHpText, false, true);
+    drawBar(hpBarMin, hpBarMax, hpRate, hpColor);
     DrawCombatHudText(drawList, ImVec2(chargeBarMin.x, chargeBarMin.y - 21.0f * hudScale),
-        14.0f * hudScale, CombatHud::Muted, "チャージ");
-    DrawCombatHudText(drawList, ImVec2(chargeBarMax.x, chargeBarMin.y - 21.0f * hudScale),
-        14.0f * hudScale, isChargeReady ? CombatHud::Blue : CombatHud::Muted,
-        isChargeReady ? "充填完了" : "充填中", true);
+        13.0f * hudScale, CombatHud::Muted, "チャージ");
     drawBar(
         chargeBarMin,
         chargeBarMax,
         chargeRate,
-        isChargeReady ? IM_COL32(151, 222, 255, 245) : IM_COL32(108, 155, 184, 230));
+        isChargeReady ? CombatHud::White : CombatHud::Muted);
 
     const ImVec2 scoreAnchor(origin.x + drawSize.x - 32.0f * hudScale, playerAnchor.y);
     const int waveNumber = currentWaveIndex_ < kWaveCount ? currentWaveIndex_ + 1 : kWaveCount;
@@ -6589,13 +6545,13 @@ void GameRuntime::DrawHud()
         std::snprintf(waveText, sizeof(waveText), "区間  %02d / %02d", waveNumber, kWaveCount);
     }
     DrawCombatHudShade(drawList,
-        ImVec2(origin.x + drawSize.x - 315.0f * hudScale, origin.y),
-        ImVec2(origin.x + drawSize.x, origin.y + 182.0f * hudScale), true);
+        ImVec2(origin.x + drawSize.x - 280.0f * hudScale, origin.y),
+        ImVec2(origin.x + drawSize.x, origin.y + 156.0f * hudScale), true);
     DrawCombatHudText(drawList, scoreAnchor, 14.0f * hudScale, CombatHud::Muted,
         IsTutorial() ? "練習スコア" : "スコア", true);
     DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 17.0f * hudScale),
-        48.0f * hudScale, CombatHud::White, scoreText, true, true);
-    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 69.0f * hudScale),
+        40.0f * hudScale, CombatHud::White, scoreText, true, true);
+    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 62.0f * hudScale),
         14.0f * hudScale, CombatHud::Muted, bossSpawned_ ? "ボス戦" : waveText, true);
 
     DrawBossHud();
@@ -6612,39 +6568,57 @@ void GameRuntime::DrawHud()
 
 void GameRuntime::DrawControlsHelp()
 {
-    if (!showControlsHelp_) {
-        if (!isGameOver_ && !isGameClear_) {
-            Math::Vector2 min{};
-            Math::Vector2 size{};
-            GetEffectiveHudViewportRect(min, size);
-            const float scale = GetCombatHudScale(size);
-            CombatHud::Text(ImGui::GetForegroundDrawList(),
-                ImVec2(min.x + 32.0f * scale, min.y + size.y - 26.0f * scale),
-                13.0f * scale, CombatHud::Muted, "H: 操作・戦い方");
+    if (!showControlsHelp_) { return; }
+
+    Math::Vector2 min{}, size{};
+    GetEffectiveHudViewportRect(min, size);
+    const float scale = GetCombatHudScale(size);
+    ImGui::SetNextWindowPos({ min.x + size.x * 0.5f, min.y + size.y * 0.5f },
+        ImGuiCond_Always, { 0.5f, 0.5f });
+    ImGui::SetNextWindowSize({ 560.0f * scale, 0.0f });
+    ImGui::PushFont(CombatHud::Font(), 18.0f * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 28.0f * scale, 24.0f * scale });
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 12.0f * scale, 10.0f * scale });
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 21, 22, 246));
+    ImGui::PushStyleColor(ImGuiCol_Text, CombatHud::White);
+    ImGui::PushStyleColor(ImGuiCol_TextDisabled, CombatHud::Muted);
+    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 46, 47, 255));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(65, 66, 67, 255));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 81, 82, 255));
+    ImGui::Begin("##ControlsHelp", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::PushFont(CombatHud::Font(), 26.0f * scale);
+    ImGui::TextUnformatted("操作方法");
+    ImGui::PopFont();
+    ImGui::Dummy({ 0, 8.0f * scale });
+    if (ImGui::BeginTable("controls", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("action", ImGuiTableColumnFlags_WidthFixed, 130.0f * scale);
+        ImGui::TableSetupColumn("input");
+        const char* actions[] = { "移動", "照準", "射撃", "チャージ", "回避", "残像連撃",
+            "スキル回復", "フィーバー", "チェイン", "ボスの反撃" };
+        const char* values[] = { "WASD / 方向キー", "マウス", "SPACE 長押し", "SPACEを離して蓄積",
+            "A・D + SHIFT", "Q", "8秒。射撃命中で短縮", "満タンで自動発動",
+            "連続撃破で得点倍率上昇", "反撃中はダメージ2倍" };
+        for (int row = 0; row < 10; ++row) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", actions[row]);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(values[row]);
         }
-        return;
+        ImGui::EndTable();
     }
-    ImGui::PushFont(CombatHud::Font(), 18.0f);
-    ImGui::SetNextWindowPos(ImVec2(20.0f, 180.0f), ImGuiCond_FirstUseEver);
-    ImGui::Begin("操作・戦い方 [H]", &showControlsHelp_,
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::TextUnformatted("WASD / 方向キー: 移動    マウス: 照準");
-    ImGui::TextUnformatted("SPACE長押し: 連射");
-    ImGui::TextUnformatted("SPACEを離す: チャージ → 次の一発が強力に");
-    ImGui::TextUnformatted("A・D + SHIFT: 回避 / 敵弾すれすれでジャスト回避");
-    ImGui::TextUnformatted("ゲージ満タンで自動フィーバー");
-    ImGui::TextUnformatted("Q: 残像連撃 / 再使用8秒・射撃命中で短縮 / フィーバー中は強化");
-    ImGui::Separator();
-    ImGui::TextUnformatted("硬い敵にはチャージ。ボスの反撃チャンスは威力2倍。");
-    ImGui::TextUnformatted("撃破をつなぐとチェイン倍率UP。被弾すると途切れる。");
-    ImGui::TextUnformatted("※ この案内を開いていてもゲームは進みます。");
-    if (ImGui::Button("閉じる [H]")) {
-        showControlsHelp_ = false;
-    }
+    ImGui::Dummy({ 0, 8.0f * scale });
+    ImGui::PushFont(CombatHud::Font(), 14.0f * scale);
+    ImGui::TextDisabled("表示中もゲームは進行します");
+    ImGui::PopFont();
+    if (ImGui::Button("閉じる", { 120.0f * scale, 34.0f * scale })) { showControlsHelp_ = false; }
     ImGui::End();
+    ImGui::PopStyleColor(6);
+    ImGui::PopStyleVar(3);
     ImGui::PopFont();
 }
-
 void GameRuntime::DrawTutorialGuideHud()
 {
     if (!IsTutorial() || !tutorialGuideText_ || tutorialGuideTimer_ <= 0 ||
@@ -6676,130 +6650,56 @@ void GameRuntime::DrawTutorialGuideHud()
 void GameRuntime::DrawBossHud()
 {
     const Enemy* boss = GetBossEnemy();
-    if (!boss || !bossSpawned_ || bossDefeated_) {
-        return;
-    }
+    if (!boss || !bossSpawned_ || bossDefeated_) { return; }
 
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    Math::Vector2 hudMin{};
-    Math::Vector2 hudSize{};
-    GetEffectiveHudViewportRect(hudMin, hudSize);
-    const ImVec2 origin(hudMin.x, hudMin.y);
-    const ImVec2 drawSize(hudSize.x, hudSize.y);
+    Math::Vector2 min{}, size{};
+    GetEffectiveHudViewportRect(min, size);
+    const float scale = GetCombatHudScale(size);
+    const float width = 416.0f * scale;
+    const ImVec2 anchor(min.x + (size.x - width) * 0.5f, min.y + 24.0f * scale);
+    const auto p = [&](float x, float y) {
+        return ImVec2(anchor.x + x * scale, anchor.y + y * scale);
+    };
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    const float hpRate = std::clamp(static_cast<float>(boss->GetHp()) /
+        static_cast<float>((std::max)(boss->GetMaxHp(), 1)), 0.0f, 1.0f);
+    const bool counter = bossCounterTimer_ > 0;
+    const bool attacking = !counter && bossAttackStep_ >= 0 && bossAttackStepTimer_ > 0;
+    const ImU32 clear = IM_COL32(12, 13, 14, 0);
+    const ImU32 shade = IM_COL32(12, 13, 14, 150);
+    const float shadeBottom = attacking || counter ? 83.0f : 58.0f;
+    draw->AddRectFilledMultiColor(p(-64, -24), p(0, shadeBottom),
+        clear, shade, clear, clear);
+    draw->AddRectFilledMultiColor(p(0, -24), p(416, shadeBottom),
+        shade, shade, clear, clear);
+    draw->AddRectFilledMultiColor(p(416, -24), p(480, shadeBottom),
+        shade, clear, clear, clear);
+    DrawCombatHudText(draw, p(0, 0), 17.0f * scale, CombatHud::White, "ボス");
+    draw->AddRectFilled(p(0, 29), p(416, 35), CombatHud::Track);
+    draw->AddRectFilled(p(0, 29), p(416.0f * hpRate, 35), CombatHud::Danger);
 
-    const int maxHp = (std::max)(boss->GetMaxHp(), 1);
-    const int hp = std::clamp(boss->GetHp(), 0, maxHp);
-    const float hpRate = static_cast<float>(hp) / static_cast<float>(maxHp);
-    const bool counterActive = bossCounterTimer_ > 0;
-    const float counterRate = counterActive ?
-        std::clamp(
-            static_cast<float>(bossCounterTimer_) /
-                static_cast<float>((std::max)(bossCounterDuration_, 1)),
-            0.0f,
-            1.0f) :
-        0.0f;
-    const bool attackStatusActive =
-        !counterActive && bossAttackStep_ >= 0 && bossAttackStepTimer_ > 0;
-    const int attackStatusDuration = bossAttackPattern_ == 0 ?
-        (bossPhase_ >= 2 ? 24 : 32) :
-        bossAttackPattern_ == 1 ?
-            (bossPhase_ >= 2 ? 20 : 28) :
-            (bossPhase_ >= 2 ? 38 : 50);
-    const float attackStatusRate = attackStatusActive ?
-        1.0f - std::clamp(
-            static_cast<float>(bossAttackStepTimer_) /
-                static_cast<float>((std::max)(attackStatusDuration, 1)),
-            0.0f,
-            1.0f) :
-        0.0f;
-    const bool hasStatusRow = counterActive || attackStatusActive;
-    const float panelWidth = std::clamp(drawSize.x * 0.38f, 360.0f, 560.0f);
-    const ImVec2 panelMin(
-        origin.x + (drawSize.x - panelWidth) * 0.5f,
-        origin.y + 18.0f);
-    const ImVec2 panelMax(
-        panelMin.x + panelWidth,
-        panelMin.y + (hasStatusRow ? 76.0f : 54.0f));
-    const ImVec2 barMin(panelMin.x + 18.0f, panelMin.y + 31.0f);
-    const ImVec2 barMax(panelMax.x - 18.0f, panelMin.y + 43.0f);
-    const ImVec2 barFillMax(
-        barMin.x + (barMax.x - barMin.x) * std::clamp(hpRate, 0.0f, 1.0f),
-        barMax.y);
-    const std::string hpText = std::to_string(hp) + " / " + std::to_string(maxHp);
-    const std::string bossTitle =
-        "BOSS  -  " + std::to_string(bossPhase_) + "段階目";
-
-    DrawSystemHudPanel(
-        drawList,
-        panelMin,
-        panelMax,
-        counterActive ?
-            IM_COL32(255, 204, 92, 245) :
-            attackStatusActive ?
-                IM_COL32(255, 102, 72, 245) :
-                IM_COL32(255, 102, 154, 235),
-        27.0f);
-    drawList->AddText(
-        ImVec2(panelMin.x + 32.0f, panelMin.y + 8.0f),
-        IM_COL32(244, 235, 241, 245),
-        bossTitle.c_str());
-    drawList->AddText(
-        ImVec2(panelMax.x - 16.0f - ImGui::CalcTextSize(hpText.c_str()).x,
-               panelMin.y + 10.0f),
-        IM_COL32(255, 191, 206, 245),
-        hpText.c_str());
-    drawList->AddRectFilled(barMin, barMax, IM_COL32(12, 31, 38, 235), 3.0f);
-    drawList->AddRectFilled(
-        barMin,
-        barFillMax,
-        hpRate <= 0.35f ?
-            IM_COL32(255, 70, 92, 245) :
-            IM_COL32(255, 88, 176, 245),
-        3.0f);
-    drawList->AddRect(barMin, barMax, IM_COL32(226, 252, 248, 128), 3.0f);
-    if (hasStatusRow) {
-        const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 0.34f);
-        const float statusRate = counterActive ? counterRate : attackStatusRate;
-        const char* statusLabel = counterActive ?
-            "反撃チャンス  ダメージ2倍" :
-            bossAttackPattern_ == 0 ?
-                "拡散弾に注意" :
-                bossAttackPattern_ == 1 ?
-                    "なぎ払いに注意" :
-                    "チャージ砲に注意";
-        const ImU32 statusTextColor = counterActive ?
-            IM_COL32(255, 234, 164, static_cast<int>(225.0f + pulse * 30.0f)) :
-            IM_COL32(255, 184, 146, static_cast<int>(225.0f + pulse * 30.0f));
-        const ImU32 statusBarColor = counterActive ?
-            IM_COL32(255, 190, 72, 245) :
-            IM_COL32(255, 92, 62, 245);
-        const ImVec2 statusBarMin(panelMin.x + 18.0f, panelMin.y + 65.0f);
-        const ImVec2 statusBarMax(panelMax.x - 18.0f, panelMin.y + 69.0f);
-        const ImVec2 statusFillMax(
-            statusBarMin.x +
-                (statusBarMax.x - statusBarMin.x) * statusRate,
-            statusBarMax.y);
-        drawList->AddText(
-            ImVec2(panelMin.x + 32.0f, panelMin.y + 47.0f),
-            statusTextColor,
-            statusLabel);
-        drawList->AddRectFilled(
-            statusBarMin,
-            statusBarMax,
-            IM_COL32(38, 34, 28, 225),
-            2.0f);
-        drawList->AddRectFilled(
-            statusBarMin,
-            statusFillMax,
-            statusBarColor,
-            2.0f);
+    if (counter || attacking) {
+        // 敵の状態と反撃可能時間だけを提示し、注意文やHPの重複数値は出さない。
+        const char* label = counter ? "反撃 ×2" :
+            bossAttackPattern_ == 0 ? "拡散弾" :
+            bossAttackPattern_ == 1 ? "なぎ払い" : "チャージ砲";
+        const ImU32 color = counter ? CombatHud::Gold : CombatHud::Danger;
+        const int duration = counter ? bossCounterDuration_ :
+            bossAttackPattern_ == 0 ? (bossPhase_ >= 2 ? 24 : 32) :
+            bossAttackPattern_ == 1 ? (bossPhase_ >= 2 ? 20 : 28) :
+                (bossPhase_ >= 2 ? 38 : 50);
+        const float remaining = std::clamp(
+            static_cast<float>(counter ? bossCounterTimer_ : bossAttackStepTimer_) /
+                static_cast<float>((std::max)(duration, 1)), 0.0f, 1.0f);
+        const float rate = counter ? remaining : 1.0f - remaining;
+        DrawCombatHudText(draw, p(416, 0), 16.0f * scale, color, label, true);
+        draw->AddRectFilled(p(0, 43), p(416, 45), CombatHud::Track);
+        draw->AddRectFilled(p(0, 43), p(416.0f * rate, 45), color);
     }
 }
-
 void GameRuntime::DrawStageCueHud()
 {
     if (bossWarningTimer_ <= 0 &&
-        bossIntroTimer_ <= 0 &&
         bossDefeatFlashTimer_ <= 0 &&
         bossPhaseTransitionTimer_ <= 0 &&
         justDodgeFlashTimer_ <= 0) {
@@ -6858,96 +6758,22 @@ void GameRuntime::DrawStageCueHud()
             IM_COL32(255, 174, 76, (std::clamp)(alpha, 0, 120)));
     }
 
-    if (bossPhaseTransitionTimer_ > 0) {
-        const float transitionRate =
-            static_cast<float>(bossPhaseTransitionTimer_) /
-            static_cast<float>((std::max)(kBossPhaseTransitionDuration, 1));
-        const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 10.5f);
-        const float width = std::clamp(drawSize.x * 0.42f, 380.0f, 650.0f);
-        const ImVec2 panelMin(center.x - width * 0.5f, center.y - 46.0f);
-        const ImVec2 panelMax(center.x + width * 0.5f, center.y + 46.0f);
-        const int accentAlpha = static_cast<int>(190.0f + pulse * 55.0f);
-        const int fillAlpha = static_cast<int>(
-            42.0f + transitionRate * 36.0f + pulse * 14.0f);
-
-        drawList->AddRectFilled(
-            origin,
-            ImVec2(origin.x + drawSize.x, origin.y + drawSize.y),
-            IM_COL32(28, 0, 18, (std::clamp)(fillAlpha, 0, 96)));
-        DrawSystemHudPanel(
-            drawList,
-            panelMin,
-            panelMax,
-            IM_COL32(255, 58, 138, (std::clamp)(accentAlpha, 0, 255)),
-            28.0f);
-        drawList->AddText(
-            ImVec2(panelMin.x + 34.0f, panelMin.y + 8.0f),
-            IM_COL32(255, 174, 212, 235),
-            "ボスの攻撃が変化");
-        const char* phaseText = "第2段階";
-        const ImVec2 phaseTextSize = ImGui::CalcTextSize(phaseText);
-        drawList->AddText(
-            ImVec2(center.x - phaseTextSize.x * 0.5f, center.y - 5.0f),
-            IM_COL32(255, 238, 190, 255),
-            phaseText);
-        drawList->AddLine(
-            ImVec2(panelMin.x + 38.0f, panelMax.y - 14.0f),
-            ImVec2(panelMax.x - 38.0f, panelMax.y - 14.0f),
-            IM_COL32(255, 76, 148, (std::clamp)(accentAlpha, 0, 255)),
-            2.0f + pulse * 2.0f);
-    }
-
-    if (bossWarningTimer_ > 0) {
-        const float warningRate =
-            static_cast<float>(bossWarningTimer_) /
-            static_cast<float>((std::max)(kBossWarningDuration, 1));
-        const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 11.0f);
-        const float width = std::clamp(drawSize.x * 0.44f, 360.0f, 620.0f);
-        const ImVec2 panelMin(center.x - width * 0.5f, center.y - 42.0f);
-        const ImVec2 panelMax(center.x + width * 0.5f, center.y + 42.0f);
-        const int panelAlpha =
-            static_cast<int>(170.0f * (0.58f + 0.42f * pulse) * (std::min)(1.0f, warningRate * 2.2f));
-
-        DrawSystemHudPanel(
-            drawList,
-            panelMin,
-            panelMax,
-            IM_COL32(255, 72, 86, (std::clamp)(panelAlpha + 55, 0, 255)),
-            25.0f);
-        drawList->AddText(
-            ImVec2(panelMin.x + 32.0f, panelMin.y + 7.0f),
-            IM_COL32(255, 205, 210, 225),
-            "大型敵を確認");
-
-        const char* warningText =
-            bossSpawned_ ? "ボス接近" : "警告";
-        const ImVec2 textSize = ImGui::CalcTextSize(warningText);
-        drawList->AddText(
-            ImVec2(center.x - textSize.x * 0.5f + 2.0f, center.y - textSize.y * 0.5f + 2.0f),
-            IM_COL32(0, 0, 0, 210),
-            warningText);
-        drawList->AddText(
-            ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
-            IM_COL32(255, 236, 184, 255),
-            warningText);
-    }
-
-    if (bossIntroTimer_ > 0 && bossSpawned_ && !bossDefeated_) {
-        const float introRate =
-            static_cast<float>(bossIntroTimer_) /
-            static_cast<float>((std::max)(kBossIntroDuration, 1));
-        const float sweep = 1.0f - introRate;
-        const float lineY = origin.y + drawSize.y * (0.64f + std::sin(cameraTimer_ * 0.8f) * 0.015f);
-        const float halfWidth = drawSize.x * (0.08f + 0.38f * sweep);
-        const int alpha = static_cast<int>(130.0f * introRate);
-        drawList->AddLine(
-            ImVec2(center.x - halfWidth, lineY),
-            ImVec2(center.x + halfWidth, lineY),
-            IM_COL32(255, 72, 142, (std::clamp)(alpha, 0, 150)),
-            4.0f);
+    const bool phaseChange = bossPhaseTransitionTimer_ > 0;
+    const int timer = phaseChange ? bossPhaseTransitionTimer_ : bossWarningTimer_;
+    const int duration = phaseChange ? kBossPhaseTransitionDuration : kBossWarningDuration;
+    if (timer > 0) {
+        const float remaining = static_cast<float>(timer) / static_cast<float>((std::max)(duration, 1));
+        const float fade = std::clamp((1.0f - remaining) / 0.10f, 0.0f, 1.0f) *
+            std::clamp(remaining / 0.20f, 0.0f, 1.0f);
+        const float scale = GetCombatHudScale(hudSize);
+        const char* label = phaseChange ? "第2段階" : "大型敵接近";
+        const float fontSize = 30.0f * scale;
+        const float width = CombatHud::Width(label, fontSize);
+        DrawCombatHudText(drawList, ImVec2(center.x - width * 0.5f, center.y), fontSize,
+            phaseChange ? IM_COL32(241, 240, 235, static_cast<int>(255.0f * fade)) :
+                          IM_COL32(237, 100, 88, static_cast<int>(255.0f * fade)), label);
     }
 }
-
 void GameRuntime::DrawDefeatChainHud()
 {
     const bool isChainActive = defeatChainCount_ >= 2;
@@ -6969,7 +6795,7 @@ void GameRuntime::DrawDefeatChainHud()
         origin.x + drawSize.x - 32.0f * hudScale - panelWidth,
         origin.y + 126.0f * hudScale);
     const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 38.0f * hudScale);
-    ImU32 accentColor = CombatHud::Blue;
+    ImU32 accentColor = CombatHud::White;
     if (isBreakNoticeVisible) {
         const int alpha = static_cast<int>(
             100.0f + 145.0f *
@@ -6977,7 +6803,7 @@ void GameRuntime::DrawDefeatChainHud()
             static_cast<float>(kDefeatChainBreakFlashFrames));
         accentColor = IM_COL32(255, 96, 116, (std::clamp)(alpha, 0, 255));
     } else {
-        accentColor = GetDefeatChainScoreMultiplier() >= 3 ? CombatHud::Gold : CombatHud::Blue;
+        accentColor = GetDefeatChainScoreMultiplier() >= 3 ? CombatHud::Gold : CombatHud::White;
     }
 
     if (isBreakNoticeVisible) {
@@ -6995,8 +6821,10 @@ void GameRuntime::DrawDefeatChainHud()
     std::snprintf(multiplierText, sizeof(multiplierText), "x%d", totalScoreMultiplier);
     DrawCombatHudText(drawList, ImVec2(panelMin.x, panelMin.y + 5.0f * hudScale),
         15.0f * hudScale, CombatHud::White, chainText);
-    DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
-        32.0f * hudScale, accentColor, multiplierText, true, true);
+    if (totalScoreMultiplier > 1) {
+        DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
+            32.0f * hudScale, accentColor, multiplierText, true, true);
+    }
 
     const ImVec2 timerMin(panelMin.x, panelMax.y - 5.0f * hudScale);
     const ImVec2 timerMax(panelMax.x, panelMax.y - 2.0f * hudScale);
@@ -7005,7 +6833,7 @@ void GameRuntime::DrawDefeatChainHud()
             static_cast<float>(kDefeatChainDurationFrames),
         0.0f,
         1.0f);
-    drawList->AddRectFilled(timerMin, timerMax, IM_COL32(12, 22, 36, 230), 2.0f);
+    drawList->AddRectFilled(timerMin, timerMax, CombatHud::Track, 2.0f);
     drawList->AddRectFilled(
         timerMin,
         ImVec2(
@@ -7051,19 +6879,19 @@ void GameRuntime::DrawFeverHud()
     };
 
     const float hudScale = GetCombatHudScale(hudSize);
-    const float barWidth = 240.0f * hudScale;
+    const float barWidth = 196.0f * hudScale;
     const ImVec2 panelMin(
         origin.x + 32.0f * hudScale,
-        origin.y + drawSize.y - 100.0f * hudScale);
-    const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 64.0f * hudScale);
-    const ImVec2 barMin(panelMin.x, panelMin.y + 52.0f * hudScale);
-    const ImVec2 barMax(panelMax.x, barMin.y + 8.0f * hudScale);
+        origin.y + drawSize.y - 80.0f * hudScale);
+    const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 48.0f * hudScale);
+    const ImVec2 barMin(panelMin.x, panelMin.y + 35.0f * hudScale);
+    const ImVec2 barMax(panelMax.x, barMin.y + 5.0f * hudScale);
     const ImVec2 fillMax(
         barMin.x + (barMax.x - barMin.x) * std::clamp(rate, 0.0f, 1.0f),
         barMax.y);
     CombatHud::Shade(drawList, { origin.x, panelMin.y - 12.0f * hudScale },
         { panelMax.x + 50.0f * hudScale, origin.y + drawSize.y });
-    drawList->AddRectFilled(barMin, barMax, IM_COL32(26, 45, 59, 230));
+    drawList->AddRectFilled(barMin, barMax, CombatHud::Track);
     drawList->PushClipRect(barMin, barMax, true);
     if (fillMax.x > barMin.x) {
         if (isActive || isReady) {
@@ -7099,34 +6927,19 @@ void GameRuntime::DrawFeverHud()
                 IM_COL32(255, 255, 255, 115),
                 IM_COL32(255, 255, 255, 10));
         } else {
-            drawList->AddRectFilled(barMin, fillMax, CombatHud::Blue);
+            drawList->AddRectFilled(barMin, fillMax, CombatHud::White);
         }
-        drawList->AddLine(
-            ImVec2(barMin.x + 2.0f, barMin.y + 2.0f),
-            ImVec2(fillMax.x - 2.0f, barMin.y + 2.0f),
-            IM_COL32(255, 255, 255, 150),
-            1.0f);
     }
     drawList->PopClipRect();
-    for (int index = 1; index < 10; ++index) {
-        const float x = barMin.x + (barMax.x - barMin.x) * static_cast<float>(index) / 10.0f;
-        drawList->AddRectFilled({ x - hudScale, barMin.y }, { x + hudScale, barMax.y }, IM_COL32(7, 18, 28, 245));
-    }
-
-    char status[64]{};
+    DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 5.0f * hudScale),
+        17.0f * hudScale, isActive ? CombatHud::Gold : CombatHud::Muted, "フィーバー");
+    // 通常時はゲージだけ。時間制限がある発動中だけ残り秒数を見せる。
     if (isActive) {
-        std::snprintf(status, sizeof(status), "%.1f", static_cast<float>(feverTimer_) / 60.0f);
-    } else {
-        std::snprintf(status, sizeof(status), "%02d", feverGauge_ * 100 / kFeverGaugeMax);
+        char status[32]{};
+        std::snprintf(status, sizeof(status), "%.1fs", static_cast<float>(feverTimer_) / 60.0f);
+        DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y - 4.0f * hudScale),
+            30.0f * hudScale, CombatHud::Gold, status, true, true);
     }
-    DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 10.0f * hudScale),
-        18.0f * hudScale, isActive ? CombatHud::Gold : CombatHud::White, "フィーバー");
-    DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 32.0f * hudScale),
-        12.0f * hudScale, CombatHud::Muted, isActive ? "連射・速度 強化中" : "自動発動");
-    DrawCombatHudText(drawList, ImVec2(barMax.x - 19.0f * hudScale, panelMin.y + 3.0f * hudScale),
-        42.0f * hudScale, isActive ? CombatHud::Gold : CombatHud::White, status, true, true);
-    DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y + 28.0f * hudScale),
-        14.0f * hudScale, CombatHud::Muted, isActive ? "秒" : "%", true);
 
     if (isActive) {
         const int edgeAlpha = static_cast<int>(45.0f + pulse * 38.0f);
@@ -7194,80 +7007,36 @@ void GameRuntime::DrawFeverHud()
             origin.y + drawSize.y * 0.23f - elapsed * 8.0f * hudScale);
         DrawCombatHudText(drawList, ImVec2(center.x - titleWidth * 0.5f, center.y),
             fontSize, IM_COL32(255, 248, 223, static_cast<int>(255.0f * visibility)), title, false, true);
-        const char* detail = "連射・スピード強化";
-        const float detailSize = 18.0f * hudScale;
-        const float detailWidth = ImGui::GetFont()->CalcTextSizeA(detailSize, FLT_MAX, 0.0f, detail).x;
-        DrawCombatHudText(drawList, ImVec2(center.x - detailWidth * 0.5f, center.y + 51.0f * hudScale),
-            detailSize, IM_COL32(239, 234, 250, static_cast<int>(230.0f * visibility)), detail);
-        // 虹はフィーバーの目印として短いアクセントに残す。
-        const float halfWidth = 90.0f * hudScale;
-        drawList->AddRectFilledMultiColor(
-            ImVec2(center.x - halfWidth, center.y + 44.0f * hudScale),
-            ImVec2(center.x + halfWidth, center.y + 46.0f * hudScale),
-            rainbowColor(0.0f, static_cast<int>(230.0f * visibility)),
-            rainbowColor(0.6f, static_cast<int>(230.0f * visibility)),
-            rainbowColor(0.6f, static_cast<int>(230.0f * visibility)),
-            rainbowColor(0.0f, static_cast<int>(230.0f * visibility)));
     }
 }
 
 void GameRuntime::DrawLockOnHud()
 {
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    const bool targetAligned = isReticleOnTarget_;
-    const bool isChargeReady = chargeTimer_ >= chargeShotThreshold_;
-    const ImU32 reticleColor =
-        targetAligned ? IM_COL32(255, 66, 70, 255) : IM_COL32(80, 255, 150, 230);
-    const ImU32 reticleSoftColor =
-        targetAligned ? IM_COL32(255, 48, 44, 105) : IM_COL32(58, 255, 145, 70);
-    constexpr float kReticleSize = 18.0f;
-    constexpr float kReticleGap = 5.0f;
-    const float reticleThickness = targetAligned ? 3.0f : 2.0f;
-
-    drawList->AddCircle(
-        ImVec2(reticleScreen_.x, reticleScreen_.y),
-        kReticleSize + (targetAligned ? 7.0f : 4.0f),
-        reticleSoftColor,
-        48,
-        targetAligned ? 3.0f : 2.0f);
-
-    if (isChargeReady) {
-        drawList->AddCircle(
-            ImVec2(reticleScreen_.x, reticleScreen_.y),
-            kReticleSize + 10.0f,
-            targetAligned ? IM_COL32(255, 84, 86, 210) : IM_COL32(112, 255, 185, 190),
-            52,
-            2.0f);
-    }
-
-    drawList->AddCircle(
-        ImVec2(reticleScreen_.x, reticleScreen_.y),
-        kReticleSize,
-        reticleColor,
-        40,
-        reticleThickness);
-    drawList->AddLine(
-        ImVec2(reticleScreen_.x - kReticleSize - kReticleGap, reticleScreen_.y),
-        ImVec2(reticleScreen_.x - kReticleGap, reticleScreen_.y),
-        reticleColor,
-        reticleThickness);
-    drawList->AddLine(
-        ImVec2(reticleScreen_.x + kReticleGap, reticleScreen_.y),
-        ImVec2(reticleScreen_.x + kReticleSize + kReticleGap, reticleScreen_.y),
-        reticleColor,
-        reticleThickness);
-    drawList->AddLine(
-        ImVec2(reticleScreen_.x, reticleScreen_.y - kReticleSize - kReticleGap),
-        ImVec2(reticleScreen_.x, reticleScreen_.y - kReticleGap),
-        reticleColor,
-        reticleThickness);
-    drawList->AddLine(
-        ImVec2(reticleScreen_.x, reticleScreen_.y + kReticleGap),
-        ImVec2(reticleScreen_.x, reticleScreen_.y + kReticleSize + kReticleGap),
-        reticleColor,
-        reticleThickness);
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    const bool aligned = isReticleOnTarget_;
+    const bool charged = chargeTimer_ >= chargeShotThreshold_;
+    const ImU32 color = aligned ? CombatHud::Danger : CombatHud::White;
+    const ImU32 shadow = IM_COL32(10, 11, 12, 190);
+    const ImVec2 center(reticleScreen_.x, reticleScreen_.y);
+    constexpr float radius = 18.0f;
+    constexpr float gap = 5.0f;
+    const float thickness = aligned ? 2.2f : 1.5f;
+    // 明るい空でも読めるよう、発光ではなく細い暗色の下描きを使う。
+    const auto circle = [&](float r, ImU32 foreground, float stroke) {
+        draw->AddCircle(center, r, shadow, 48, stroke + 2.0f);
+        draw->AddCircle(center, r, foreground, 48, stroke);
+    };
+    const auto line = [&](ImVec2 from, ImVec2 to) {
+        draw->AddLine(from, to, shadow, thickness + 2.0f);
+        draw->AddLine(from, to, color, thickness);
+    };
+    if (charged) { circle(radius + 8.0f, aligned ? CombatHud::Danger : CombatHud::Gold, 1.5f); }
+    circle(radius, color, thickness);
+    line({ center.x - radius - gap, center.y }, { center.x - gap, center.y });
+    line({ center.x + gap, center.y }, { center.x + radius + gap, center.y });
+    line({ center.x, center.y - radius - gap }, { center.x, center.y - gap });
+    line({ center.x, center.y + gap }, { center.x, center.y + radius + gap });
 }
-
 void GameRuntime::DrawHitConfirmHud()
 {
     if (hitConfirmTimer_ <= 0) {
@@ -7291,17 +7060,10 @@ void GameRuntime::DrawHitConfirmHud()
     const float thickness = hitConfirmDestroyed_ ? 3.0f : 2.2f;
     const ImVec2 center(hitConfirmScreen_.x, hitConfirmScreen_.y);
 
-    const ImU32 mainColor = hitConfirmBoss_ ?
-        IM_COL32(255, 126, 230, (std::clamp)(alpha, 0, 255)) :
-        hitConfirmDestroyed_ ?
-            IM_COL32(255, 220, 112, (std::clamp)(alpha, 0, 255)) :
-            hitConfirmCharged_ ?
-                IM_COL32(142, 236, 255, (std::clamp)(alpha, 0, 255)) :
-                IM_COL32(210, 250, 255, (std::clamp)(alpha, 0, 255));
+    const ImU32 mainColor = hitConfirmDestroyed_ || hitConfirmCharged_ ?
+        IM_COL32(231, 189, 109, alpha) : IM_COL32(241, 240, 235, alpha);
     const int softAlpha = (std::clamp)(alpha / 3, 0, 96);
-    const ImU32 softColor = hitConfirmBoss_ ?
-        IM_COL32(255, 64, 192, softAlpha) :
-        IM_COL32(64, 198, 255, softAlpha);
+    const ImU32 softColor = IM_COL32(231, 189, 109, softAlpha);
 
     if (hitConfirmDestroyed_) {
         drawList->AddNgon(
@@ -7324,33 +7086,6 @@ void GameRuntime::DrawHitConfirmHud()
     }
     drawList->AddCircleFilled(center, hitConfirmDestroyed_ ? 3.2f : 2.4f, mainColor, 16);
 
-    const char* label = hitConfirmBoss_ && hitConfirmDestroyed_ ? "BOSS BREAK" :
-        hitConfirmDestroyed_ ? "DESTROY" :
-        hitConfirmCharged_ ? "POWER HIT" : "HIT";
-    const ImVec2 labelSize = ImGui::CalcTextSize(label);
-    const float labelY = center.y + radius + 17.0f;
-    drawList->AddText(
-        ImVec2(center.x - labelSize.x * 0.5f + 1.0f, labelY + 1.0f),
-        IM_COL32(4, 12, 20, (std::clamp)(alpha, 0, 210)),
-        label);
-    drawList->AddText(
-        ImVec2(center.x - labelSize.x * 0.5f, labelY),
-        mainColor,
-        label);
-
-    if (hitConfirmComboCount_ >= 2) {
-        char comboLabel[32]{};
-        std::snprintf(
-            comboLabel,
-            sizeof(comboLabel),
-            "BURST x%d",
-            hitConfirmComboCount_);
-        const ImVec2 comboSize = ImGui::CalcTextSize(comboLabel);
-        drawList->AddText(
-            ImVec2(center.x - comboSize.x * 0.5f, labelY + 17.0f),
-            IM_COL32(178, 226, 255, (std::clamp)(alpha * 3 / 4, 0, 220)),
-            comboLabel);
-    }
 }
 
 void GameRuntime::DrawPlayerDamageHud()
@@ -7488,14 +7223,6 @@ void GameRuntime::DrawPlayerDamageHud()
             3.0f);
     }
 
-    const char* damageLabel = "HULL HIT";
-    const ImVec2 damageLabelSize = ImGui::CalcTextSize(damageLabel);
-    drawList->AddText(
-        ImVec2(
-            impactCenter.x - damageLabelSize.x * 0.5f,
-            impactCenter.y - impactRadius - 22.0f),
-        impactColor,
-        damageLabel);
 }
 
 void GameRuntime::DrawResultOverlay()
@@ -7564,17 +7291,18 @@ void GameRuntime::DrawResultOverlay()
     }
 
     const ImU32 resultAccent = isGameClear_ ? CombatHud::Gold : CombatHud::Danger;
-    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(8, 20, 32, 248));
-    drawList->AddRectFilled(panelMin, p(640, 3), resultAccent);
+    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(20, 21, 22, 248));
     CombatHud::Text(drawList, p(32, 20), 32.0f * scale, CombatHud::White,
         isGameClear_ ? "任務達成" : "作戦失敗");
     CombatHud::Text(drawList, p(32, 76), 15.0f * scale, CombatHud::Muted, "獲得スコア");
     char valueText[96]{};
     std::snprintf(valueText, sizeof(valueText), "%06d", score_);
     CombatHud::Text(drawList, p(32, 95), 52.0f * scale, CombatHud::White, valueText, false, true);
-    CombatHud::Text(drawList, p(608, 76), 15.0f * scale, CombatHud::Muted, "評価", true);
-    CombatHud::Text(drawList, p(608, 94), 56.0f * scale, resultAccent, rank, true, true);
-    drawList->AddLine(p(32, 160), p(608, 160), IM_COL32(107, 135, 154, 95));
+    if (isGameClear_) {
+        CombatHud::Text(drawList, p(608, 76), 15.0f * scale, CombatHud::Muted, "評価", true);
+        CombatHud::Text(drawList, p(608, 94), 56.0f * scale, resultAccent, rank, true, true);
+    }
+    drawList->AddLine(p(32, 160), p(608, 160), IM_COL32(160, 160, 156, 70));
 
     constexpr float kLeftLabelX = 32.0f;
     constexpr float kLeftValueX = 282.0f;
@@ -7610,7 +7338,7 @@ void GameRuntime::DrawResultOverlay()
     drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 3.0f, "最大連続撃破", valueText);
     std::snprintf(valueText, sizeof(valueText), "%d", justDodgeCount_);
     drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 3.0f, "ジャスト回避", valueText);
-    drawList->AddLine(p(32, 352), p(608, 352), IM_COL32(107, 135, 154, 95));
+    drawList->AddLine(p(32, 352), p(608, 352), IM_COL32(160, 160, 156, 70));
     // キーボードを知らない初見の人も、結果から次のプレイへ戻れる。
     ImGui::SetNextWindowPos(p(32, 374), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(576.0f * scale, 42.0f * scale), ImGuiCond_Always);
@@ -7624,17 +7352,17 @@ void GameRuntime::DrawResultOverlay()
         const ImVec2 max = ImGui::GetItemRectMax();
         // HUDパネルと同じ前景レイヤーへ描き、パネルの裏にボタンが隠れないようにする。
         drawList->AddRectFilled(min, max, ImGui::IsItemHovered() ?
-            IM_COL32(53, 82, 103, 255) : IM_COL32(29, 47, 63, 255));
+            IM_COL32(63, 64, 65, 255) : IM_COL32(36, 37, 38, 255));
         const float width = CombatHud::Width(label, 18.0f * scale);
         CombatHud::Text(drawList, ImVec2((min.x + max.x - width) * 0.5f,
             min.y + 9.0f * scale), 18.0f * scale, CombatHud::White, label);
         return clicked;
     };
-    if (resultButton("再挑戦 [R]")) {
+    if (resultButton("再挑戦")) {
         isRetryRequested_ = true;
     }
     ImGui::SameLine(0.0f, 24.0f * scale);
-    if (resultButton("タイトル [F2]")) {
+    if (resultButton("タイトル")) {
         isExitRequested_ = true;
     }
     ImGui::End();
