@@ -102,6 +102,12 @@ public:
     void Draw();
     void Finalize();
 
+#ifdef USE_IMGUI
+    // ゲーム表示用。エディタの標準フォントとは分け、数字は専用書体で読ませる。
+    static ImFont* GetHudFont();
+    static ImFont* GetHudNumberFont();
+#endif
+
     void ShowEditorController(EditorDebugSettings& settings);
     void ShowViewport(
         D3D12_GPU_DESCRIPTOR_HANDLE textureHandle,
@@ -116,6 +122,10 @@ public:
     bool GetLastViewportImageRect(Math::Vector2& min, Math::Vector2& size) const;
 
 private:
+#ifdef USE_IMGUI
+    inline static ImFont* hudFont_ = nullptr; // アトラスが所有する日本語フォント。
+    inline static ImFont* hudNumberFont_ = nullptr; // アトラスが所有する英数字フォント。
+#endif
     bool SaveInspectorTransforms(const ObjectInspectorSettings& inspector);
     bool LoadInspectorTransforms(const ObjectInspectorSettings& inspector);
 

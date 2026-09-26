@@ -521,6 +521,9 @@
     <ClInclude Include="include\app\GameRuntime.h">
       <Filter>include\app</Filter>
     </ClInclude>
+    <ClInclude Include="include\app\CombatHud.h">
+      <Filter>include\app</Filter>
+    </ClInclude>
     <ClInclude Include="include\app\Player.h">
       <Filter>include\app</Filter>
     </ClInclude>
@@ -583,6 +586,9 @@
     <Text Include="resources\fonts\FONT_AWESOME_LICENSE.txt">
       <Filter>resources\fonts</Filter>
     </Text>
+    <Text Include="resources\fonts\ZEN_KAKU_GOTHIC_OFL.txt"><Filter>resources\fonts</Filter></Text>
+    <Text Include="resources\fonts\BARLOW_OFL.txt"><Filter>resources\fonts</Filter></Text>
+    <Text Include="resources\fonts\HUD_FONTS.md"><Filter>resources\fonts</Filter></Text>
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.hdr">
@@ -594,6 +600,8 @@
     <None Include="resources\fonts\fa-regular-400.ttf">
       <Filter>resources\fonts</Filter>
     </None>
+    <None Include="resources\fonts\ZenKakuGothicNew-Medium.ttf"><Filter>resources\fonts</Filter></None>
+    <None Include="resources\fonts\BarlowCondensed-SemiBold.ttf"><Filter>resources\fonts</Filter></None>
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr">
       <Filter>resources\skybox</Filter>
     </None>

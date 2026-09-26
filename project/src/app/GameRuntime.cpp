@@ -1,4 +1,5 @@
 #include "app/GameRuntime.h"
+#include "app/CombatHud.h"
 
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/ParticleManager.h"
@@ -446,7 +447,7 @@ Math::Vector3 TransformCoord(const Math::Vector3& v, const Math::Matrix4x4& m)
 // 1280x720を基準に、ゲーム表示領域に合わせて文字と余白を一緒に拡縮する。
 float GetCombatHudScale(const Math::Vector2& viewportSize)
 {
-    return std::clamp((std::min)(viewportSize.x / 1280.0f, viewportSize.y / 720.0f), 0.5f, 2.0f);
+    return CombatHud::Scale(viewportSize);
 }
 
 void DrawCombatHudText(
@@ -455,24 +456,10 @@ void DrawCombatHudText(
     float fontSize,
     ImU32 color,
     const char* text,
-    bool alignRight = false)
+    bool alignRight = false,
+    bool number = false)
 {
-    ImFont* font = ImGui::GetFont();
-    if (alignRight) {
-        position.x -= font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text).x;
-    }
-    const int alpha = static_cast<int>((color >> IM_COL32_A_SHIFT) & 0xff);
-    const float shadowOffset = (std::max)(1.0f, fontSize / 22.0f);
-    // 空や発光エフェクトの上でも細い文字が埋もれないよう、1pxの暗い輪郭を付ける。
-    const ImVec2 outlineOffsets[] = { { -1.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, -1.0f }, { 0.0f, 1.0f } };
-    for (const ImVec2& offset : outlineOffsets) {
-        drawList->AddText(font, fontSize, ImVec2(position.x + offset.x, position.y + offset.y),
-            IM_COL32(3, 8, 16, alpha / 2), text);
-    }
-    drawList->AddText(font, fontSize,
-        ImVec2(position.x + shadowOffset, position.y + shadowOffset),
-        IM_COL32(3, 8, 16, alpha * 3 / 4), text);
-    drawList->AddText(font, fontSize, position, color, text);
+    CombatHud::Text(drawList, position, fontSize, color, text, alignRight, number);
 }
 
 // 枠を使わず、明るい背景でも数字を読める程度の局所的な下地だけを敷く。
@@ -6478,6 +6465,7 @@ void GameRuntime::DrawHud()
         return;
     }
 
+    ImGui::PushFont(CombatHud::Font(), 16.0f);
     DrawFeverBackdrop();
     DrawEnemyTypeTelegraphs();
 
@@ -6551,11 +6539,11 @@ void GameRuntime::DrawHud()
             clearAlertColor);
     }
 
-    const ImVec2 playerAnchor(origin.x + 28.0f * hudScale, origin.y + 24.0f * hudScale);
-    const ImVec2 hpBarMin(playerAnchor.x, playerAnchor.y + 36.0f * hudScale);
-    const ImVec2 hpBarMax(hpBarMin.x + 244.0f * hudScale, hpBarMin.y + 16.0f * hudScale);
-    const ImVec2 chargeBarMin(playerAnchor.x, playerAnchor.y + 87.0f * hudScale);
-    const ImVec2 chargeBarMax(chargeBarMin.x + 244.0f * hudScale, chargeBarMin.y + 5.0f * hudScale);
+    const ImVec2 playerAnchor(origin.x + 32.0f * hudScale, origin.y + 22.0f * hudScale);
+    const ImVec2 hpBarMin(playerAnchor.x, playerAnchor.y + 65.0f * hudScale);
+    const ImVec2 hpBarMax(hpBarMin.x + 216.0f * hudScale, hpBarMin.y + 7.0f * hudScale);
+    const ImVec2 chargeBarMin(playerAnchor.x, playerAnchor.y + 108.0f * hudScale);
+    const ImVec2 chargeBarMax(chargeBarMin.x + 216.0f * hudScale, chargeBarMin.y + 3.0f * hudScale);
     char hpText[16]{};
     char maxHpText[24]{};
     std::snprintf(hpText, sizeof(hpText), "%d", hp);
@@ -6563,35 +6551,34 @@ void GameRuntime::DrawHud()
     const ImU32 hpColor =
         hpRate < 0.3f ? IM_COL32(255, 86, 94, 245) :
         hpRate < 0.55f ? IM_COL32(255, 205, 88, 245) :
-                         IM_COL32(145, 231, 195, 255);
+                         CombatHud::Blue;
 
     DrawCombatHudShade(drawList, origin,
-        ImVec2(origin.x + 330.0f * hudScale, origin.y + 142.0f * hudScale), false);
-    DrawCombatHudText(drawList, ImVec2(playerAnchor.x, playerAnchor.y + 12.0f * hudScale),
-        14.0f * hudScale, IM_COL32(219, 229, 238, 235), "HP");
-    DrawCombatHudText(drawList, ImVec2(playerAnchor.x + 35.0f * hudScale, playerAnchor.y),
-        30.0f * hudScale, hpRate <= 0.34f ? hpColor : IM_COL32(248, 250, 252, 255), hpText);
-    const float hpNumberWidth = ImGui::GetFont()->CalcTextSizeA(30.0f * hudScale, FLT_MAX, 0.0f, hpText).x;
+        ImVec2(origin.x + 305.0f * hudScale, origin.y + 165.0f * hudScale), false);
+    DrawCombatHudText(drawList, playerAnchor, 14.0f * hudScale, CombatHud::Muted, "機体耐久");
+    DrawCombatHudText(drawList, ImVec2(playerAnchor.x, playerAnchor.y + 14.0f * hudScale),
+        48.0f * hudScale, hpRate <= 0.34f ? hpColor : CombatHud::White, hpText, false, true);
+    const float hpNumberWidth = CombatHud::Width(hpText, 48.0f * hudScale, true);
     DrawCombatHudText(drawList,
-        ImVec2(playerAnchor.x + 42.0f * hudScale + hpNumberWidth, playerAnchor.y + 13.0f * hudScale),
-        14.0f * hudScale, IM_COL32(194, 208, 220, 230), maxHpText);
+        ImVec2(playerAnchor.x + 8.0f * hudScale + hpNumberWidth, playerAnchor.y + 37.0f * hudScale),
+        20.0f * hudScale, CombatHud::Muted, maxHpText, false, true);
     if (hpRate <= 0.34f) {
         DrawCombatHudText(drawList, ImVec2(hpBarMax.x, playerAnchor.y + 13.0f * hudScale),
             14.0f * hudScale, hpColor, "危険", true);
     }
-    drawBar(hpBarMin, hpBarMax, hpRate, hpColor);
+    CombatHud::Segments(drawList, hpBarMin, hpBarMax, hpRate, hpColor, 10, 3.0f * hudScale);
     DrawCombatHudText(drawList, ImVec2(chargeBarMin.x, chargeBarMin.y - 21.0f * hudScale),
-        14.0f * hudScale, IM_COL32(212, 222, 232, 235), "チャージショット");
+        14.0f * hudScale, CombatHud::Muted, "チャージ");
     DrawCombatHudText(drawList, ImVec2(chargeBarMax.x, chargeBarMin.y - 21.0f * hudScale),
-        14.0f * hudScale, isChargeReady ? IM_COL32(155, 225, 255, 255) : IM_COL32(183, 199, 214, 220),
-        isChargeReady ? "発射可能" : "充填中", true);
+        14.0f * hudScale, isChargeReady ? CombatHud::Blue : CombatHud::Muted,
+        isChargeReady ? "充填完了" : "充填中", true);
     drawBar(
         chargeBarMin,
         chargeBarMax,
         chargeRate,
         isChargeReady ? IM_COL32(151, 222, 255, 245) : IM_COL32(108, 155, 184, 230));
 
-    const ImVec2 scoreAnchor(origin.x + drawSize.x - 28.0f * hudScale, playerAnchor.y);
+    const ImVec2 scoreAnchor(origin.x + drawSize.x - 32.0f * hudScale, playerAnchor.y);
     const int waveNumber = currentWaveIndex_ < kWaveCount ? currentWaveIndex_ + 1 : kWaveCount;
     char scoreText[32]{};
     char waveText[48]{};
@@ -6599,17 +6586,17 @@ void GameRuntime::DrawHud()
     if (IsTutorial()) {
         std::snprintf(waveText, sizeof(waveText), "チュートリアル / F2で戻る");
     } else {
-        std::snprintf(waveText, sizeof(waveText), "ウェーブ %d / %d", waveNumber, kWaveCount);
+        std::snprintf(waveText, sizeof(waveText), "区間  %02d / %02d", waveNumber, kWaveCount);
     }
     DrawCombatHudShade(drawList,
         ImVec2(origin.x + drawSize.x - 315.0f * hudScale, origin.y),
         ImVec2(origin.x + drawSize.x, origin.y + 182.0f * hudScale), true);
-    DrawCombatHudText(drawList, scoreAnchor, 13.0f * hudScale, IM_COL32(210, 222, 235, 230),
+    DrawCombatHudText(drawList, scoreAnchor, 14.0f * hudScale, CombatHud::Muted,
         IsTutorial() ? "練習スコア" : "スコア", true);
     DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 17.0f * hudScale),
-        32.0f * hudScale, IM_COL32(249, 250, 253, 255), scoreText, true);
-    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 58.0f * hudScale),
-        14.0f * hudScale, IM_COL32(207, 220, 233, 230), bossSpawned_ ? "ボス戦" : waveText, true);
+        48.0f * hudScale, CombatHud::White, scoreText, true, true);
+    DrawCombatHudText(drawList, ImVec2(scoreAnchor.x, scoreAnchor.y + 69.0f * hudScale),
+        14.0f * hudScale, CombatHud::Muted, bossSpawned_ ? "ボス戦" : waveText, true);
 
     DrawBossHud();
     DrawTutorialGuideHud();
@@ -6620,6 +6607,7 @@ void GameRuntime::DrawHud()
     DrawPlayerDamageHud();
     DrawDefeatChainHud();
     DrawFeverHud();
+    ImGui::PopFont();
 }
 
 void GameRuntime::DrawControlsHelp()
@@ -6629,12 +6617,14 @@ void GameRuntime::DrawControlsHelp()
             Math::Vector2 min{};
             Math::Vector2 size{};
             GetEffectiveHudViewportRect(min, size);
-            ImGui::GetForegroundDrawList()->AddText(
-                ImVec2(min.x + 20.0f, min.y + size.y - 28.0f),
-                IM_COL32(220, 232, 240, 210), "H: 操作・戦い方");
+            const float scale = GetCombatHudScale(size);
+            CombatHud::Text(ImGui::GetForegroundDrawList(),
+                ImVec2(min.x + 32.0f * scale, min.y + size.y - 26.0f * scale),
+                13.0f * scale, CombatHud::Muted, "H: 操作・戦い方");
         }
         return;
     }
+    ImGui::PushFont(CombatHud::Font(), 18.0f);
     ImGui::SetNextWindowPos(ImVec2(20.0f, 180.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("操作・戦い方 [H]", &showControlsHelp_,
         ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
@@ -6652,6 +6642,7 @@ void GameRuntime::DrawControlsHelp()
         showControlsHelp_ = false;
     }
     ImGui::End();
+    ImGui::PopFont();
 }
 
 void GameRuntime::DrawTutorialGuideHud()
@@ -6975,12 +6966,10 @@ void GameRuntime::DrawDefeatChainHud()
     const float hudScale = GetCombatHudScale(hudSize);
     const float panelWidth = 196.0f * hudScale;
     const ImVec2 panelMin(
-        origin.x + drawSize.x - 28.0f * hudScale - panelWidth,
-        origin.y + 112.0f * hudScale);
+        origin.x + drawSize.x - 32.0f * hudScale - panelWidth,
+        origin.y + 126.0f * hudScale);
     const ImVec2 panelMax(panelMin.x + panelWidth, panelMin.y + 38.0f * hudScale);
-    const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 0.22f);
-
-    ImU32 accentColor = IM_COL32(104, 221, 255, 220);
+    ImU32 accentColor = CombatHud::Blue;
     if (isBreakNoticeVisible) {
         const int alpha = static_cast<int>(
             100.0f + 145.0f *
@@ -6988,19 +6977,7 @@ void GameRuntime::DrawDefeatChainHud()
             static_cast<float>(kDefeatChainBreakFlashFrames));
         accentColor = IM_COL32(255, 96, 116, (std::clamp)(alpha, 0, 255));
     } else {
-        switch (GetDefeatChainScoreMultiplier()) {
-        case 4:
-            accentColor = IM_COL32(255, 112, 220, static_cast<int>(220.0f + pulse * 30.0f));
-            break;
-        case 3:
-            accentColor = IM_COL32(255, 142, 72, static_cast<int>(215.0f + pulse * 30.0f));
-            break;
-        case 2:
-            accentColor = IM_COL32(255, 222, 92, static_cast<int>(205.0f + pulse * 35.0f));
-            break;
-        default:
-            break;
-        }
+        accentColor = GetDefeatChainScoreMultiplier() >= 3 ? CombatHud::Gold : CombatHud::Blue;
     }
 
     if (isBreakNoticeVisible) {
@@ -7014,12 +6991,12 @@ void GameRuntime::DrawDefeatChainHud()
         (feverTimer_ > 0 ? kFeverScoreMultiplier : 1);
     char chainText[32]{};
     char multiplierText[32]{};
-    std::snprintf(chainText, sizeof(chainText), "%d CHAIN", defeatChainCount_);
+    std::snprintf(chainText, sizeof(chainText), "%d 連続撃破", defeatChainCount_);
     std::snprintf(multiplierText, sizeof(multiplierText), "x%d", totalScoreMultiplier);
     DrawCombatHudText(drawList, ImVec2(panelMin.x, panelMin.y + 5.0f * hudScale),
-        17.0f * hudScale, IM_COL32(235, 242, 250, 245), chainText);
+        15.0f * hudScale, CombatHud::White, chainText);
     DrawCombatHudText(drawList, ImVec2(panelMax.x, panelMin.y),
-        25.0f * hudScale, accentColor, multiplierText, true);
+        32.0f * hudScale, accentColor, multiplierText, true, true);
 
     const ImVec2 timerMin(panelMin.x, panelMax.y - 5.0f * hudScale);
     const ImVec2 timerMax(panelMax.x, panelMax.y - 2.0f * hudScale);
@@ -7074,18 +7051,19 @@ void GameRuntime::DrawFeverHud()
     };
 
     const float hudScale = GetCombatHudScale(hudSize);
-    const float barWidth = 410.0f * hudScale;
+    const float barWidth = 240.0f * hudScale;
     const ImVec2 panelMin(
-        origin.x + drawSize.x * 0.5f - barWidth * 0.5f,
-        origin.y + drawSize.y - 88.0f * hudScale);
+        origin.x + 32.0f * hudScale,
+        origin.y + drawSize.y - 100.0f * hudScale);
     const ImVec2 panelMax(panelMin.x + barWidth, panelMin.y + 64.0f * hudScale);
-    const ImVec2 barMin(panelMin.x + 16.0f * hudScale, panelMin.y + 40.0f * hudScale);
-    const ImVec2 barMax(panelMax.x - 16.0f * hudScale, barMin.y + 10.0f * hudScale);
+    const ImVec2 barMin(panelMin.x, panelMin.y + 52.0f * hudScale);
+    const ImVec2 barMax(panelMax.x, barMin.y + 8.0f * hudScale);
     const ImVec2 fillMax(
         barMin.x + (barMax.x - barMin.x) * std::clamp(rate, 0.0f, 1.0f),
         barMax.y);
-    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(9, 15, 25, 150), 7.0f * hudScale);
-    drawList->AddRectFilled(barMin, barMax, IM_COL32(10, 18, 30, 210), 2.0f * hudScale);
+    CombatHud::Shade(drawList, { origin.x, panelMin.y - 12.0f * hudScale },
+        { panelMax.x + 50.0f * hudScale, origin.y + drawSize.y });
+    drawList->AddRectFilled(barMin, barMax, IM_COL32(26, 45, 59, 230));
     drawList->PushClipRect(barMin, barMax, true);
     if (fillMax.x > barMin.x) {
         if (isActive || isReady) {
@@ -7121,13 +7099,7 @@ void GameRuntime::DrawFeverHud()
                 IM_COL32(255, 255, 255, 115),
                 IM_COL32(255, 255, 255, 10));
         } else {
-            drawList->AddRectFilledMultiColor(
-                barMin,
-                fillMax,
-                IM_COL32(124, 185, 224, 245),
-                IM_COL32(205, 183, 243, 245),
-                IM_COL32(184, 166, 226, 235),
-                IM_COL32(105, 164, 205, 235));
+            drawList->AddRectFilled(barMin, fillMax, CombatHud::Blue);
         }
         drawList->AddLine(
             ImVec2(barMin.x + 2.0f, barMin.y + 2.0f),
@@ -7136,23 +7108,25 @@ void GameRuntime::DrawFeverHud()
             1.0f);
     }
     drawList->PopClipRect();
+    for (int index = 1; index < 10; ++index) {
+        const float x = barMin.x + (barMax.x - barMin.x) * static_cast<float>(index) / 10.0f;
+        drawList->AddRectFilled({ x - hudScale, barMin.y }, { x + hudScale, barMax.y }, IM_COL32(7, 18, 28, 245));
+    }
 
     char status[64]{};
     if (isActive) {
-        std::snprintf(status, sizeof(status), "%.1f秒 / スコアx%d",
-            static_cast<float>(feverTimer_) / 60.0f,
-            kFeverScoreMultiplier * GetDefeatChainScoreMultiplier());
-    } else if (isReady) {
-        std::snprintf(status, sizeof(status), "自動発動");
+        std::snprintf(status, sizeof(status), "%.1f", static_cast<float>(feverTimer_) / 60.0f);
     } else {
-        std::snprintf(status, sizeof(status), "%d%% / MAXで自動", feverGauge_ * 100 / kFeverGaugeMax);
+        std::snprintf(status, sizeof(status), "%02d", feverGauge_ * 100 / kFeverGaugeMax);
     }
     DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 10.0f * hudScale),
-        22.0f * hudScale,
-        isActive || isReady ? IM_COL32(255, 242, 209, 255) : IM_COL32(232, 234, 247, 245),
-        "FEVER");
-    DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y + 15.0f * hudScale),
-        15.0f * hudScale, IM_COL32(228, 234, 244, 245), status, true);
+        18.0f * hudScale, isActive ? CombatHud::Gold : CombatHud::White, "フィーバー");
+    DrawCombatHudText(drawList, ImVec2(barMin.x, panelMin.y + 32.0f * hudScale),
+        12.0f * hudScale, CombatHud::Muted, isActive ? "連射・速度 強化中" : "自動発動");
+    DrawCombatHudText(drawList, ImVec2(barMax.x - 19.0f * hudScale, panelMin.y + 3.0f * hudScale),
+        42.0f * hudScale, isActive ? CombatHud::Gold : CombatHud::White, status, true, true);
+    DrawCombatHudText(drawList, ImVec2(barMax.x, panelMin.y + 28.0f * hudScale),
+        14.0f * hudScale, CombatHud::Muted, isActive ? "秒" : "%", true);
 
     if (isActive) {
         const int edgeAlpha = static_cast<int>(45.0f + pulse * 38.0f);
@@ -7215,11 +7189,11 @@ void GameRuntime::DrawFeverHud()
             std::clamp(remaining / 0.28f, 0.0f, 1.0f);
         const float fontSize = (42.0f + 5.0f * (1.0f - elapsed)) * hudScale;
         const char* title = "FEVER!";
-        const float titleWidth = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, title).x;
+        const float titleWidth = CombatHud::Width(title, fontSize, true);
         const ImVec2 center(origin.x + drawSize.x * 0.5f,
             origin.y + drawSize.y * 0.23f - elapsed * 8.0f * hudScale);
         DrawCombatHudText(drawList, ImVec2(center.x - titleWidth * 0.5f, center.y),
-            fontSize, IM_COL32(255, 248, 223, static_cast<int>(255.0f * visibility)), title);
+            fontSize, IM_COL32(255, 248, 223, static_cast<int>(255.0f * visibility)), title, false, true);
         const char* detail = "連射・スピード強化";
         const float detailSize = 18.0f * hudScale;
         const float detailWidth = ImGui::GetFont()->CalcTextSizeA(detailSize, FLT_MAX, 0.0f, detail).x;
@@ -7534,12 +7508,13 @@ void GameRuntime::DrawResultOverlay()
     }
 
     if (IsTutorial()) {
+        ImGui::PushFont(CombatHud::Font(), 18.0f);
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::Begin("チュートリアル終了", nullptr,
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
         ImGui::TextUnformatted("練習を終了しました。");
-        ImGui::TextUnformatted("本編はタイトルの「ゲーム開始」から遊べます。");
+        ImGui::TextUnformatted("本編はタイトルの「出撃する」から遊べます。");
         if (ImGui::Button("もう一度練習 [R]", ImVec2(300.0f, 36.0f))) {
             isRetryRequested_ = true;
         }
@@ -7547,6 +7522,7 @@ void GameRuntime::DrawResultOverlay()
             isExitRequested_ = true;
         }
         ImGui::End();
+        ImGui::PopFont();
         return;
     }
 
@@ -7556,10 +7532,9 @@ void GameRuntime::DrawResultOverlay()
     GetEffectiveHudViewportRect(hudMin, hudSize);
     const ImVec2 origin(hudMin.x, hudMin.y);
     const ImVec2 drawSize(hudSize.x, hudSize.y);
-    const ImVec2 center(
-        origin.x + drawSize.x * 0.5f,
-        origin.y + drawSize.y * 0.46f);
-    const ImVec2 panelSize(520.0f, 330.0f);
+    const float scale = GetCombatHudScale(hudSize);
+    const ImVec2 center(origin.x + drawSize.x * 0.5f, origin.y + drawSize.y * 0.48f);
+    const ImVec2 panelSize(640.0f * scale, 430.0f * scale);
     const ImVec2 panelMin(
         center.x - panelSize.x * 0.5f,
         center.y - panelSize.y * 0.5f);
@@ -7567,10 +7542,9 @@ void GameRuntime::DrawResultOverlay()
         center.x + panelSize.x * 0.5f,
         center.y + panelSize.y * 0.5f);
 
-    const char* title = isGameClear_ ? "MISSION CLEAR" : "GAME OVER";
-    const char* guide = "R: 再挑戦 / F2: タイトルへ戻る";
-    const ImVec2 titleSize = ImGui::CalcTextSize(title);
-    const ImVec2 guideSize = ImGui::CalcTextSize(guide);
+    const auto p = [panelMin, scale](float x, float y) {
+        return ImVec2(panelMin.x + x * scale, panelMin.y + y * scale);
+    };
 
     const int totalCentiseconds =
         (std::max)(0, static_cast<int>(gameplayElapsedSeconds_ * 100.0f));
@@ -7589,111 +7563,82 @@ void GameRuntime::DrawResultOverlay()
         }
     }
 
-    const ImU32 resultAccent = isGameClear_ ?
-        IM_COL32(150, 239, 114, 230) :
-        IM_COL32(255, 102, 124, 230);
-    DrawSystemHudPanel(
-        drawList,
-        panelMin,
-        panelMax,
-        resultAccent);
-    drawList->AddText(
-        ImVec2(panelMin.x + 24.0f, panelMin.y + 12.0f),
-        IM_COL32(226, 250, 247, 235),
-        "リザルト");
-    drawList->AddText(
-        ImVec2(center.x - titleSize.x * 0.5f, panelMin.y + 43.0f),
-        isGameClear_ ?
-            IM_COL32(150, 255, 205, 255) :
-            IM_COL32(255, 145, 145, 255),
-        title);
-
-    drawList->AddLine(
-        ImVec2(panelMin.x + 22.0f, panelMin.y + 76.0f),
-        ImVec2(panelMax.x - 22.0f, panelMin.y + 76.0f),
-        resultAccent,
-        1.5f);
-
+    const ImU32 resultAccent = isGameClear_ ? CombatHud::Gold : CombatHud::Danger;
+    drawList->AddRectFilled(panelMin, panelMax, IM_COL32(8, 20, 32, 248));
+    drawList->AddRectFilled(panelMin, p(640, 3), resultAccent);
+    CombatHud::Text(drawList, p(32, 20), 32.0f * scale, CombatHud::White,
+        isGameClear_ ? "任務達成" : "作戦失敗");
+    CombatHud::Text(drawList, p(32, 76), 15.0f * scale, CombatHud::Muted, "獲得スコア");
     char valueText[96]{};
-    constexpr float kLeftLabelX = 28.0f;
-    constexpr float kLeftValueX = 148.0f;
-    constexpr float kRightLabelX = 278.0f;
-    constexpr float kRightValueX = 398.0f;
-    constexpr float kFirstRowY = 94.0f;
-    constexpr float kRowStepY = 31.0f;
-    const ImU32 labelColor = IM_COL32(151, 181, 199, 230);
-    const ImU32 valueColor = IM_COL32(236, 249, 250, 250);
+    std::snprintf(valueText, sizeof(valueText), "%06d", score_);
+    CombatHud::Text(drawList, p(32, 95), 52.0f * scale, CombatHud::White, valueText, false, true);
+    CombatHud::Text(drawList, p(608, 76), 15.0f * scale, CombatHud::Muted, "評価", true);
+    CombatHud::Text(drawList, p(608, 94), 56.0f * scale, resultAccent, rank, true, true);
+    drawList->AddLine(p(32, 160), p(608, 160), IM_COL32(107, 135, 154, 95));
 
-    const auto drawResultValue = [drawList, panelMin, labelColor, valueColor](
+    constexpr float kLeftLabelX = 32.0f;
+    constexpr float kLeftValueX = 282.0f;
+    constexpr float kRightLabelX = 334.0f;
+    constexpr float kRightValueX = 608.0f;
+    constexpr float kFirstRowY = 178.0f;
+    constexpr float kRowStepY = 40.0f;
+    const auto drawResultValue = [drawList, p, scale](
                                      float labelX,
                                      float valueX,
                                      float y,
                                      const char* label,
                                      const char* value) {
-        drawList->AddText(ImVec2(panelMin.x + labelX, panelMin.y + y), labelColor, label);
-        drawList->AddText(ImVec2(panelMin.x + valueX, panelMin.y + y), valueColor, value);
+        CombatHud::Text(drawList, p(labelX, y + 5), 17.0f * scale, CombatHud::Muted, label);
+        CombatHud::Text(drawList, p(valueX, y), 27.0f * scale, CombatHud::White, value, true, true);
     };
 
     std::snprintf(valueText, sizeof(valueText), "%02d:%02d.%02d", minutes, seconds, centiseconds);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY, "TIME", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", score_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY, "SCORE", valueText);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY, "作戦時間", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", playerDamageCount_);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY, "被弾回数", valueText);
 
     std::snprintf(valueText, sizeof(valueText), "%d / %d", defeatedEnemyCount_, targetCount);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY, "DESTROYED", valueText);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY, "撃破数", valueText);
     std::snprintf(valueText, sizeof(valueText), "%d", escapedEnemyCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY, "ESCAPED", valueText);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY, "逃した敵", valueText);
 
     std::snprintf(valueText, sizeof(valueText), "%d", playerShotsFired_);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 2.0f, "SHOTS", valueText);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 2.0f, "発射数", valueText);
     std::snprintf(valueText, sizeof(valueText), "%d", playerHitCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 2.0f, "HITS", valueText);
-
-    std::snprintf(valueText, sizeof(valueText), "%d", playerDamageCount_);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 3.0f, "DAMAGE", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", justDodgeCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 3.0f, "JUST DODGE", valueText);
-
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 2.0f, "命中数", valueText);
     std::snprintf(valueText, sizeof(valueText), "%d", maxDefeatChainCount_);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 4.0f, "MAX CHAIN", valueText);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 4.0f, "RANK", rank);
-
-    drawList->AddLine(
-        ImVec2(panelMin.x + 22.0f, panelMax.y - 78.0f),
-        ImVec2(panelMax.x - 22.0f, panelMax.y - 78.0f),
-        IM_COL32(118, 156, 174, 120),
-        1.0f);
-    drawList->AddText(
-        ImVec2(center.x - guideSize.x * 0.5f, panelMax.y - 62.0f),
-        IM_COL32(225, 235, 245, 225),
-        guide);
+    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 3.0f, "最大連続撃破", valueText);
+    std::snprintf(valueText, sizeof(valueText), "%d", justDodgeCount_);
+    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 3.0f, "ジャスト回避", valueText);
+    drawList->AddLine(p(32, 352), p(608, 352), IM_COL32(107, 135, 154, 95));
     // キーボードを知らない初見の人も、結果から次のプレイへ戻れる。
-    ImGui::SetNextWindowPos(ImVec2(panelMin.x + 20.0f, panelMax.y - 48.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(480.0f, 44.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(p(32, 374), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(576.0f * scale, 42.0f * scale), ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("Result actions", nullptr, ImGuiWindowFlags_NoDecoration |
         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav);
-    const auto resultButton = [drawList, resultAccent](const char* label) {
-        const bool clicked = ImGui::InvisibleButton(label, ImVec2(218.0f, 30.0f));
+    const auto resultButton = [drawList, scale](const char* label) {
+        const bool clicked = ImGui::InvisibleButton(label, ImVec2(276.0f * scale, 40.0f * scale));
         const ImVec2 min = ImGui::GetItemRectMin();
         const ImVec2 max = ImGui::GetItemRectMax();
         // HUDパネルと同じ前景レイヤーへ描き、パネルの裏にボタンが隠れないようにする。
         drawList->AddRectFilled(min, max, ImGui::IsItemHovered() ?
-            IM_COL32(54, 80, 98, 255) : IM_COL32(29, 47, 63, 255), 3.0f);
-        drawList->AddRect(min, max, resultAccent, 3.0f);
-        const ImVec2 size = ImGui::CalcTextSize(label);
-        drawList->AddText(ImVec2((min.x + max.x - size.x) * 0.5f,
-            (min.y + max.y - size.y) * 0.5f), IM_COL32(235, 247, 250, 255), label);
+            IM_COL32(53, 82, 103, 255) : IM_COL32(29, 47, 63, 255));
+        const float width = CombatHud::Width(label, 18.0f * scale);
+        CombatHud::Text(drawList, ImVec2((min.x + max.x - width) * 0.5f,
+            min.y + 9.0f * scale), 18.0f * scale, CombatHud::White, label);
         return clicked;
     };
     if (resultButton("再挑戦 [R]")) {
         isRetryRequested_ = true;
     }
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, 24.0f * scale);
     if (resultButton("タイトル [F2]")) {
         isExitRequested_ = true;
     }
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 void GameRuntime::DrawPerformanceOverlay()

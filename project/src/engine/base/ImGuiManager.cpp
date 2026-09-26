@@ -349,6 +349,13 @@ void ImGuiManager::Initialize(
         &iconConfig,
         iconRanges);
 
+    // ライセンス同梱のフォントを使い、実行PCのインストール状況に依存させない。
+    hudFont_ = io.Fonts->AddFontFromFileTTF(
+        "resources/fonts/ZenKakuGothicNew-Medium.ttf", 24.0f, nullptr,
+        io.Fonts->GetGlyphRangesJapanese());
+    hudNumberFont_ = io.Fonts->AddFontFromFileTTF(
+        "resources/fonts/BarlowCondensed-SemiBold.ttf", 48.0f);
+
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 
     srvHeap_ = srvManager->GetDescriptorHeapComPtr();
@@ -396,12 +403,26 @@ void ImGuiManager::Draw() {
 
 void ImGuiManager::Finalize() {
 #ifdef USE_IMGUI
+    hudFont_ = nullptr;
+    hudNumberFont_ = nullptr;
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImPlot::DestroyContext();
     ImGui::DestroyContext();
 #endif
 }
+
+#ifdef USE_IMGUI
+ImFont* ImGuiManager::GetHudFont()
+{
+    return hudFont_ ? hudFont_ : ImGui::GetFont();
+}
+
+ImFont* ImGuiManager::GetHudNumberFont()
+{
+    return hudNumberFont_ ? hudNumberFont_ : GetHudFont();
+}
+#endif
 
 void ImGuiManager::ShowEditorController(EditorDebugSettings& settings)
 {

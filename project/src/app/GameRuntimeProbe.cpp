@@ -242,6 +242,9 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
         const bool next = ImGui::Button("NEXT / resume test", { 220.0f, 36.0f });
         ImGui::End();
         if (!next) {
+            // 表示確認中も長押し試験の入力を保つ。ここで離すと再開時に
+            // 新しいSHIFT押下が生まれ、通常プレイにはない再回避を起こしてしまう。
+            if (frame >= 31 && frame <= 65) { keys[DIK_LSHIFT] = 0x80; }
             input_->SetTestFrame(keys, mouse);
             return false;
         }

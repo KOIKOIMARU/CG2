@@ -471,6 +471,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\app\Bullet.h" />
     <ClInclude Include="include\app\Enemy.h" />
     <ClInclude Include="include\app\GameRuntime.h" />
+    <ClInclude Include="include\app\CombatHud.h" />
     <ClInclude Include="include\app\MyGame.h" />
     <ClInclude Include="include\app\Player.h" />
     <ClInclude Include="resource.h" />
@@ -494,6 +495,9 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <Text Include="externals\ImGuiColorTextEdit\LICENSE" />
     <Text Include="externals\IconFontCppHeaders\licence.txt" />
     <Text Include="resources\fonts\FONT_AWESOME_LICENSE.txt" />
+    <Text Include="resources\fonts\ZEN_KAKU_GOTHIC_OFL.txt" />
+    <Text Include="resources\fonts\BARLOW_OFL.txt" />
+    <Text Include="resources\fonts\HUD_FONTS.md" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="externals\DirectXTex\DirectXTex_Desktop_2022_Win10.vcxproj">
@@ -504,6 +508,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.hdr" />
     <None Include="resources\fonts\fa-solid-900.ttf" />
     <None Include="resources\fonts\fa-regular-400.ttf" />
+    <None Include="resources\fonts\ZenKakuGothicNew-Medium.ttf" />
+    <None Include="resources\fonts\BarlowCondensed-SemiBold.ttf" />
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k.exr" />
     <None Include="resources\skybox\kloofendal_48d_partly_cloudy_puresky_4k_cube.dds" />
     <None Include="resources\grass.png" />
