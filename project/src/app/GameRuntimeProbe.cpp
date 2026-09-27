@@ -566,4 +566,178 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
     input_->SetTestFrame(keys, mouse);
     return false;
 }
+bool GameRuntime::RunChargeShotProbe(const std::string& logPath, bool preview)
+{
+    static int frame = 0;
+    static int impactFrame = -1;
+    const auto log = [&](const std::string& message) {
+        std::ofstream file(logPath, std::ios::app);
+        file << "CHARGE_TEST " << message << '\n';
+    };
+    const auto require = [&](bool ok, const char* message) {
+        if (!ok) { log(std::string("FAIL ") + message); throw std::runtime_error(message); }
+    };
+    std::array<BYTE, 256> keys{};
+    Math::Vector2 mouse = input_->GetMousePosition();
+    if (frame > 102 && defeatedEnemyCount_ == 3 && impactFrame < 0) { impactFrame = frame; }
+    if (preview && (frame == 100 || (impactFrame >= 0 &&
+        (frame == impactFrame || frame == impactFrame + 5 || frame == impactFrame + 12)))) {
+        phantomPreviewPaused_ = true;
+        ImGui::SetNextWindowPos({ 20.0f, 165.0f }, ImGuiCond_Always);
+        ImGui::Begin("Charge visual fixture", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::TextUnformatted("TEST ONLY: charge shot / three small ships + sniper");
+        ImGui::Text("Frame: %d   Defeated: %d", frame, defeatedEnemyCount_);
+        const bool next = ImGui::Button("NEXT / resume test", { 220.0f, 36.0f });
+        ImGui::End();
+        if (!next) { input_->SetTestFrame(keys, mouse); return false; }
+        phantomPreviewPaused_ = false;
+    }
+    ++frame;
+    if (frame == 1) {
+        const auto reset = [&]() {
+            DebugJumpToStagePhase(0);
+            std::fill(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), true);
+            for (auto& effect : hitEffects_) { RecycleHitEffectVisuals(effect); }
+            hitEffects_.clear();
+            score_ = 0;
+            feverGauge_ = 0;
+            feverTimer_ = 0;
+            playerImpactSlowTimer_ = 0;
+            cameraShakeTimer_ = 0;
+        };
+        const auto spawn = [&](float x, float y, int hp = 3, Enemy::Behavior behavior = Enemy::Behavior::Formation) {
+            SpawnStageEnemy(x, y, 44.0f, behavior, Enemy::EntryStyle::TightFormation, hp, 1.0f);
+            auto* enemy = enemies_.back().get();
+            for (int step = 0; step < 120; ++step) { enemy->Update(railDistance_); }
+            require(enemy->IsTargetable(), "fixture not targetable");
+            return enemy;
+        };
+        const auto hit = [&](Enemy& target, bool charged, bool fever = false) {
+            auto bullet = AcquireBullet(playerBulletPool_);
+            require(bullet != nullptr, "fixture bullet pool exhausted");
+            bullet->Initialize(object3dCommon_.get(), bulletModel_, target.GetAimPosition(), {},
+                { 1, 1, 1, 1 }, 30, { 0.5f, 0.5f, 1 }, charged ? 1.0f : 0.42f, fever ? 3 : 1);
+            bullet->SetFeverShot(fever);
+            playerBullets_.push_back(std::move(bullet));
+            ++playerShotsFired_;
+            CheckBulletEnemyCollisions();
+        };
+        reset();
+        auto* center = spawn(0, 0);
+        auto* neighbor = spawn(2.8f, 0);
+        hit(*center, false);
+        require(center->GetHp() == 2 && neighbor->GetHp() == 3 && playerHitCount_ == 1,
+            "normal shot damage or no-splash rule changed");
+        log("NORMAL_OK direct=1 no_splash=1");
+
+        reset();
+        center = spawn(0, 0, 6);
+        neighbor = spawn(2.8f, 0);
+        hit(*center, true);
+        require(center->GetHp() == 3 && neighbor->IsDead() && defeatedEnemyCount_ == 1 && playerHitCount_ == 1,
+            "charge direct damage stacked, splash failed, or accuracy inflated");
+        const int score = score_, gauge = feverGauge_;
+        CheckBulletEnemyCollisions();
+        require(center->GetHp() == 3 && defeatedEnemyCount_ == 1 && score_ == score && feverGauge_ == gauge,
+            "spent charge rewarded/damaged twice");
+        log("SINGLE_HIT_OK direct=3 splash=3 reward_once=1 accuracy_once=1");
+
+        reset();
+        center = spawn(0, 0);
+        auto* inside = spawn(3.39f, 0);
+        auto* outside = spawn(-3.41f, 0);
+        hit(*center, true);
+        require(inside->IsDead() && outside->GetHp() == 3, "charge radius boundary wrong");
+        log("BOUNDARY_OK radius=3.4 inside=3.39 outside=3.41");
+
+        reset();
+        center = spawn(-2.6f, 0);
+        neighbor = spawn(0, 0);
+        auto* opposite = spawn(2.6f, 0);
+        hit(*center, true);
+        require(center->IsDead() && neighbor->IsDead() && opposite->GetHp() == 3 && defeatedEnemyCount_ == 2,
+            "edge hit chained across formation");
+        log("NO_CHAIN_OK edge_hit_kills=2 opposite_ship_alive=1");
+
+        reset();
+        center = spawn(0, 0, 6);
+        neighbor = spawn(4.0f, 0, 6); // 貫通弾そのものには触れない隣機。
+        hit(*center, true, true);
+        CheckBulletEnemyCollisions();
+        require(center->GetHp() == 2 && neighbor->GetHp() == 6 && !playerBullets_.front()->IsDead() &&
+            playerHitCount_ == 1 && hitEffects_.size() == 1,
+            "fever damage, piercing or duplicate-hit prevention changed");
+        log("FEVER_OK direct=4 piercing_retained=1 no_splash=1 no_repeat=1");
+
+        reset();
+        center = spawn(0, 0, 10, Enemy::Behavior::Shield);
+        hit(*center, true);
+        require(center->GetShieldHp() == 0 && center->GetHp() == 10, "charge bypassed shield");
+        reset();
+        center = spawn(0, 0, 52, Enemy::Behavior::Boss);
+        hit(*center, true);
+        require(center->GetHp() == 48, "boss direct damage doubled by own splash");
+        bossCounterTimer_ = 30;
+        hit(*center, true);
+        require(center->GetHp() == 40, "boss counter damage changed");
+        log("DEFENSE_OK shield_absorbs=3 boss_direct=4 boss_counter=8");
+
+        reset();
+        center = spawn(0, 0);
+        neighbor = spawn(0, 0, 6, Enemy::Behavior::Sniper);
+        const auto a = center->GetAimPosition(), b = neighbor->GetAimPosition();
+        require(std::abs(a.z - b.z) > 3.4f, "depth fixture too close");
+        hit(*center, true);
+        require(neighbor->GetHp() == 6, "blast hit a distant enemy overlapping on screen");
+        log("DEPTH_OK distant_ship_undamaged=1");
+
+        reset();
+        center = spawn(0, 0);
+        neighbor = spawn(2.8f, 0);
+        neighbor->Kill();
+        const auto p = center->GetAimPosition();
+        SpawnStageEnemy(p.x, p.y, p.z - railDistance_, Enemy::Behavior::Formation,
+            Enemy::EntryStyle::Direct, 3, 1.0f);
+        auto* entering = enemies_.back().get();
+        require(!entering->IsTargetable(), "entry fixture already targetable");
+        hit(*center, true);
+        require(entering->GetHp() == 3 && defeatedEnemyCount_ == 1, "blast hit entry/dead enemy");
+        log("LIFETIME_OK entry_ignored=1 destroyed_ignored=1");
+
+        reset();
+        // ここからは手動の命中配置ではなく、本編と同じ動く編隊へ実際に一発撃つ。
+        SpawnStageEnemy(-4.6f, -0.6f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 3, 1.0f);
+        SpawnStageEnemy(-2.0f, 0.5f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 3, 1.0f);
+        SpawnStageEnemy(0.6f, -0.6f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 3, 1.0f);
+        SpawnStageEnemy(5.3f, 2.0f, 48.0f, Enemy::Behavior::Sniper, Enemy::EntryStyle::PopShooter, 6, 1.18f);
+        log("LIVE_FORMATION_BEGIN normal_input=1");
+    }
+    if (frame == 101 || frame == 102) {
+        Math::Vector2 screen{};
+        require(TryProjectToScreen((*std::next(enemies_.begin()))->GetAimPosition(), screen), "center offscreen");
+        const ImVec2 origin = ImGui::GetMainViewport()->Pos;
+        mouse = { screen.x - origin.x, screen.y - origin.y };
+    }
+    if (frame == 102) {
+        require(chargeTimer_ >= chargeShotThreshold_, "normal waiting did not charge shot");
+        require(lockedEnemy_ == (*std::next(enemies_.begin())).get() && isReticleOnTarget_,
+            "fixture did not aim at formation center");
+        keys[DIK_SPACE] = 0x80;
+    }
+    if (frame == 190) {
+        log("LIVE_RESULT kills=" + std::to_string(defeatedEnemyCount_) + " shots=" +
+            std::to_string(playerShotsFired_) + " hits=" + std::to_string(playerHitCount_));
+        require(defeatedEnemyCount_ == 3 && playerShotsFired_ == 1 && playerHitCount_ == 1,
+            "real charged projectile failed to clear moving three-ship formation");
+        require(enemies_.size() == 1 && enemies_.front()->IsSniper() && enemies_.front()->GetHp() == 6,
+            "real splash reached distant sniper");
+        require(playerBulletPoolMisses_ == 0 && hitEffectObjectPoolMisses_ == 0, "effect/bullet pool exhausted");
+        log("PASS real_projectile_kills=3 sniper_hp=6 shots=1 hits=1 pool_misses=0");
+        input_->SetTestFrame(keys, mouse);
+        return true;
+    }
+    input_->SetTestFrame(keys, mouse);
+    return false;
+}
 #endif

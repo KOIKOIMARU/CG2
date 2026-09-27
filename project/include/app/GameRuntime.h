@@ -61,6 +61,7 @@ public:
 #ifdef _DEBUG
     bool RunPlaythroughProbe(const std::string& logPath);
     bool RunPhantomProbe(const std::string& logPath, bool preview = false);
+    bool RunChargeShotProbe(const std::string& logPath, bool preview = false);
 #endif
 
 private:
@@ -407,6 +408,9 @@ private:
     int GetRequiredEnemyDefeatsForClear() const;
     const Enemy* GetBossEnemy() const;
     void CheckBulletEnemyCollisions();
+    bool DealPlayerShotDamage(Enemy& enemy, const Math::Vector3& impactPosition,
+        bool charged, bool fever, bool splash = false);
+    void ApplyChargeSplash(const Enemy& directTarget, const Math::Vector3& center);
     void OnEnemyDestroyed(Enemy& enemy, bool charged, bool fever);
     void CheckEnemyBulletPlayerCollisions();
     void UpdateGameCamera();

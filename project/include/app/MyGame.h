@@ -15,6 +15,8 @@ struct SmokeTestOptions {
     bool playthrough = false; // Debug専用。通常の射撃・被弾ルールでクリアと再挑戦を検証。
     bool phantom = false; // Debug専用。残像連撃の条件・対象消失・ボス撃破を試験配置で検証。
     bool phantomPreview = false; // 映像確認用。代表フレームで止め、NEXTボタンで再開する。
+    bool chargeShot = false; // Debug専用。チャージ爆風の境界・重複命中・本編編隊への実射を検証。
+    bool chargePreview = false;
     double gameplaySeconds = 15.0;
     double startupTimeoutSeconds = 120.0;
     std::filesystem::path logPath;

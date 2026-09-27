@@ -61,6 +61,11 @@ SmokeTestOptions ParseSmokeTestOptions()
         } else if (argument == L"--smoke-phantom-preview") {
             options.phantom = true;
             options.phantomPreview = true;
+        } else if (argument == L"--smoke-charge") {
+            options.chargeShot = true;
+        } else if (argument == L"--smoke-charge-preview") {
+            options.chargeShot = true;
+            options.chargePreview = true;
 #endif
         } else if (argument == L"--smoke-timeout" &&
                    index + 1 < argumentCount) {

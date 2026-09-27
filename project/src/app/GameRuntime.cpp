@@ -85,6 +85,8 @@ constexpr int kInitialPlayerBulletPoolCount = kTargetPlayerBulletPoolCount;
 constexpr int kInitialEnemyBulletPoolCount = kTargetEnemyBulletPoolCount;
 constexpr int kTargetHitEffectObjectPoolCount = 120;
 constexpr int kInitialHitEffectObjectPoolCount = kTargetHitEffectObjectPoolCount;
+constexpr float kChargeSplashRadius = 3.4f; // 敵の中心間の距離。編隊中央なら左右へ届き、端なら反対端へ届かない。
+constexpr int kChargeSplashDamage = 3; // 小型機一機分。直撃対象には重ねず、爆風からの再誘爆もしない。
 constexpr int kRewardHeartPoolCount = 40;
 constexpr int kRewardHeartScoreValue = 25;
 constexpr int kDepthCueEffectCount = 18;
@@ -7841,7 +7843,23 @@ void GameRuntime::CheckBulletEnemyCollisions()
             continue;
         }
 
+        // 大きいチャージ弾が複数機に同時接触したとき、リストの先頭ではなく
+        // 弾の中心に最も近い機体で爆発させる。編隊中央を狙う操作を尊重する。
+        const Enemy* chargeContact = nullptr;
+        if (bullet->GetRadius() >= 0.8f && !bullet->IsFeverShot()) {
+            float closestDistance = FLT_MAX;
+            for (const auto& candidate : enemies_) {
+                if (candidate->IsDead() || !candidate->IsTargetable()) { continue; }
+                const float distance = DistanceSquared(bullet->GetTranslate(), candidate->GetAimPosition());
+                const float contactRadius = bullet->GetRadius() + candidate->GetAimRadius();
+                if (distance <= contactRadius * contactRadius && distance < closestDistance) {
+                    closestDistance = distance;
+                    chargeContact = candidate.get();
+                }
+            }
+        }
         for (auto& enemy : enemies_) {
+            if (chargeContact && enemy.get() != chargeContact) { continue; }
             if (enemy->IsDead() || !enemy->IsTargetable()) {
                 continue;
             }
@@ -7857,10 +7875,6 @@ void GameRuntime::CheckBulletEnemyCollisions()
                 const bool isChargedHit = bullet->GetRadius() >= 0.8f;
                 const bool isFeverHit = bullet->IsFeverShot();
                 const bool isBossHit = enemy->IsBoss();
-                const bool isBossCounterHit = isBossHit && bossCounterTimer_ > 0;
-                const int baseDamage = isFeverHit ? 4 :
-                    (isChargedHit ? (isBossHit ? 4 : 3) : 1);
-                const int damage = isBossCounterHit ? baseDamage * 2 : baseDamage;
                 const Math::Vector3 bulletImpactPosition = bullet->GetTranslate();
                 const float centerEffectRate = isBossHit ? 0.68f : 0.42f;
                 const Math::Vector3 visibleImpactPosition{
@@ -7868,41 +7882,12 @@ void GameRuntime::CheckBulletEnemyCollisions()
                     Lerp(bulletImpactPosition.y, enemyAimPosition.y, centerEffectRate),
                     Lerp(bulletImpactPosition.z, enemyAimPosition.z, centerEffectRate)
                 };
-                if (isFeverHit) {
-                    AddFeverEnemyImpactEffect(
-                        visibleImpactPosition,
-                        isBossHit ? 1.75f : 1.38f);
-                } else {
-                    AddEnemyImpactEffect(
-                        visibleImpactPosition,
-                        isBossHit ? 1.85f : (isChargedHit ? 1.42f : 1.20f));
-                }
                 bullet->RegisterHit();
                 ++playerHitCount_;
-                const bool isDestroyed = enemy->Damage(damage);
-                RecoverPhantomRaidOnHit(isChargedHit, isDestroyed);
-                PlaySfx(isDestroyed ? "destroy" : "hit");
-                AddFeverGauge(
-                    isDestroyed ?
-                        (isBossHit ? 25 : (isChargedHit ? 16 : 13)) :
-                        (isChargedHit ? 4 : 2));
-                TriggerHitConfirm(
-                    visibleImpactPosition,
-                    isChargedHit,
-                    isBossHit,
-                    isDestroyed);
-                AddCameraShake(
-                    isDestroyed ?
-                        (isBossHit ? 0.18f : (isChargedHit ? 0.075f : 0.055f)) :
-                        (isBossHit ? 0.035f : 0.022f),
-                    isDestroyed ?
-                        (isBossHit ? 30 : (isChargedHit ? 11 : 8)) :
-                        (isBossHit ? 6 : 4));
-                if (!isFeverHit || isBossHit || isDestroyed) {
-                    TriggerPlayerImpactMoment(isChargedHit, isBossHit, isDestroyed);
-                }
-                if (isDestroyed) {
-                    OnEnemyDestroyed(*enemy, isChargedHit, isFeverHit);
+                DealPlayerShotDamage(*enemy, visibleImpactPosition, isChargedHit, isFeverHit);
+                if (isChargedHit && !isFeverHit) {
+                    // 弾の手前側ではなく命中した機体を中心に一度だけ広げる。
+                    ApplyChargeSplash(*enemy, enemyAimPosition);
                 }
                 if (bullet->IsDead()) {
                     break;
@@ -7910,6 +7895,61 @@ void GameRuntime::CheckBulletEnemyCollisions()
             }
         }
     }
+}
+
+bool GameRuntime::DealPlayerShotDamage(Enemy& enemy, const Math::Vector3& impactPosition,
+    bool charged, bool fever, bool splash)
+{
+    if (enemy.IsDead() || !enemy.IsTargetable()) { return false; }
+    const bool boss = enemy.IsBoss();
+    const int baseDamage = splash ? kChargeSplashDamage : (fever ? 4 : (charged ? (boss ? 4 : 3) : 1));
+    const int damage = boss && bossCounterTimer_ > 0 ? baseDamage * 2 : baseDamage;
+    if (fever) {
+        AddFeverEnemyImpactEffect(impactPosition, boss ? 1.75f : 1.38f);
+    } else {
+        AddEnemyImpactEffect(impactPosition, boss ? 1.85f : (charged ? 1.42f : 1.20f));
+    }
+    const bool destroyed = enemy.Damage(damage);
+    RecoverPhantomRaidOnHit(charged, destroyed);
+    AddFeverGauge(destroyed ? (boss ? 25 : (charged ? 16 : 13)) : (charged ? 4 : 2));
+    // 音・照準表示・画面揺れは直撃で一回。巻き込み数ぶん画面を揺らさない。
+    if (!splash) {
+        PlaySfx(destroyed ? "destroy" : "hit");
+        TriggerHitConfirm(impactPosition, charged, boss, destroyed);
+        AddCameraShake(destroyed ? (boss ? 0.18f : (charged ? 0.075f : 0.055f)) :
+            (boss ? 0.035f : 0.022f), destroyed ? (boss ? 30 : (charged ? 11 : 8)) : (boss ? 6 : 4));
+        if (!fever || boss || destroyed) {
+            TriggerPlayerImpactMoment(charged, boss, destroyed);
+        }
+    }
+    if (destroyed) { OnEnemyDestroyed(enemy, charged, fever); }
+    return destroyed;
+}
+
+void GameRuntime::ApplyChargeSplash(const Enemy& directTarget, const Math::Vector3& center)
+{
+    HitEffect effect{};
+    effect.worldPosition = center;
+    effect.duration = 22;
+    effect.type = HitEffectType::EnemyImpact;
+    // 薄い衝撃波だけを広げる。白い面で敵弾や後ろの狙撃機を隠さない。
+    AddHitEffectVisual(effect, effectGlowRingModel_, center,
+        { 1.0f, 0.72f, 0.32f, 0.58f }, 0.65f, kChargeSplashRadius / 0.65f - 1.0f,
+        0.0f, 0.0f, 1.0f, 1.0f, {});
+    AddHitEffectVisual(effect, effectImpactBurstModel_, center,
+        { 1.0f, 0.95f, 0.80f, 0.80f }, 0.85f, -0.55f,
+        0.0f, 0.0f, 1.70f, 0.42f, {});
+    if (effect.visualCount > 0) { hitEffects_.push_back(std::move(effect)); }
+
+    bool destroyedAny = false;
+    for (auto& nearby : enemies_) {
+        if (nearby.get() == &directTarget || nearby->IsDead() || !nearby->IsTargetable()) { continue; }
+        const auto position = nearby->GetAimPosition();
+        // ワールド空間の球判定。画面上で重なるだけの遠い敵には届かない。
+        if (DistanceSquared(center, position) > kChargeSplashRadius * kChargeSplashRadius) { continue; }
+        destroyedAny |= DealPlayerShotDamage(*nearby, position, true, false, true);
+    }
+    if (destroyedAny) { TriggerPlayerImpactMoment(true, false, true); }
 }
 
 void GameRuntime::OnEnemyDestroyed(Enemy& enemy, bool charged, bool fever)

@@ -15,6 +15,8 @@ param(
     [switch]$Playthrough,
     [switch]$Phantom,
     [switch]$PhantomPreview,
+    [switch]$ChargeShot,
+    [switch]$ChargePreview,
 
     [switch]$CaptureFrames,
 
@@ -158,6 +160,13 @@ if ($Phantom -or $PhantomPreview) {
 }
 
 $diagnosticEnvironmentName = 'CG2_D3D12_DIAGNOSTIC_LOG'
+if ($ChargeShot -or $ChargePreview) {
+    if ($Configuration -ne 'Debug' -or $Tutorial -or $StartPhase -ne 'Opening' -or $Playthrough -or $Phantom -or $PhantomPreview) {
+        throw 'ChargeShot requires Debug, main game, Opening, and cannot combine with other probes.'
+    }
+    $arguments += $(if ($ChargePreview) { ' --smoke-charge-preview' } else { ' --smoke-charge' })
+}
+
 $startPhaseEnvironmentName = 'CG2_DEBUG_START_PHASE'
 $previousDiagnosticLog = [Environment]::GetEnvironmentVariable(
     $diagnosticEnvironmentName,
