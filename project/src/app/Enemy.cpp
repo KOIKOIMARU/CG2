@@ -112,6 +112,8 @@ void Enemy::Initialize(
     hitFlashStrength_ = 1.0f;
     moveTimer_ = 0.0f;
     visualScaleRate_ = 0.42f;
+    fireControl_ = {};
+    attackTelegraphRate_ = 0.0f;
 
     switch (behavior_) {
     case Behavior::Boss:

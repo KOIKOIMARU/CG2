@@ -1,5 +1,6 @@
 #include "app/GameRuntime.h"
 #include "app/CombatHud.h"
+#include "app/EnemyFireControl.h"
 
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/ParticleManager.h"
@@ -78,7 +79,7 @@ constexpr const char* kCityBuildingLargeModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Building_Large_2.gltf";
 constexpr int kTargetPlayerBulletPoolCount = 24;
-constexpr int kTargetEnemyBulletPoolCount = 24;
+constexpr int kTargetEnemyBulletPoolCount = 64; // 連射・扇状弾も起動時の固定プールだけで賄う。
 // TitleSceneのPrepareScene中に通常の予備数まで作る。開始直後の大量GPU確保を避ける。
 constexpr int kInitialPlayerBulletPoolCount = kTargetPlayerBulletPoolCount;
 constexpr int kInitialEnemyBulletPoolCount = kTargetEnemyBulletPoolCount;
@@ -270,15 +271,15 @@ constexpr StageEnemySpawnEvent kTutorialEnemySpawnEvents[] = {
 constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     {  10.0f, -2.7f, -0.5f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  4, 1.08f, "Opening pair" },
     {  16.0f,  2.7f,  0.2f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  4, 1.08f, "Opening pair" },
-    {  28.0f,  0.0f,  1.4f, 50.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::Direct,     0.030f,  7,  5, 1.08f, "Center dive" },
-    {  38.0f,  5.1f,  1.2f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.032f,  6,  5, 1.08f, "Right sweep" },
+    {  28.0f,  0.0f,  1.4f, 50.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::Direct,     0.030f,  7,  5, 1.08f, "Crossing assault" },
+    {  32.0f,  5.1f,  1.2f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.032f,  6,  5, 1.08f, "Crossing assault" },
     {  58.0f, -5.1f,  0.7f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.032f,  6,  5, 1.08f, "Cross sweep" },
     {  68.0f, -4.0f, -0.6f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.022f,  5,  4, 1.04f, "Low gate" },
-    {  78.0f, -3.2f,  1.3f, 48.0f, Enemy::Behavior::Sniper,         Enemy::EntryStyle::PopShooter, 0.052f, 10,  6, 1.18f, "Sniper lock" },
-    {  98.0f,  3.2f,  0.9f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Dodge target" },
+    {  78.0f, -3.2f,  1.3f, 48.0f, Enemy::Behavior::Sniper,         Enemy::EntryStyle::PopShooter, 0.052f, 10,  6, 1.18f, "Sniper escort" },
+    {  84.0f,  3.2f,  0.9f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Sniper escort" },
     { 112.0f,  4.6f,  1.6f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::RightSweep, 0.036f,  8,  5, 1.12f, "High dive" },
     { 124.0f, -2.9f, -0.4f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
-    { 134.0f,  2.9f, -0.2f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
+    { 128.0f,  2.9f, -0.2f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
     { 148.0f, -4.6f,  1.5f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::LeftSweep,  0.036f,  8,  5, 1.12f, "High dive" },
     { 160.0f,  0.0f,  1.45f, 54.0f, Enemy::Behavior::Shield,        Enemy::EntryStyle::Direct,     0.070f, 14, 11, 1.24f, "Shield wall" },
     { 174.0f, -5.4f,  0.55f, 52.0f, Enemy::Behavior::Crossfire,     Enemy::EntryStyle::LeftSweep,  0.048f,  9,  6, 1.12f, "Crossfire pair" },
@@ -287,7 +288,7 @@ constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     { 202.0f,  4.9f,  1.0f, 52.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.038f,  7,  5, 1.14f, "High-speed pass" },
     { 214.0f,  0.0f,  1.0f, 50.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.18f, "Break formation" },
     { 228.0f, -3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
-    { 248.0f,  3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
+    { 234.0f,  3.8f,  0.6f, 48.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.040f,  8,  7, 1.18f, "Final crossfire" },
     { 258.0f,  0.0f,  1.9f, 48.0f, Enemy::Behavior::Support,       Enemy::EntryStyle::Direct,     0.050f, 10,  8, 1.16f, "Support gate" },
     { 258.0f, -2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Support gate" },
     { 258.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Support gate" },
@@ -705,6 +706,7 @@ void GameRuntime::Initialize(PlayMode mode)
     gameplayElapsedSeconds_ = 0.0f;
     enemySpawnTimer_ = 0;
     enemyShotTimer_ = 32;
+    enemyAimVelocity_ = {};
     bossWarningTimer_ = 0;
     bossIntroTimer_ = 0;
     bossDefeatFlashTimer_ = 0;
@@ -1190,8 +1192,17 @@ void GameRuntime::UpdateRailProgress()
 void GameRuntime::UpdatePlayerAndCamera()
 {
     const float controlStep = dxCommon_ ? dxCommon_->GetDeltaTime() * 60.0f : 1.0f;
+    const Math::Vector3 before = player_->GetTranslate();
     player_->Update(input_, GetCinematicWorldTimeScale(), controlStep);
     player_->SetRailZ(railDistance_);
+    const Math::Vector3 after = player_->GetTranslate();
+    const float step = (std::max)(controlStep, 0.1f);
+    const Math::Vector3 velocity{
+        std::clamp((after.x - before.x) / step, -0.205f, 0.205f),
+        std::clamp((after.y - before.y) / step, -0.205f, 0.205f), 0.0f };
+    enemyAimVelocity_ = player_->IsDodging() ? Math::Vector3{} : Math::Vector3{
+        Lerp(enemyAimVelocity_.x, velocity.x, 0.3f),
+        Lerp(enemyAimVelocity_.y, velocity.y, 0.3f), 0.0f };
     UpdateGameCamera();
     if (skybox_) {
         skybox_->Update(camera_.get());
@@ -1428,6 +1439,7 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     gameplayElapsedSeconds_ = 0.0f;
     enemySpawnTimer_ = 0;
     enemyShotTimer_ = 32;
+    enemyAimVelocity_ = {};
     bossSpawned_ = false;
     bossDefeated_ = false;
     bossWarningTriggered_ = clampedPhase == 3;
@@ -1504,6 +1516,12 @@ void GameRuntime::UpdateEnemyActions()
         }
     }
 
+    if (!IsTutorial()) {
+        UpdateEnemyAttackPatterns(hasSupportDrone);
+        return;
+    }
+
+    // 練習の反撃制限と単発射撃は維持。本編だけ敵ごとの射撃制御へ切り替える。
     --enemyShotTimer_;
     if (enemyShotTimer_ <= 0) {
         int normalEnemyShotsThisVolley = 0;
@@ -1563,6 +1581,92 @@ void GameRuntime::UpdateEnemyActions()
         }
         enemyShotTimer_ = isTutorialCombat ? kTutorialShotIntervalFrames :
             (std::max)(24, enemyShotInterval_ - (hasSupportDrone ? 18 : 0));
+    }
+}
+
+void GameRuntime::UpdateEnemyAttackPatterns(bool hasSupportDrone)
+{
+    Math::Vector2 viewportMin{}, viewportSize{};
+    GetEffectiveHudViewportRect(viewportMin, viewportSize);
+    const float worldStep = GetCinematicWorldTimeScale();
+    for (const auto& enemy : enemies_) {
+        if (!enemy || enemy->IsBoss() || enemy->IsSupport()) { continue; }
+        EnemyFireControl::Pattern pattern;
+        pattern.recovery = static_cast<float>(enemyShotInterval_) * 1.4f;
+        float leadFrames = 12.0f;
+        switch (enemy->GetBehavior()) {
+        case Enemy::Behavior::Sniper:
+            pattern = { 44.0f, 14.0f, enemyShotInterval_ * 1.8f, 2 };
+            leadFrames = 22.0f;
+            break;
+        case Enemy::Behavior::Shield:
+            pattern = { 36.0f, 18.0f, enemyShotInterval_ * 1.7f, 2 };
+            leadFrames = 6.0f;
+            break;
+        case Enemy::Behavior::Crossfire:
+            pattern = { 32.0f, 11.0f, enemyShotInterval_ * 1.25f, 3 };
+            break;
+        case Enemy::Behavior::StrafeShooter:
+            pattern = { 26.0f, 10.0f, enemyShotInterval_ * 1.2f, 3 };
+            leadFrames = 18.0f;
+            break;
+        case Enemy::Behavior::DiveBomber:
+            pattern = { 22.0f, 10.0f, enemyShotInterval_ * 1.2f, 3 };
+            break;
+        case Enemy::Behavior::Swoop:
+            pattern = { 20.0f, 10.0f, enemyShotInterval_ * 1.1f, 2 };
+            break;
+        default:
+            break;
+        }
+        Math::Vector2 screen{};
+        const bool visible = TryProjectToScreen(enemy->GetAimPosition(), screen) &&
+            screen.x >= viewportMin.x + 12.0f && screen.x <= viewportMin.x + viewportSize.x - 12.0f &&
+            screen.y >= viewportMin.y + 12.0f && screen.y <= viewportMin.y + viewportSize.y - 12.0f;
+        auto& control = enemy->GetFireControl();
+        const auto event = control.Advance(worldStep, enemy->CanShoot() && visible,
+            pattern, hasSupportDrone ? 0.72f : 1.0f);
+        if (event == EnemyFireControl::Event::Aim || control.IsTracking()) {
+            control.aimPoint = player_->GetTranslate();
+            // 入力の未来を読むのではなく、観測した移動だけを少し先読みする。
+            control.aimPoint.x += std::clamp(enemyAimVelocity_.x * leadFrames, -2.6f, 2.6f);
+            control.aimPoint.y += std::clamp(enemyAimVelocity_.y * leadFrames, -1.3f, 1.3f);
+        }
+        if (event != EnemyFireControl::Event::Fire) { continue; }
+        const Math::Vector3 muzzle = enemy->GetAimPosition();
+        const int shot = control.ShotIndex();
+        const float sweep = control.VolleyIndex() % 2 == 0 ? -1.0f : 1.0f;
+        switch (enemy->GetBehavior()) {
+        case Enemy::Behavior::Sniper:
+            FireEnemyBullet(muzzle, EnemyBulletStyle::Sniper, {}, &control.aimPoint);
+            break;
+        case Enemy::Behavior::Shield:
+            // 二段の扇。中央は狙うが、外側と上下には逃げ道を残す。
+            for (int lane = -1; lane <= 1; ++lane) {
+                const float y = shot == 0 ? 0.0f : (control.aimPoint.y > 2.4f ? -1.8f : 1.8f);
+                FireEnemyBullet(muzzle, EnemyBulletStyle::ShieldOrb,
+                    { static_cast<float>(lane) * 3.4f, y }, &control.aimPoint);
+            }
+            break;
+        case Enemy::Behavior::Crossfire: {
+            // 左右の敵が内側へ射線を寄せる。端か上下へ抜ければ回避できる。
+            const float side = muzzle.x < 0.0f ? -1.0f : 1.0f;
+            FireEnemyBullet(muzzle, EnemyBulletStyle::Crossfire,
+                { side * (2.6f - static_cast<float>(shot) * 1.3f), 0.0f }, &control.aimPoint);
+            break;
+        }
+        case Enemy::Behavior::StrafeShooter:
+            FireEnemyBullet(muzzle, EnemyBulletStyle::Crossfire,
+                { sweep * (static_cast<float>(shot) - 1.0f) * 2.8f, 0.0f }, &control.aimPoint);
+            break;
+        case Enemy::Behavior::DiveBomber:
+            FireEnemyBullet(muzzle, EnemyBulletStyle::Standard,
+                { 0.0f, (1.0f - static_cast<float>(shot)) * 1.5f }, &control.aimPoint);
+            break;
+        default:
+            FireEnemyBullet(muzzle, EnemyBulletStyle::Standard, {}, &control.aimPoint);
+            break;
+        }
     }
 }
 
@@ -3245,7 +3349,8 @@ void GameRuntime::FirePlayerBullet()
 void GameRuntime::FireEnemyBullet(
     const Math::Vector3& position,
     EnemyBulletStyle style,
-    Math::Vector2 aimOffset)
+    Math::Vector2 aimOffset,
+    const Math::Vector3* fixedAim)
 {
     if (!bulletModel_) {
         return;
@@ -3253,30 +3358,6 @@ void GameRuntime::FireEnemyBullet(
 
     Math::Vector3 spawnPosition = position;
     spawnPosition.z -= 1.0f;
-    Math::Vector3 bulletDirection{ 0.0f, 0.0f, -1.0f };
-    if (player_) {
-        Math::Vector3 targetPosition = player_->GetTranslate();
-        targetPosition.x += aimOffset.x;
-        targetPosition.y += 0.08f + aimOffset.y;
-        targetPosition.z += 0.18f;
-
-        const Math::Vector3 toPlayer{
-            targetPosition.x - spawnPosition.x,
-            targetPosition.y - spawnPosition.y,
-            targetPosition.z - spawnPosition.z
-        };
-        const float toPlayerLengthSq =
-            toPlayer.x * toPlayer.x +
-            toPlayer.y * toPlayer.y +
-            toPlayer.z * toPlayer.z;
-        if (toPlayerLengthSq > 0.0001f) {
-            bulletDirection = Math::Normalize(toPlayer);
-            if (bulletDirection.z > -0.10f) {
-                bulletDirection.z = -0.10f;
-                bulletDirection = Math::Normalize(bulletDirection);
-            }
-        }
-    }
 
     Math::Vector4 bodyColor{ 1.0f, 0.76f, 0.90f, 1.0f };
     Math::Vector3 bodyScale{ 0.34f, 0.34f, 0.68f };
@@ -3285,7 +3366,7 @@ void GameRuntime::FireEnemyBullet(
     Math::Vector4 trailColor{ 1.0f, 0.10f, 0.44f, 0.44f };
     Math::Vector3 trailScale{ 0.28f, 2.55f, 1.0f };
     float trailOffset = 1.50f;
-    float speedScale = 1.0f;
+    float speedScale = IsTutorial() ? 1.0f : 1.25f;
     float collisionRadius = 0.48f;
     int lifeTimer = 260;
     int damage = 8;
@@ -3299,7 +3380,7 @@ void GameRuntime::FireEnemyBullet(
         trailColor = { 0.54f, 0.12f, 1.0f, 0.62f };
         trailScale = { 0.20f, 3.30f, 1.0f };
         trailOffset = 1.90f;
-        speedScale = 1.12f;
+        speedScale = IsTutorial() ? 1.12f : 1.40f;
         collisionRadius = 0.42f;
         damage = 7;
         break;
@@ -3311,7 +3392,7 @@ void GameRuntime::FireEnemyBullet(
         trailColor = { 1.0f, 0.04f, 0.12f, 0.82f };
         trailScale = { 0.24f, 6.80f, 1.0f };
         trailOffset = 3.55f;
-        speedScale = 1.67f;
+        speedScale = IsTutorial() ? 1.67f : 1.90f;
         collisionRadius = 0.56f;
         lifeTimer = 210;
         damage = 14;
@@ -3324,7 +3405,7 @@ void GameRuntime::FireEnemyBullet(
         trailColor = { 0.08f, 0.76f, 1.0f, 0.48f };
         trailScale = { 0.34f, 1.42f, 1.0f };
         trailOffset = 0.78f;
-        speedScale = 0.78f;
+        speedScale = IsTutorial() ? 0.78f : 0.95f;
         collisionRadius = 0.62f;
         lifeTimer = 300;
         damage = 6;
@@ -3358,6 +3439,24 @@ void GameRuntime::FireEnemyBullet(
     case EnemyBulletStyle::Standard:
     default:
         break;
+    }
+
+    Math::Vector3 bulletDirection{ 0.0f, 0.0f, -1.0f };
+    if (player_) {
+        Math::Vector3 targetPosition = player_->GetTranslate();
+        if (fixedAim) {
+            targetPosition.x = fixedAim->x;
+            targetPosition.y = fixedAim->y;
+        }
+        targetPosition.x += aimOffset.x;
+        targetPosition.y += 0.08f + aimOffset.y;
+        targetPosition.z += 0.18f;
+        bulletDirection = EnemyFireControl::SolveShotDirection(
+            spawnPosition, targetPosition, railSpeed_, enemyBulletSpeed_ * speedScale);
+        if (bulletDirection.z > -0.10f) {
+            bulletDirection.z = -0.10f;
+            bulletDirection = Math::Normalize(bulletDirection);
+        }
     }
 
     auto bullet = AcquireBullet(enemyBulletPool_);
@@ -6235,15 +6334,11 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
     const bool sniperTelegraphActive =
         enemyShotTimer_ > 0 &&
         enemyShotTimer_ <= kSniperTelegraphLeadFrames;
-    const float chargeRate = 1.0f - std::clamp(
+    const float tutorialChargeRate = 1.0f - std::clamp(
         static_cast<float>(enemyShotTimer_) /
             static_cast<float>(kSniperTelegraphLeadFrames),
         0.0f,
         1.0f);
-    const float pulse =
-        0.5f + 0.5f * std::sin(cameraTimer_ * 0.48f);
-    const int lineAlpha = static_cast<int>(
-        70.0f + chargeRate * 130.0f + pulse * 35.0f);
     bool sniperTelegraphDrawn = false;
 
     for (const auto& enemy : enemies_) {
@@ -6378,12 +6473,15 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
             }
         }
 
-        if (sniperTelegraphDrawn || !sniperTelegraphActive ||
-            !enemy->IsSniper() || !enemy->CanShoot()) {
+        const float chargeRate = IsTutorial() ? tutorialChargeRate : enemy->GetFireControl().ChargeRate();
+        if (!enemy->IsSniper() || !enemy->CanShoot() || chargeRate <= 0.0f ||
+            (IsTutorial() && (sniperTelegraphDrawn || !sniperTelegraphActive))) {
             continue;
         }
 
         sniperTelegraphDrawn = true;
+        const float pulse = 0.5f + 0.5f * std::sin(cameraTimer_ * 0.48f);
+        const int lineAlpha = static_cast<int>(70.0f + chargeRate * 130.0f + pulse * 35.0f);
         const ImVec2 muzzle(enemyScreen.x, enemyScreen.y + 4.0f);
         const float coreRadius = 3.5f + chargeRate * 5.5f;
         drawList->AddCircleFilled(
@@ -7541,7 +7639,7 @@ void GameRuntime::UpdateEnemies()
         1.0f);
     bool sniperTelegraphAssigned = false;
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
-        float attackTelegraphRate = 0.0f;
+        float attackTelegraphRate = IsTutorial() ? 0.0f : (*iterator)->GetFireControl().ChargeRate();
         if ((*iterator)->IsBoss() &&
             bossAttackPattern_ == 2 &&
             bossAttackStep_ >= 0 &&
@@ -7552,7 +7650,7 @@ void GameRuntime::UpdateEnemies()
                     static_cast<float>((std::max)(chargeDuration, 1)),
                 0.0f,
                 1.0f);
-        } else if (!sniperTelegraphAssigned &&
+        } else if (IsTutorial() && !sniperTelegraphAssigned &&
             sniperTelegraphActive &&
             (*iterator)->IsSniper() &&
             (*iterator)->CanShoot()) {

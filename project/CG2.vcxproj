@@ -470,6 +470,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="include\engine\3d\ParticleEmitter.h" />
     <ClInclude Include="include\app\Bullet.h" />
     <ClInclude Include="include\app\Enemy.h" />
+    <ClInclude Include="include\app\EnemyFireControl.h" />
     <ClInclude Include="include\app\GameRuntime.h" />
     <ClInclude Include="include\app\CombatHud.h" />
     <ClInclude Include="include\app\MyGame.h" />

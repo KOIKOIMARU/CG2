@@ -10,6 +10,52 @@
 #include <stdexcept>
 
 namespace {
+void CheckEnemyFireControl()
+{
+    const auto require = [](bool condition, const char* message) {
+        if (!condition) { throw std::runtime_error(message); }
+    };
+    // 通常速度・フィーバー速度・弾速とレール速度が同じ場合も、左右からの狙いがずれない。
+    for (const float rail : { 0.16f, 0.235f, 0.45f, 0.65f }) {
+        for (const float x : { -10.0f, 0.0f, 10.0f }) {
+            const Math::Vector3 origin{ x, 4.0f, 40.0f };
+            const Math::Vector3 target{ 3.0f, 0.0f, 0.0f };
+            const auto velocity = EnemyFireControl::SolveShotDirection(origin, target, rail, 0.45f) * 0.45f;
+            const float t = (origin.z - target.z) / (rail - velocity.z);
+            const float dx = origin.x + velocity.x * t - target.x;
+            const float dy = origin.y + velocity.y * t - target.y;
+            require(std::isfinite(t) && t > 0 && std::abs(dx) < 0.001f && std::abs(dy) < 0.001f,
+                "enemy shot misses stationary lateral target during rail movement");
+            // 発射後に横へ3m移動すれば、この固定照準弾の当たり判定から抜ける。
+            require(std::abs(dx - 3.0f) > 1.5f, "enemy shot followed an evasive movement");
+        }
+    }
+    const EnemyFireControl::Pattern pattern{ 28.0f, 12.0f, 86.0f, 3 };
+    for (const float step : { 0.25f, 0.5f, 1.0f }) {
+        EnemyFireControl::Cycle control;
+        require(control.Advance(step, true, pattern) == EnemyFireControl::Event::Aim,
+            "enemy fired before windup");
+        int shots = 0;
+        for (float elapsed = step; elapsed <= 130.0f; elapsed += step) {
+            const auto event = control.Advance(step, true, pattern);
+            if (event == EnemyFireControl::Event::Fire) {
+                require(std::abs(elapsed - (28.0f + shots * 12.0f)) < 0.01f,
+                    "enemy burst ignored slow-motion clock");
+                require(control.ShotIndex() == shots, "enemy burst order is incorrect");
+                ++shots;
+            }
+            if (elapsed >= 21.0f && elapsed < 28.0f) {
+                require(!control.IsTracking(), "enemy keeps tracking in final windup");
+            }
+        }
+        require(shots == 3, "enemy burst count/recovery is incorrect");
+        control.Advance(step, false, pattern);
+        require(control.ChargeRate() == 0.0f &&
+            control.Advance(step, true, pattern) == EnemyFireControl::Event::Aim,
+            "offscreen enemy retained an immediate shot");
+    }
+}
+
 // 実際のPlayerと入力経路を使う回避回帰試験。描画しない独立自機なので本編へ影響しない。
 void CheckDodgeControls(Object3dCommon* common, Model* model)
 {
@@ -115,6 +161,8 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
         throw std::runtime_error("Playthrough pilot was defeated; no invulnerability or forced clear used");
     }
     if (frame == 0) {
+        CheckEnemyFireControl();
+        log("ENEMY_FIRE_CONTROL_OK rail_intercept=1 fixed_aim=1 windup_burst_recovery=1 slow_steps=0.25,0.5,1");
         if (!sound_ || sound_->GetVoiceCount() != 25) {
             throw std::runtime_error("Combat audio bank failed to load all 25 voices");
         }
@@ -261,6 +309,8 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
     ++frame;
     require(!isGameOver_, "fixture player died");
     if (frame == 1) {
+        CheckEnemyFireControl();
+        log("ENEMY_FIRE_CONTROL_OK rail_intercept=1 fixed_aim=1 windup_burst_recovery=1");
         CheckDodgeControls(object3dCommon_.get(), playerModel_);
         log("DODGE_CONTROLS_OK distance=4.4 duration=16 buffer=5 slow_independent=1 steps=0.5,1,2 edge_ok=1");
         require(phantomReady_ && !IsPhantomRaidActive() && phantomCooldown_ == 0.0f,

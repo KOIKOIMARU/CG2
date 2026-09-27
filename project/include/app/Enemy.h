@@ -2,6 +2,7 @@
 
 #include "engine/3d/Object3d.h"
 #include "engine/base/Math.h"
+#include "app/EnemyFireControl.h"
 
 #include <memory>
 
@@ -52,6 +53,9 @@ public:
     void Kill();
     bool Damage(int damage);
     bool CanShoot() const;
+    Behavior GetBehavior() const { return behavior_; }
+    EnemyFireControl::Cycle& GetFireControl() { return fireControl_; }
+    const EnemyFireControl::Cycle& GetFireControl() const { return fireControl_; }
     void SetAttackTelegraphRate(float rate);
     bool IsDead() const { return lifeState_ == LifeState::Destroyed || lifeState_ == LifeState::Escaped; }
     bool WasDestroyed() const { return lifeState_ == LifeState::Destroyed; }
@@ -98,6 +102,7 @@ private:
     float aimRadius_ = 0.8f;
     float visualScaleRate_ = 1.0f;
     float attackTelegraphRate_ = 0.0f;
+    EnemyFireControl::Cycle fireControl_{}; // 共通タイマーではなく、各機の構え・連射・休止を保持。
     Behavior behavior_ = Behavior::Formation;
     EntryStyle entryStyle_ = EntryStyle::Direct;
     LifeState lifeState_ = LifeState::Alive;

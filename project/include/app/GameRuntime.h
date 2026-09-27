@@ -255,7 +255,9 @@ private:
     void FireEnemyBullet(
         const Math::Vector3& position,
         EnemyBulletStyle style = EnemyBulletStyle::Standard,
-        Math::Vector2 aimOffset = {});
+        Math::Vector2 aimOffset = {},
+        const Math::Vector3* fixedAim = nullptr);
+    void UpdateEnemyAttackPatterns(bool hasSupportDrone);
     void SpawnEnemy();
     void InitializeRewardHearts();
     void SpawnRewardHearts(const Math::Vector3& worldPosition, int count);
@@ -487,6 +489,7 @@ private:
     int shootBufferTimer_ = 0;
     int enemySpawnTimer_ = 0;
     int enemyShotTimer_ = 32;
+    Math::Vector3 enemyAimVelocity_{}; // 通常移動の平滑化速度。回避の急加速は予測照準に使わない。
     int bossWarningTimer_ = 0;
     int bossIntroTimer_ = 0;
     int bossDefeatFlashTimer_ = 0;

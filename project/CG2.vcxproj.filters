@@ -518,6 +518,9 @@
     <ClInclude Include="include\app\Enemy.h">
       <Filter>include\app</Filter>
     </ClInclude>
+    <ClInclude Include="include\app\EnemyFireControl.h">
+      <Filter>include\app</Filter>
+    </ClInclude>
     <ClInclude Include="include\app\GameRuntime.h">
       <Filter>include\app</Filter>
     </ClInclude>
