@@ -1,5 +1,6 @@
 #include "engine/scene/TitleScene.h"
 #include "app/CombatHud.h"
+#include "app/MenuUi.h"
 #include "engine/3d/Camera.h"
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Object3d.h"
@@ -18,18 +19,34 @@
 
 namespace {
 // 仮題。正式名称が決まったら、この文字列だけ差し替える。
-constexpr const char* kTitle = "SKYBREAK";
+constexpr const char* kTitleTop = "SKY";
+constexpr const char* kTitleBottom = "BREAK";
 constexpr const char* kShip = "free_models/player_candidates/Omen.gltf";
 constexpr const char* kSky = "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
 
 void DrawWordmark(ImDrawList* draw, ImVec2 position, float scale)
 {
-    // 正体の書体と少し広い字間で組む。線・縁取り・副題は加えない。
-    const float size = 116.0f * scale;
-    ImFont* font = CombatHud::Font(true);
-    for (const char* letter = kTitle; *letter; ++letter) {
-        draw->AddText(font, size, position, IM_COL32(244, 245, 242, 255), letter, letter + 1);
-        position.x += font->CalcTextSizeA(size, FLT_MAX, 0.0f, letter, letter + 1).x + 2.5f * scale;
+    // 二段の角形ロゴ。文字の傾き・字間・縦の濃淡を組版側で揃える。
+    // 既存のフォント頂点だけを変形し、追加テクスチャや描画経路は使わない。
+    const float size = 152.0f * scale;
+    ImFont* font = CombatHud::BattleFont();
+    for (int row = 0; row < 2; ++row) {
+        ImVec2 pen{ position.x, position.y + static_cast<float>(row) * 104.0f * scale };
+        const char* word = row == 0 ? kTitleTop : kTitleBottom;
+        const int firstVertex = draw->VtxBuffer.Size;
+        for (const char* letter = word; *letter; ++letter) {
+            draw->AddText(font, size, pen, MenuUi::Paper, letter, letter + 1);
+            pen.x += font->CalcTextSizeA(size, FLT_MAX, 0.0f, letter, letter + 1).x - 1.5f * scale;
+        }
+        for (int index = firstVertex; index < draw->VtxBuffer.Size; ++index) {
+            auto& vertex = draw->VtxBuffer[index];
+            const float y = vertex.pos.y - (position.y + static_cast<float>(row) * 104.0f * scale);
+            vertex.pos.x += (size * 0.75f - y) * 0.18f;
+            const float gradient = std::clamp(y / size, 0.0f, 1.0f);
+            const ImU32 top = row == 0 ? IM_COL32(237, 88, 77, 255) : MenuUi::Paper;
+            const ImU32 bottom = row == 0 ? IM_COL32(183, 45, 44, 255) : IM_COL32(164, 185, 211, 255);
+            vertex.col = CombatHud::SurfaceColor(CombatHud::Mix(top, bottom, gradient * 0.52f));
+        }
     }
 }
 }
@@ -80,7 +97,7 @@ void TitleScene::PrepareBackdrop()
     ship_->Initialize(objectCommon_.get());
     ship_->SetModel(model);
     ship_->SetLightingMode(1);
-    ship_->SetColor({ 0.82f, 0.91f, 1.0f, 1.0f });
+    ship_->SetColor({ 0.96f, 0.97f, 1.0f, 1.0f });
     ship_->SetDirectionalLightDirection({ -0.35f, -0.8f, -0.45f });
     ship_->SetDirectionalLightIntensity(1.1f);
     ship_->SetEnvironmentCoefficient(0.055f);
@@ -103,9 +120,9 @@ void TitleScene::UpdateBackdrop()
     skyCamera.SetRotate({ -0.12f, 0.18f + 0.02f * std::sin(elapsed_ * 0.08f), -0.025f });
     skyCamera.Update();
     skybox_->Update(&skyCamera);
-    constexpr float shipScale = 1.82f;
+    constexpr float shipScale = 1.96f;
     const float phase = elapsed_ * 0.32f;
-    const Math::Vector3 rotation{ 0.0f, 0.72f + 0.018f * std::sin(phase * 0.7f), -0.12f + 0.012f * std::sin(phase) };
+    const Math::Vector3 rotation{ 0.0f, 0.84f + 0.026f * std::sin(phase * 0.7f), -0.18f + 0.014f * std::sin(phase) };
     const auto matrix = Math::MakeAffineMatrix({ shipScale, shipScale, shipScale }, rotation, {});
     const Math::Vector3 offset{
         modelCenter_.x * matrix.m[0][0] + modelCenter_.y * matrix.m[1][0] + modelCenter_.z * matrix.m[2][0],
@@ -113,7 +130,7 @@ void TitleScene::UpdateBackdrop()
         modelCenter_.x * matrix.m[0][2] + modelCenter_.y * matrix.m[1][2] + modelCenter_.z * matrix.m[2][2] };
     ship_->SetScale({ shipScale, shipScale, shipScale });
     ship_->SetRotate(rotation);
-    ship_->SetTranslate({ 3.2f - offset.x, 1.48f - offset.y + 0.07f * std::sin(phase), -offset.z });
+    ship_->SetTranslate({ 3.6f - offset.x, 1.66f - offset.y + 0.07f * std::sin(phase), -offset.z });
     ship_->Update();
 }
 
@@ -164,15 +181,18 @@ void TitleScene::DrawMenu(bool gameReady)
     ImDrawList* draw = ImGui::GetWindowDrawList();
     // 背景を見せつつ、文字のある左側だけを暗くする。カードや説明欄は置かない。
     if (!skybox_) { draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36, 255)); }
-    draw->AddRectFilledMultiColor(viewport->Pos, end, IM_COL32(9, 17, 28, 188), IM_COL32(9, 17, 28, 0),
-        IM_COL32(9, 17, 28, 0), IM_COL32(9, 17, 28, 218));
+    const ImU32 shade = CombatHud::SurfaceColor(IM_COL32(8, 17, 32, 228));
+    draw->AddRectFilledMultiColor(viewport->Pos, end, shade, IM_COL32(0, 0, 0, 0),
+        IM_COL32(0, 0, 0, 0), shade);
+    draw->AddRectFilledMultiColor(p(0, 490), end, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
+        IM_COL32(0, 0, 0, 112), IM_COL32(0, 0, 0, 112));
     if (!showControls_) {
-        DrawWordmark(draw, p(91, 164), scale);
+        DrawWordmark(draw, p(90, 106), scale);
 
-        const char* labels[] = { "ゲーム開始", "操作練習", "操作方法" };
+        const char* labels[] = { "出撃", "操作練習", "操作方法" };
         const float blend = 1.0f - std::exp(-12.0f * std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 0.05f));
         for (int index = 0; index < 3; ++index) {
-            const float y = 390.0f + static_cast<float>(index) * 52.0f;
+            const float y = 450.0f + static_cast<float>(index) * 54.0f;
             ImGui::SetCursorScreenPos(p(88, y - 6.0f));
             ImGui::BeginDisabled(startRequested_);
             const bool clicked = ImGui::InvisibleButton(labels[index], { 250.0f * scale, 44.0f * scale });
@@ -186,35 +206,26 @@ void TitleScene::DrawMenu(bool gameReady)
             }
             const float target = selectedItem_ == index ? 1.0f : 0.0f;
             menuEmphasis_[index] += (target - menuEmphasis_[index]) * blend;
-            const int value = static_cast<int>(153.0f + 91.0f * menuEmphasis_[index]);
-            CombatHud::Text(draw, p(95, y), 25.0f * scale, IM_COL32(value, value + 2, value + 3, 255), labels[index]);
+            const float emphasis = menuEmphasis_[index];
+            const int alpha = static_cast<int>(245.0f * emphasis);
+            draw->AddRectFilledMultiColor(p(88, y - 6), p(338, y + 38),
+                CombatHud::SurfaceColor(IM_COL32(239, 241, 244, alpha)),
+                CombatHud::SurfaceColor(IM_COL32(207, 217, 231, alpha)),
+                CombatHud::SurfaceColor(IM_COL32(184, 199, 218, alpha)),
+                CombatHud::SurfaceColor(IM_COL32(224, 231, 240, alpha)));
+            MenuUi::Text(draw, p(110, y + 2), 23.0f * scale,
+                CombatHud::Mix(MenuUi::Quiet, MenuUi::Ink, emphasis), labels[index]);
         }
         if (!gameReady) {
-            CombatHud::Text(draw, p(1184, 660), 16.0f * scale, CombatHud::Muted, "読み込み中", true);
+            MenuUi::Text(draw, p(1184, 660), 16.0f * scale, MenuUi::Quiet, "読み込み中", true);
         }
-    }
-    if (showControls_) {
-        draw->AddRectFilled(viewport->Pos, end, IM_COL32(0, 6, 13, 210));
-        CombatHud::Text(draw, p(340, 142), 32.0f * scale, CombatHud::White, "操作方法");
-        const char* actions[] = { "移動", "照準", "射撃", "チャージ", "回避", "残像連撃" };
-        const char* keys[] = { "WASD / 方向キー", "マウス", "SPACE 長押し", "SPACEを離してためる", "A・D + SHIFT", "Q" };
-        for (int row = 0; row < 6; ++row) {
-            const float y = 213.0f + static_cast<float>(row) * 46.0f;
-            CombatHud::Text(draw, p(340, y), 21.0f * scale, CombatHud::Muted, actions[row]);
-            CombatHud::Text(draw, p(940, y), 22.0f * scale, CombatHud::White, keys[row], true);
-        }
-        CombatHud::Text(draw, p(340, 519), 18.0f * scale, CombatHud::Muted, "フィーバーはゲージ満タンで自動発動");
-        ImGui::SetCursorScreenPos(p(340, 574));
-        if (ImGui::InvisibleButton("close_controls", { 600.0f * scale, 45.0f * scale })) { showControls_ = false; }
-        CombatHud::Text(draw, p(340, 580), 22.0f * scale,
-            ImGui::IsItemHovered() ? CombatHud::Blue : CombatHud::White, "戻る");
-        CombatHud::Text(draw, p(940, 584), 20.0f * scale, CombatHud::Muted, "ESC", true, true);
     }
     if (departureFade_ > 0.0f) {
         draw->AddRectFilled(viewport->Pos, end, IM_COL32(0, 0, 0, static_cast<int>(255.0f * departureFade_)));
     }
     ImGui::End();
     ImGui::PopStyleVar();
+    if (showControls_ && MenuUi::Controls(viewport->Pos, viewport->Size, false)) { showControls_ = false; }
 }
 
 void TitleScene::Draw()

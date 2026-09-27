@@ -1,4 +1,5 @@
 #include "app/GameRuntime.h"
+#include "app/MenuUi.h"
 #include "app/CombatHud.h"
 #include "app/EnemyFireControl.h"
 
@@ -131,6 +132,8 @@ constexpr float kBossWarningDistance = 300.0f;
 constexpr float kBossSpawnDistance = 330.0f;
 constexpr float kStageTimelineCruiseSpeed = 0.090f;
 constexpr int kStageEncounterBreatherFrames = 84;
+constexpr float kEmptyEncounterMaxFrames = 60.0f;
+constexpr float kEmptyBossApproachMaxFrames = 120.0f;
 constexpr float kStageEncounterGroupingDistance = 10.5f;
 constexpr float kTutorialReturnFireDistance = 36.0f;
 constexpr float kTutorialFullCombatDistance = 68.0f;
@@ -770,6 +773,7 @@ void GameRuntime::Initialize(PlayMode mode)
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
     stageEncounterBreatherTimer_ = 0;
+    stageEmptyFrames_ = 0.0f;
     tutorialGuideText_ = nullptr;
     tutorialGuideTimer_ = 0;
     stageCameraYawBias_ = 0.0f;
@@ -1036,6 +1040,7 @@ void GameRuntime::Update()
     if (phantomPreviewPaused_) {
         DrawPhantomRaidOverlay();
         DrawHud();
+        DrawResultOverlay();
         return;
     }
 #endif
@@ -1080,6 +1085,7 @@ void GameRuntime::Update()
 
 bool GameRuntime::HandleRuntimeShortcuts()
 {
+    if (showControlsHelp_ && input_ && input_->TriggerKey(DIK_ESCAPE)) { showControlsHelp_ = false; }
     if (input_ && input_->TriggerKey(DIK_H)) {
         showControlsHelp_ = !showControlsHelp_;
     }
@@ -1213,10 +1219,13 @@ void GameRuntime::UpdateRailProgress()
         const bool timelineBlocked =
             activeStageEnemyCount > 0 && currentEncounterFullyScheduled;
 
+        if (activeStageEnemyCount > 0 || bossSpawned_) { stageEmptyFrames_ = 0.0f; }
+        else { stageEmptyFrames_ += worldTimeScale; }
+
         if (stageTimelineWasBlocked_ && !timelineBlocked &&
             activeStageEnemyCount == 0) {
             stageEncounterBreatherTimer_ = feverTimer_ > 0 ?
-                kFeverEncounterBreatherFrames : kStageEncounterBreatherFrames;
+                kFeverEncounterBreatherFrames : (IsTutorial() ? kStageEncounterBreatherFrames : 36);
         }
         stageTimelineWasBlocked_ = timelineBlocked;
 
@@ -1227,11 +1236,24 @@ void GameRuntime::UpdateRailProgress()
             // フィーバーでも敵が残っている間は進行を止め、倒す機会を奪わない。
             stageTimelineSpeed_ = kStageTimelineCruiseSpeed *
                 (feverTimer_ > 0 ? kFeverRailSpeedMultiplier : 1.0f);
+            if (!IsTutorial() && activeStageEnemyCount == 0 &&
+                std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return v; })) {
+                // 背景や自機の速度は変えず、敵の配置タイムラインだけを詰める。
+                // 次の一件までしか進めないので、編隊の順序・数・戦闘中の滞在時間は維持する。
+                const float destination = nextEnemyEvent ? nextEnemyEvent->distance : kBossSpawnDistance;
+                const float deadline = nextEnemyEvent ? kEmptyEncounterMaxFrames : kEmptyBossApproachMaxFrames;
+                const float remainingFrames = (std::max)(1.0f, deadline - stageEmptyFrames_);
+                stageTimelineSpeed_ = (std::max)(stageTimelineSpeed_,
+                    (destination - stageProgress_) / remainingFrames);
+            }
             if (stageEncounterBreatherTimer_ > 0) {
                 --stageEncounterBreatherTimer_;
             }
         }
         float nextProgress = stageProgress_ + stageTimelineSpeed_ * worldTimeScale;
+        if (!IsTutorial() && activeStageEnemyCount == 0 && nextEnemyEvent) {
+            nextProgress = (std::min)(nextProgress, nextEnemyEvent->distance);
+        }
         if (stageEncounterBreatherTimer_ > 0 && nextEnemyEvent) {
             // 最短の息継ぎ時間を確保する。出現境界を越えないだけで配置は飛ばさない。
             nextProgress = (std::min)(nextProgress,
@@ -1474,6 +1496,7 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
     stageEncounterBreatherTimer_ = 0;
+    stageEmptyFrames_ = 0.0f;
     currentWaveIndex_ = targetProgress < 104.0f ? 0 : (targetProgress < 230.0f ? 1 : 2);
     spawnedEnemyCountInWave_ = 0;
     defeatedEnemyCountInWave_ = 0;
@@ -6733,55 +6756,9 @@ void GameRuntime::DrawHud()
 void GameRuntime::DrawControlsHelp()
 {
     if (!showControlsHelp_) { return; }
-
     Math::Vector2 min{}, size{};
     GetEffectiveHudViewportRect(min, size);
-    const float scale = GetCombatHudScale(size);
-    ImGui::SetNextWindowPos({ min.x + size.x * 0.5f, min.y + size.y * 0.5f },
-        ImGuiCond_Always, { 0.5f, 0.5f });
-    ImGui::SetNextWindowSize({ 560.0f * scale, 0.0f });
-    ImGui::PushFont(CombatHud::BattleFont(), 18.0f * scale);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 28.0f * scale, 24.0f * scale });
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 12.0f * scale, 10.0f * scale });
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 21, 22, 246));
-    ImGui::PushStyleColor(ImGuiCol_Text, CombatHud::White);
-    ImGui::PushStyleColor(ImGuiCol_TextDisabled, CombatHud::Muted);
-    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 46, 47, 255));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(65, 66, 67, 255));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(80, 81, 82, 255));
-    ImGui::Begin("##ControlsHelp", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::PushFont(CombatHud::BattleFont(), 26.0f * scale);
-    ImGui::TextUnformatted("操作方法");
-    ImGui::PopFont();
-    ImGui::Dummy({ 0, 8.0f * scale });
-    if (ImGui::BeginTable("controls", 2, ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn("action", ImGuiTableColumnFlags_WidthFixed, 130.0f * scale);
-        ImGui::TableSetupColumn("input");
-        const char* actions[] = { "移動", "照準", "射撃", "チャージ", "回避", "残像連撃",
-            "スキル回復", "フィーバー", "チェイン", "ボスの反撃" };
-        const char* values[] = { "WASD / 方向キー", "マウス", "SPACE 長押し", "SPACEを離して蓄積",
-            "A・D + SHIFT", "Q", "8秒。射撃命中で短縮", "満タンで自動発動",
-            "連続撃破で得点倍率上昇", "反撃中はダメージ2倍" };
-        for (int row = 0; row < 10; ++row) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextDisabled("%s", actions[row]);
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(values[row]);
-        }
-        ImGui::EndTable();
-    }
-    ImGui::Dummy({ 0, 8.0f * scale });
-    ImGui::PushFont(CombatHud::BattleFont(), 14.0f * scale);
-    ImGui::TextDisabled("表示中もゲームは進行します");
-    ImGui::PopFont();
-    if (ImGui::Button("閉じる", { 120.0f * scale, 34.0f * scale })) { showControlsHelp_ = false; }
-    ImGui::End();
-    ImGui::PopStyleColor(6);
-    ImGui::PopStyleVar(3);
-    ImGui::PopFont();
+    if (MenuUi::Controls({ min.x, min.y }, { size.x, size.y }, true)) { showControlsHelp_ = false; }
 }
 void GameRuntime::DrawTutorialGuideHud()
 {
@@ -7343,145 +7320,70 @@ void GameRuntime::DrawPlayerDamageHud()
 
 void GameRuntime::DrawResultOverlay()
 {
-    if (!isGameOver_ && !isGameClear_) {
-        return;
-    }
-    if (resultTransitionTimer_ > 0) {
-        return;
-    }
+    if ((!isGameOver_ && !isGameClear_) || resultTransitionTimer_ > 0) { return; }
 
-    if (IsTutorial()) {
-        ImGui::PushFont(CombatHud::BattleFont(), 18.0f);
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        ImGui::Begin("チュートリアル終了", nullptr,
-            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
-        ImGui::TextUnformatted("練習を終了しました。");
-        ImGui::TextUnformatted("本編はタイトルの「ゲーム開始」から遊べます。");
-        if (ImGui::Button("もう一度練習 [R]", ImVec2(300.0f, 36.0f))) {
-            isRetryRequested_ = true;
-        }
-        if (ImGui::Button("タイトルへ戻る [F2]", ImVec2(300.0f, 36.0f))) {
-            isExitRequested_ = true;
-        }
-        ImGui::End();
-        ImGui::PopFont();
-        return;
-    }
-
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    Math::Vector2 hudMin{};
-    Math::Vector2 hudSize{};
+    Math::Vector2 hudMin{}, hudSize{};
     GetEffectiveHudViewportRect(hudMin, hudSize);
-    const ImVec2 origin(hudMin.x, hudMin.y);
-    const ImVec2 drawSize(hudSize.x, hudSize.y);
     const float scale = GetCombatHudScale(hudSize);
-    const ImVec2 center(origin.x + drawSize.x * 0.5f, origin.y + drawSize.y * 0.48f);
-    const ImVec2 panelSize(640.0f * scale, 430.0f * scale);
-    const ImVec2 panelMin(
-        center.x - panelSize.x * 0.5f,
-        center.y - panelSize.y * 0.5f);
-    const ImVec2 panelMax(
-        center.x + panelSize.x * 0.5f,
-        center.y + panelSize.y * 0.5f);
+    const ImVec2 origin{ hudMin.x, hudMin.y };
+    const ImVec2 panelMin{ origin.x + (hudSize.x - 920 * scale) * 0.5f,
+        origin.y + (hudSize.y - 500 * scale) * 0.5f };
+    const auto p = [&](float x, float y) { return ImVec2(panelMin.x + x * scale, panelMin.y + y * scale); };
+    auto* draw = ImGui::GetForegroundDrawList();
+    // 戦闘HUDより前に一枚の結果シートを置く。黄色の囲み・見出し・評価の重複は使わない。
+    draw->AddRectFilled(origin, { origin.x + hudSize.x, origin.y + hudSize.y }, IM_COL32(0, 0, 0, 175));
+    MenuUi::Sheet(draw, panelMin, p(920, 500), scale);
+    const ImU32 statusColor = isGameClear_ ? IM_COL32(113, 194, 172, 255) : MenuUi::Accent;
+    draw->AddCircleFilled(p(52, 52), 4 * scale, CombatHud::SurfaceColor(statusColor), 16);
+    MenuUi::Text(draw, p(70, 29), 40 * scale, MenuUi::Paper,
+        (IsTutorial() && isGameClear_) ? "TRAINING COMPLETE" : (isGameClear_ ? "STAGE CLEAR" : "GAME OVER"));
 
-    const auto p = [panelMin, scale](float x, float y) {
-        return ImVec2(panelMin.x + x * scale, panelMin.y + y * scale);
-    };
-
-    const int totalCentiseconds =
-        (std::max)(0, static_cast<int>(gameplayElapsedSeconds_ * 100.0f));
-    const int minutes = totalCentiseconds / 6000;
-    const int seconds = (totalCentiseconds / 100) % 60;
-    const int centiseconds = totalCentiseconds % 100;
-    const int targetCount = GetTotalEnemyTargetCount() + (bossSpawned_ ? 1 : 0);
-    const char* rank = "--";
-    if (isGameClear_) {
-        if (playerDamageCount_ == 0 && escapedEnemyCount_ <= 2) {
-            rank = "S";
-        } else if (playerDamageCount_ <= 2 && escapedEnemyCount_ <= 5) {
-            rank = "A";
-        } else {
-            rank = "B";
-        }
+    char value[96]{};
+    MenuUi::Text(draw, p(48, 109), 16 * scale, MenuUi::Quiet, "スコア");
+    std::snprintf(value, sizeof(value), "%06d", score_);
+    MenuUi::Text(draw, p(44, 124), 78 * scale, MenuUi::Paper, value);
+    if (isGameClear_ && !IsTutorial()) {
+        const char* rank = playerDamageCount_ == 0 && escapedEnemyCount_ <= 2 ? "S" :
+            (playerDamageCount_ <= 2 && escapedEnemyCount_ <= 5 ? "A" : "B");
+        MenuUi::Text(draw, p(768, 109), 16 * scale, MenuUi::Quiet, "RANK");
+        MenuUi::Text(draw, p(872, 75), 132 * scale, IM_COL32(160, 190, 225, 255), rank, true);
     }
-
-    const ImU32 resultAccent = isGameClear_ ? CombatHud::GaugeGold : CombatHud::Danger;
-    CombatHud::Panel(drawList, panelMin, panelMax, scale);
-    drawList->AddRectFilled(p(0, 0), p(640, 4), resultAccent);
-    CombatHud::Readout(drawList, p(32, 24), 30.0f * scale, resultAccent,
-        isGameClear_ ? "任務達成" : "作戦失敗");
-    CombatHud::Readout(drawList, p(32, 81), 14.0f * scale, CombatHud::Muted, "獲得スコア");
-    char valueText[96]{};
-    std::snprintf(valueText, sizeof(valueText), "%06d", score_);
-    CombatHud::Readout(drawList, p(30, 103), 42.0f * scale, CombatHud::White, valueText);
-    if (isGameClear_) {
-        CombatHud::Readout(drawList, p(608, 25), 14.0f * scale, CombatHud::Muted, "評価", true);
-        CombatHud::Readout(drawList, p(608, 47), 80.0f * scale, resultAccent, rank, true);
-    }
-    drawList->AddLine(p(32, 160), p(608, 160), IM_COL32(160, 160, 156, 70));
-
-    constexpr float kLeftLabelX = 32.0f;
-    constexpr float kLeftValueX = 282.0f;
-    constexpr float kRightLabelX = 334.0f;
-    constexpr float kRightValueX = 608.0f;
-    constexpr float kFirstRowY = 178.0f;
-    constexpr float kRowStepY = 40.0f;
-    const auto drawResultValue = [drawList, p, scale](
-                                     float labelX,
-                                     float valueX,
-                                     float y,
-                                     const char* label,
-                                     const char* value) {
-        CombatHud::Readout(drawList, p(labelX, y + 5), 17.0f * scale, CombatHud::Muted, label);
-        CombatHud::Readout(drawList, p(valueX, y), 24.0f * scale, CombatHud::White, value, true);
+    const ImU32 rule = CombatHud::SurfaceColor(IM_COL32(81, 95, 114, 155));
+    draw->AddLine(p(48, 218), p(872, 218), rule, scale);
+    // 一列四項目。数値が先に目へ入り、単位や名称は同じ場所で読める。
+    const auto stat = [&](int column, int row, const char* label, const char* number) {
+        const float x = 48.0f + static_cast<float>(column) * 212.0f;
+        const float y = 242.0f + static_cast<float>(row) * 77.0f;
+        MenuUi::Text(draw, p(x, y), 15 * scale, MenuUi::Quiet, label);
+        MenuUi::Text(draw, p(x, y + 22), 29 * scale, MenuUi::Paper, number);
     };
+    const int total = (std::max)(0, static_cast<int>(gameplayElapsedSeconds_ * 100));
+    std::snprintf(value, sizeof(value), "%02d:%02d.%02d", total / 6000, (total / 100) % 60, total % 100);
+    stat(0, 0, "プレイ時間", value);
+    std::snprintf(value, sizeof(value), "%d / %d", defeatedEnemyCount_, GetTotalEnemyTargetCount() + (bossSpawned_ ? 1 : 0));
+    stat(1, 0, "撃破数", value);
+    std::snprintf(value, sizeof(value), "%d", maxDefeatChainCount_);
+    stat(2, 0, "最大連続撃破", value);
+    std::snprintf(value, sizeof(value), "%d", playerDamageCount_);
+    stat(3, 0, "被弾回数", value);
+    std::snprintf(value, sizeof(value), "%d", playerShotsFired_);
+    stat(0, 1, "発射数", value);
+    std::snprintf(value, sizeof(value), "%d", playerHitCount_);
+    stat(1, 1, "命中数", value);
+    std::snprintf(value, sizeof(value), "%d", justDodgeCount_);
+    stat(2, 1, "ジャスト回避", value);
+    std::snprintf(value, sizeof(value), "%d", escapedEnemyCount_);
+    stat(3, 1, "逃した敵", value);
+    draw->AddLine(p(48, 408), p(872, 408), rule, scale);
 
-    std::snprintf(valueText, sizeof(valueText), "%02d:%02d.%02d", minutes, seconds, centiseconds);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY, "作戦時間", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", playerDamageCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY, "被弾回数", valueText);
-
-    std::snprintf(valueText, sizeof(valueText), "%d / %d", defeatedEnemyCount_, targetCount);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY, "撃破数", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", escapedEnemyCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY, "逃した敵", valueText);
-
-    std::snprintf(valueText, sizeof(valueText), "%d", playerShotsFired_);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 2.0f, "発射数", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", playerHitCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 2.0f, "命中数", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", maxDefeatChainCount_);
-    drawResultValue(kLeftLabelX, kLeftValueX, kFirstRowY + kRowStepY * 3.0f, "最大連続撃破", valueText);
-    std::snprintf(valueText, sizeof(valueText), "%d", justDodgeCount_);
-    drawResultValue(kRightLabelX, kRightValueX, kFirstRowY + kRowStepY * 3.0f, "ジャスト回避", valueText);
-    drawList->AddLine(p(32, 352), p(608, 352), IM_COL32(160, 160, 156, 70));
-    // キーボードを知らない初見の人も、結果から次のプレイへ戻れる。
-    ImGui::SetNextWindowPos(p(32, 374), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(576.0f * scale, 42.0f * scale), ImGuiCond_Always);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::Begin("Result actions", nullptr, ImGuiWindowFlags_NoDecoration |
-        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav);
-    const auto resultButton = [drawList, scale](const char* label, bool primary) {
-        const bool clicked = ImGui::InvisibleButton(label, ImVec2(276.0f * scale, 40.0f * scale));
-        const ImVec2 min = ImGui::GetItemRectMin();
-        const ImVec2 max = ImGui::GetItemRectMax();
-        // HUDパネルと同じ前景レイヤーへ描き、パネルの裏にボタンが隠れないようにする。
-        const bool highlighted = primary || ImGui::IsItemHovered();
-        CombatHud::Panel(drawList, min, max, scale);
-        drawList->AddRect(min, max, highlighted ? CombatHud::GaugeGold : CombatHud::Muted,
-            2.0f * scale, 0, scale);
-        const float width = CombatHud::ReadoutWidth(label, 18.0f * scale);
-        CombatHud::Readout(drawList, ImVec2((min.x + max.x - width) * 0.5f,
-            min.y + 9.0f * scale), 18.0f * scale, highlighted ? CombatHud::GaugeGold : CombatHud::White, label);
-        return clicked;
-    };
-    if (resultButton("再挑戦", true)) {
-        isRetryRequested_ = true;
-    }
-    ImGui::SameLine(0.0f, 24.0f * scale);
-    if (resultButton("タイトル", false)) {
+    ImGui::SetNextWindowPos(panelMin, ImGuiCond_Always);
+    ImGui::SetNextWindowSize({ 920 * scale, 500 * scale }, ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+    ImGui::Begin("##ResultActions", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav);
+    if (MenuUi::Button(draw, "retry", IsTutorial() ? "もう一度練習" : "再挑戦",
+        p(452, 434), { 200 * scale, 44 * scale }, scale, true)) { isRetryRequested_ = true; }
+    if (MenuUi::Button(draw, "title", "タイトル", p(672, 434), { 200 * scale, 44 * scale }, scale)) {
         isExitRequested_ = true;
     }
     ImGui::End();

@@ -612,6 +612,7 @@ private:
     bool hitConfirmDestroyed_ = false;
     bool stageTimelineWasBlocked_ = false;
     int stageEncounterBreatherTimer_ = 0;
+    float stageEmptyFrames_ = 0.0f; // 敵不在の経過時間。通常編隊間だけ次の出現までの待ちを制限する。
     const char* tutorialGuideText_ = nullptr; // チュートリアルの配置イベントに対応する操作案内。
     int tutorialGuideTimer_ = 0; // 案内の残り表示フレーム。初回の編隊出現で設定する。
     int postEffectMode_ = 12;

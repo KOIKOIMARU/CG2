@@ -527,6 +527,9 @@
     <ClInclude Include="include\app\CombatHud.h">
       <Filter>include\app</Filter>
     </ClInclude>
+    <ClInclude Include="include\app\MenuUi.h">
+      <Filter>include\app</Filter>
+    </ClInclude>
     <ClInclude Include="include\app\Player.h">
       <Filter>include\app</Filter>
     </ClInclude>

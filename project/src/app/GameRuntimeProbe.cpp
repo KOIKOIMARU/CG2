@@ -173,6 +173,9 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
     static int phase = 0; // 0: 通常戦闘 1: クリア後の再挑戦待ち 2: 完了
     static int frame = 0;
     static int resultFrames = 0;
+    static float longestEmptyGap = 0.0f;
+    static int encounterGapCount = 0;
+    static bool wasEmpty = false;
     const auto log = [&](const std::string& message) {
         std::ofstream file(logPath, std::ios::app);
         file << "PLAYTHROUGH " << message << '\n';
@@ -217,6 +220,13 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
         log("START normal_damage=1 normal_collisions=1 audio_voices=28");
     }
     ++frame;
+    const bool empty = !bossSpawned_ && enemies_.empty() && defeatedEnemyCount_ > 0;
+    if (empty && std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return !v; })) {
+        longestEmptyGap = (std::max)(longestEmptyGap, stageEmptyFrames_);
+        if (stageEmptyFrames_ > 62.0f) { throw std::runtime_error("Empty encounter gap exceeded one second"); }
+    }
+    if (wasEmpty && !empty) { ++encounterGapCount; }
+    wasEmpty = empty;
     if (frame == 61 && !showControlsHelp_) {
         throw std::runtime_error("H did not open controls help");
     }
@@ -243,6 +253,8 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
                 throw std::runtime_error("Fever did not auto activate during normal combat");
             }
             log("FEVER_AUTO_OK no_activation_key=1");
+            log("PACING_OK encounter_gaps=" + std::to_string(encounterGapCount) +
+                " longest_empty_frames=" + std::to_string(longestEmptyGap));
             log("CLEAR hp=" + std::to_string(player_->GetHp()) +
                 " defeated=" + std::to_string(defeatedEnemyCount_) +
                 " escaped=" + std::to_string(escapedEnemyCount_) +
@@ -584,12 +596,13 @@ bool GameRuntime::RunBossProbe(const std::string& logPath, bool preview)
     const auto require = [&](bool ok, const char* message) {
         if (!ok) { log(std::string("FAIL ") + message); throw std::runtime_error(message); }
     };
-    if (preview && (frame == 138 || frame == 172 || frame == 366 || frame == 606 || frame == 773)) {
+    if (preview && (frame == 138 || frame == 172 || frame == 366 || frame == 606 || frame == 773 ||
+        frame == 880 || frame == 901 || frame == 931)) {
         phantomPreviewPaused_ = true;
-        ImGui::SetNextWindowPos({ 20.0f, 165.0f }, ImGuiCond_Always);
+        ImGui::SetNextWindowPos({ 20.0f, 30.0f }, ImGuiCond_Always);
         ImGui::Begin("Boss visual fixture", nullptr,
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
-        ImGui::TextUnformatted("TEST ONLY: boss windup / recovery / defeat");
+        ImGui::TextUnformatted("TEST ONLY: boss / clear / failed / training");
         ImGui::Text("Frame %d   Pattern %d   Counter %d", frame, bossAttackPattern_, bossCounterTimer_);
         const bool next = ImGui::Button("NEXT / resume test", { 220.0f, 36.0f });
         ImGui::End();
@@ -708,8 +721,17 @@ bool GameRuntime::RunBossProbe(const std::string& logPath, bool preview)
         require(hitEffectObjectPoolMisses_ == 0, "live defeat effect pool exhausted");
         log("PASS clear_music_silent=1 voices=28 pool_misses=0");
         input_->SetTestFrame({}, { 640, 320 });
-        return true;
+        if (!preview) { return true; }
     }
+    // リザルトの分岐は映像検証時だけ切り替える。通常プレイ・通常の通し試験は実際の勝敗を使う。
+    if (preview && frame == 900) { isGameClear_ = false; isGameOver_ = true; }
+    if (preview && frame == 930) {
+        playMode_ = PlayMode::Tutorial;
+        isGameClear_ = true;
+        isGameOver_ = bossSpawned_ = false;
+        defeatedEnemyCount_ = GetTotalEnemyTargetCount();
+    }
+    if (preview && frame == 960) { log("RESULT_PREVIEW_COMPLETE"); return true; }
     input_->SetTestFrame({}, { 640, 320 });
     return false;
 }
