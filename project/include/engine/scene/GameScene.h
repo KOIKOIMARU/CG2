@@ -28,6 +28,7 @@ public:
     bool RunPlaythroughProbe(const std::string& logPath) { return runtime_.RunPlaythroughProbe(logPath); }
     bool RunPhantomProbe(const std::string& logPath, bool preview) { return runtime_.RunPhantomProbe(logPath, preview); }
     bool RunChargeShotProbe(const std::string& logPath, bool preview) { return runtime_.RunChargeShotProbe(logPath, preview); }
+    bool RunBossProbe(const std::string& logPath, bool preview) { return runtime_.RunBossProbe(logPath, preview); }
 #endif
 
 private:

@@ -62,6 +62,7 @@ public:
     bool RunPlaythroughProbe(const std::string& logPath);
     bool RunPhantomProbe(const std::string& logPath, bool preview = false);
     bool RunChargeShotProbe(const std::string& logPath, bool preview = false);
+    bool RunBossProbe(const std::string& logPath, bool preview = false);
 #endif
 
 private:
@@ -109,7 +110,10 @@ private:
     Math::Vector3 phantomFinishPosition_{};
     Math::Vector3 phantomModelCenter_{};
     void PlaySfx(const char* key);
+    void UpdateMusic();
     std::unique_ptr<SoundManager> sound_;
+    std::array<float, 3> musicLevels_{}; // 通常・ボス・フィーバーのクロスフェード音量。
+    int musicTrack_ = -1; // -1は結果画面などの無音状態。
     bool resultSoundPlayed_ = false;
     PlayMode playMode_ = PlayMode::Game; // 入場時に確定。本編と練習の進行・成績を混在させない。
     enum class HitEffectType {
@@ -503,9 +507,12 @@ private:
     int bossAttackStep_ = -1;
     int bossAttackPattern_ = 0;
     int bossAttackSequence_ = 0;
+    int bossShotsFired_ = 0; // 通し試験で「登場しただけで倒される」状態を検出する実発射数。
     int bossPhase_ = 1;
     int bossCounterTimer_ = 0;
     int bossCounterDuration_ = 1;
+    Math::Vector3 bossAimPoint_{}; // 予備動作の終盤で固定する狙い。連射中は自機を追い直さない。
+    Math::Vector3 bossDefeatPosition_{}; // 敵の破棄後も、時間差の爆発だけを安全に再生する位置。
     int currentWaveIndex_ = 0;
     int spawnedEnemyCountInWave_ = 0;
     int defeatedEnemyCountInWave_ = 0;

@@ -116,6 +116,7 @@ void Enemy::Initialize(
     sniperBracePosition_ = {};
     sniperBraced_ = false;
     attackTelegraphRate_ = 0.0f;
+    bossRecoveryRate_ = 0.0f;
 
     switch (behavior_) {
     case Behavior::Boss:
@@ -256,7 +257,10 @@ void Enemy::Update(float railDistance, float timeScale)
             motionScale : motionScale * kStandardEnemyActionTimeScale;
     ageTimer_ += actionTimeScale;
     age_ = static_cast<int>(std::floor(ageTimer_));
-    moveTimer_ += actionTimeScale;
+    // ボスは構え・反動中に不規則な横揺れを止め、攻撃と反撃の狙いを読みやすくする。
+    if (behavior_ != Behavior::Boss || (attackTelegraphRate_ <= 0.0f && bossRecoveryRate_ <= 0.0f)) {
+        moveTimer_ += actionTimeScale;
+    }
     if (hitFlashTimer_ > 0) {
         --hitFlashTimer_;
     }
@@ -268,7 +272,7 @@ void Enemy::Update(float railDistance, float timeScale)
     switch (behavior_) {
     case Behavior::Boss: {
         const float entryRate = EaseOutCubic(static_cast<float>(age_) / 96.0f);
-        const float fightRate = Clamp01(static_cast<float>(age_ - 96) / 180.0f);
+        const float fightRate = Clamp01((moveTimer_ - 96.0f) / 180.0f);
         const float fightTime = (std::max)(0.0f, moveTimer_ - 96.0f);
         const float lungeWave =
             std::pow((std::max)(0.0f, std::sin(fightTime * 0.034f + 1.10f)), 4.0f);
@@ -301,6 +305,15 @@ void Enemy::Update(float railDistance, float timeScale)
         objectRotate.z =
             -translate_.x * 0.026f +
             std::sin(moveTimer_ * 0.024f + phase_) * 0.090f;
+        if (bossRecoveryRate_ > 0.0f) {
+            const float elapsed = 1.0f - Clamp01(bossRecoveryRate_);
+            const float recoil = (std::max)(0.0f, 1.0f - elapsed / 0.12f);
+            const float settle = std::sin(elapsed * kPi);
+            translate_.z += recoil * 2.0f - settle * 1.8f;
+            objectRotate.x += recoil * 0.14f + settle * 0.05f;
+        } else {
+            objectRotate.x -= attackTelegraphRate_ * 0.08f;
+        }
         break;
     }
     case Behavior::Swoop: {
@@ -799,7 +812,10 @@ bool Enemy::Damage(int damage)
 
 bool Enemy::IsTargetable() const
 {
-    return lifeState_ == LifeState::Alive && visualScaleRate_ >= 0.46f;
+    // 大型機が遠方から拡大表示されている途中はロック・被弾対象にしない。
+    // 戦闘位置へ到着してから攻防を開始する。戦闘中の無敵やHP増加は追加しない。
+    return lifeState_ == LifeState::Alive && visualScaleRate_ >= 0.46f &&
+        (behavior_ != Behavior::Boss || age_ >= 96);
 }
 
 Math::Vector3 Enemy::GetAimPosition() const

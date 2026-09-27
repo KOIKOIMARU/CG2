@@ -189,10 +189,12 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
             std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return v; })) {
             throw std::runtime_error("Retry did not reset gameplay state");
         }
-        if (!sound_ || sound_->GetVoiceCount() != 25 || sound_->GetPlayCount() != 0) {
+        // 再入場の最初のUpdateは既に通っているので、新しい通常曲が一つだけ再生される。
+        if (!sound_ || sound_->GetVoiceCount() != 28 || sound_->GetPlayCount() != 0 ||
+            sound_->GetLoopCount() != 1 || musicTrack_ != 0) {
             throw std::runtime_error("Retry did not recreate the bounded audio bank");
         }
-        log("RETRY_RESET_OK hp=100 score=0 fever=0 voices=25");
+        log("RETRY_RESET_OK hp=100 score=0 fever=0 voices=28 music_loops=1 track=stage");
         phase = 2;
         input_->SetTestFrame(keys, mouse);
         return true;
@@ -209,10 +211,10 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
         CheckSniperPosture(object3dCommon_.get(), enemyShooterModel_);
         log("SNIPER_POSTURE_OK brace_still=1 rail_relative=1 recoil_on_shot=1 recovery_open=1 death_cancels=1");
         log("ENEMY_FIRE_CONTROL_OK rail_intercept=1 fixed_aim=1 windup_burst_recovery=1 slow_steps=0.25,0.5,1");
-        if (!sound_ || sound_->GetVoiceCount() != 25) {
-            throw std::runtime_error("Combat audio bank failed to load all 25 voices");
+        if (!sound_ || sound_->GetVoiceCount() != 28) {
+            throw std::runtime_error("Combat audio bank failed to load all 28 voices");
         }
-        log("START normal_damage=1 normal_collisions=1 audio_voices=25");
+        log("START normal_damage=1 normal_collisions=1 audio_voices=28");
     }
     ++frame;
     if (frame == 61 && !showControlsHelp_) {
@@ -234,6 +236,9 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
             throw std::runtime_error("Clear without full schedule and boss defeat");
         }
         if (resultTransitionTimer_ <= 0 && ++resultFrames >= 120 && phase == 0) {
+            if (bossShotsFired_ <= 0) {
+                throw std::runtime_error("Boss was defeated without firing any attack");
+            }
             if (feverActivationCount_ <= 0) {
                 throw std::runtime_error("Fever did not auto activate during normal combat");
             }
@@ -246,6 +251,9 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
                 " fever=" + std::to_string(feverActivationCount_) +
                 " phantom=" + std::to_string(phantomActivationCount_) +
                 " phantom_kills=" + std::to_string(phantomDefeatCount_) +
+                " boss_attacks_started=" + std::to_string(bossAttackSequence_) +
+                " boss_shots=" + std::to_string(bossShotsFired_) +
+                " boss_phase=" + std::to_string(bossPhase_) +
                 " pool_miss_p=" + std::to_string(playerBulletPoolMisses_) +
                 " pool_miss_e=" + std::to_string(enemyBulletPoolMisses_) +
                 " pool_miss_fx=" + std::to_string(hitEffectObjectPoolMisses_) +
@@ -347,8 +355,8 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
     if (retry && !isGameClear_) {
         require(phantomReady_ && !IsPhantomRaidActive() && phantomActivationCount_ == 0 &&
             phantomDefeatCount_ == 0 && phantomCooldown_ == 0.0f, "retry skill state reset");
-        require(sound_ && sound_->GetVoiceCount() == 25, "retry audio pool");
-        log("PASS retry_reset voices=25");
+        require(sound_ && sound_->GetVoiceCount() == 28, "retry audio pool");
+        log("PASS retry_reset voices=28");
         input_->SetTestFrame(keys, mouse);
         return true;
     }
@@ -361,7 +369,7 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
         log("DODGE_CONTROLS_OK distance=4.4 duration=16 buffer=5 slow_independent=1 steps=0.5,1,2 edge_ok=1");
         require(phantomReady_ && !IsPhantomRaidActive() && phantomCooldown_ == 0.0f,
             "startup must be ready without dodge, but must not auto activate");
-        require(sound_ && sound_->GetVoiceCount() == 25, "all sounds loaded");
+        require(sound_ && sound_->GetVoiceCount() == 28, "all sounds loaded");
         std::fill(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), true);
         log("BEGIN controlled_enemy_fixture=1 normal_damage_code=1");
         keys[DIK_Q] = 0x80;
@@ -566,6 +574,146 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
     input_->SetTestFrame(keys, mouse);
     return false;
 }
+bool GameRuntime::RunBossProbe(const std::string& logPath, bool preview)
+{
+    static int frame = 0;
+    const auto log = [&](const std::string& message) {
+        std::ofstream file(logPath, std::ios::app);
+        file << "BOSS_TEST " << message << '\n';
+    };
+    const auto require = [&](bool ok, const char* message) {
+        if (!ok) { log(std::string("FAIL ") + message); throw std::runtime_error(message); }
+    };
+    if (preview && (frame == 138 || frame == 172 || frame == 366 || frame == 606 || frame == 773)) {
+        phantomPreviewPaused_ = true;
+        ImGui::SetNextWindowPos({ 20.0f, 165.0f }, ImGuiCond_Always);
+        ImGui::Begin("Boss visual fixture", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::TextUnformatted("TEST ONLY: boss windup / recovery / defeat");
+        ImGui::Text("Frame %d   Pattern %d   Counter %d", frame, bossAttackPattern_, bossCounterTimer_);
+        const bool next = ImGui::Button("NEXT / resume test", { 220.0f, 36.0f });
+        ImGui::End();
+        if (!next) { input_->SetTestFrame({}, { 640, 320 }); return false; }
+        phantomPreviewPaused_ = false;
+    }
+    ++frame;
+    if (frame == 1) {
+        require(sound_ && sound_->GetVoiceCount() == 28, "BGM/SFX bank incomplete");
+        for (const char* key : { "music_stage", "music_boss", "music_fever" }) {
+            require(sound_->PlayLoop(key) && sound_->PlayLoop(key) && sound_->GetLoopCount() == 1,
+                "loop not queued or duplicate loop created");
+            sound_->Stop(key);
+            require(sound_->GetLoopCount() == 0, "loop did not stop");
+        }
+        require(sound_->GetVoiceCount() == 28 && sound_->GetPlayCount() == 0, "loop changed SFX counter/pool");
+        log("LOOPS_OK voices=28 duplicate_safe=1 stop_safe=1 sfx_count_unchanged=1");
+        const auto reset = [&]() {
+            isGameClear_ = false;
+            isGameOver_ = false;
+            resultSoundPlayed_ = false;
+            score_ = 0;
+            feverTimer_ = 0;
+            feverGauge_ = 0;
+            DebugJumpToStagePhase(3);
+            for (auto& effect : hitEffects_) { RecycleHitEffectVisuals(effect); }
+            hitEffects_.clear();
+            SpawnBossEnemy();
+            return enemies_.back().get();
+        };
+        for (int phase : { 1, 2 }) {
+            for (int pattern = 0; pattern < 3; ++pattern) {
+                auto* boss = reset();
+                require(!boss->IsTargetable(), "boss targetable before arrival");
+                for (int step = 0; step < 95; ++step) { boss->Update(railDistance_); }
+                require(!boss->IsTargetable(), "boss became targetable before entry completed");
+                for (int step = 95; step < 300; ++step) { boss->Update(railDistance_); }
+                require(boss->CanShoot(), "boss fixture not ready");
+                bossIntroTimer_ = 0;
+                bossPhase_ = phase;
+                bossAttackSequence_ = pattern;
+                bossAttackCooldown_ = 0;
+                UpdateBossActions();
+                const int windup = bossAttackStepTimer_;
+                require(windup >= 38 && enemyBullets_.empty(), "boss fired without a readable windup");
+                while (bossAttackStepTimer_ > 14) { UpdateBossActions(); }
+                bossAimPoint_.x = 3.75f; // 照準固定後に現在の自機座標で上書きされないことを確認。
+                while (bossAttackStepTimer_ > 0) { UpdateBossActions(); }
+                require(enemyBullets_.empty() && bossAimPoint_.x == 3.75f, "boss tracked after aim lock");
+                UpdateBossActions();
+                int guard = 0;
+                while (bossAttackStep_ >= 0 && ++guard < 150) { UpdateBossActions(); }
+                const size_t expected = pattern == 0 ? (phase == 2 ? 7u : 5u) :
+                    pattern == 1 ? (phase == 2 ? 9u : 7u) : (phase == 2 ? 3u : 1u);
+                require(bossAttackStep_ == -1 && enemyBullets_.size() == expected && bossAimPoint_.x == 3.75f,
+                    "boss pattern count/fixed sweep aim incorrect");
+                if (pattern == 2) {
+                    const auto p = enemyBullets_.front()->GetTranslate();
+                    const auto v = enemyBullets_.front()->GetVelocity();
+                    const float t = (p.z - player_->GetTranslate().z - 0.18f) / (railSpeed_ - v.z);
+                    require(t > 0 && std::abs(p.x + v.x * t - 3.75f) < 0.01f, "charge ignored fixed aim");
+                }
+                require(bossCounterTimer_ == (phase == 2 ? 108 : 120) &&
+                    bossAttackCooldown_ > bossCounterTimer_, "counter opening too short or overlaps next attack");
+                boss->SetBossRecoveryRate(0.5f);
+                boss->Update(railDistance_);
+                const float x = boss->GetTranslate().x;
+                for (int step = 0; step < 40; ++step) { boss->Update(railDistance_); }
+                require(std::abs(boss->GetTranslate().x - x) < 0.001f, "boss drifted during recovery");
+                const size_t shotCount = enemyBullets_.size();
+                for (int step = 0; step < bossCounterDuration_; ++step) { UpdateBossActions(); }
+                require(bossCounterTimer_ == 0 && enemyBullets_.size() == shotCount,
+                    "boss fired inside counter opening");
+                log("PATTERN_OK phase=" + std::to_string(phase) + " pattern=" + std::to_string(pattern) +
+                    " windup=" + std::to_string(windup) + " shots=" + std::to_string(shotCount));
+            }
+        }
+        auto* boss = reset();
+        for (int step = 0; step < 300; ++step) { boss->Update(railDistance_); }
+        boss->Damage(boss->GetMaxHp() / 2);
+        FireEnemyBullet(boss->GetAimPosition(), EnemyBulletStyle::BossCharge);
+        UpdateBossActions();
+        require(bossPhase_ == 2 && bossPhaseTransitionTimer_ > 0 && enemyBullets_.empty(),
+            "phase transition retained dangerous bullets");
+        log("PHASE_OK hp_half_transition=1 bullets_recycled=1");
+        boss->Damage(999);
+        OnEnemyDestroyed(*boss, true, false);
+        require(isGameClear_ && bossDefeated_ && enemyBullets_.empty() && !resultSoundPlayed_,
+            "boss defeat cleanup failed");
+        for (int step = 0; step < 45; ++step) { UpdateResultAndSceneObjects(); }
+        require(resultSoundPlayed_ && bossDefeatFlashTimer_ == 0, "defeat sequence/result cue not completed");
+        require(enemyBulletPoolMisses_ == 0 && hitEffectObjectPoolMisses_ == 0, "boss exhausted fixed pools");
+        log("DEFEAT_OK delayed_bursts=3 result_after_bursts=1 pool_misses=0");
+        reset();
+        cameraShakeTimer_ = 0;
+        musicTrack_ = -1;
+        musicLevels_.fill(0.0f);
+        log("LIVE_VISUAL_BEGIN controlled_fixture=1");
+    }
+    if (frame == 500) { feverTimer_ = 90; }
+    if (frame == 530) {
+        require(musicTrack_ == 2 && sound_->GetLoopCount() == 1, "fever crossfade did not settle");
+        log("FEVER_MUSIC_OK one_loop=1");
+    }
+    if (frame == 640) {
+        require(musicTrack_ == 1 && sound_->GetLoopCount() == 1, "boss music did not resume");
+        log("BOSS_MUSIC_OK one_loop=1");
+    }
+    if (frame == 750) {
+        auto* boss = enemies_.front().get();
+        boss->Damage(999); // 撃破映像の固定サンプル。通常通し試験ではこの操作を使わない。
+        OnEnemyDestroyed(*boss, true, false);
+    }
+    if (frame == 840) {
+        require(isGameClear_ && sound_->GetLoopCount() == 0 && resultSoundPlayed_, "music remains after clear");
+        require(hitEffectObjectPoolMisses_ == 0, "live defeat effect pool exhausted");
+        log("PASS clear_music_silent=1 voices=28 pool_misses=0");
+        input_->SetTestFrame({}, { 640, 320 });
+        return true;
+    }
+    input_->SetTestFrame({}, { 640, 320 });
+    return false;
+}
+
 bool GameRuntime::RunChargeShotProbe(const std::string& logPath, bool preview)
 {
     static int frame = 0;

@@ -101,9 +101,11 @@ void MyGame::Update() {
     imguiManager_->Begin();
 
 #ifdef _DEBUG
-    if (smokeTestOptions_.enabled && (smokeTestOptions_.playthrough || smokeTestOptions_.phantom || smokeTestOptions_.chargeShot)) {
+    if (smokeTestOptions_.enabled && (smokeTestOptions_.playthrough || smokeTestOptions_.phantom || smokeTestOptions_.chargeShot || smokeTestOptions_.boss)) {
         if (auto* game = dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
-            playthroughComplete_ = smokeTestOptions_.chargeShot ?
+            playthroughComplete_ = smokeTestOptions_.boss ?
+                game->RunBossProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.bossPreview) :
+                smokeTestOptions_.chargeShot ?
                 game->RunChargeShotProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.chargePreview) :
                 smokeTestOptions_.phantom ?
                 game->RunPhantomProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.phantomPreview) :
@@ -238,7 +240,7 @@ void MyGame::UpdateSmokeTest()
     ++smokeGameplayFrameCount_;
     const double gameplayElapsedSeconds =
         std::chrono::duration<double>(now - smokeGameplayStartTime_).count();
-    if ((smokeTestOptions_.playthrough || smokeTestOptions_.phantom || smokeTestOptions_.chargeShot) && !playthroughComplete_ &&
+    if ((smokeTestOptions_.playthrough || smokeTestOptions_.phantom || smokeTestOptions_.chargeShot || smokeTestOptions_.boss) && !playthroughComplete_ &&
         gameplayElapsedSeconds >= smokeTestOptions_.gameplaySeconds) {
         FailSmokeTest("playthrough_timeout", 7);
         return;

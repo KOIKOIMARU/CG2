@@ -7,6 +7,7 @@
 #include "engine/3d/Skybox.h"
 #include "engine/3d/TextureManager.h"
 #include "engine/base/DirectXCommon.h"
+#include "engine/base/Logger.h"
 #include "engine/io/Input.h"
 #include "engine/audio/SoundManager.h"
 #include "engine/scene/SceneSerializer.h"
@@ -136,9 +137,16 @@ constexpr float kTutorialFullCombatDistance = 68.0f;
 constexpr int kTutorialShotIntervalFrames = 96;
 constexpr int kTutorialGuideDurationFrames = 240;
 constexpr int kBossWarningDuration = 150;
-constexpr int kBossIntroDuration = 120;
+constexpr int kBossIntroDuration = 72;
 constexpr int kBossDefeatFlashDuration = 44;
-constexpr int kBossPhaseTransitionDuration = 90;
+constexpr int kBossPhaseTransitionDuration = 36;
+constexpr int kBossAimLockFrames = 14;
+int BossWindupDuration(int pattern, int phase)
+{
+    constexpr int normal[] = { 48, 54, 78 };
+    constexpr int enraged[] = { 38, 42, 62 };
+    return phase >= 2 ? enraged[std::clamp(pattern, 0, 2)] : normal[std::clamp(pattern, 0, 2)];
+}
 constexpr int kBossMaxHp = 52;
 constexpr int kMaxActiveStageEnemiesBeforeBoss = 7;
 constexpr int kMaxStageEnemyEventsPerFrame = 2;
@@ -496,6 +504,30 @@ void GameRuntime::PlaySfx(const char* key)
     }
 }
 
+void GameRuntime::UpdateMusic()
+{
+    if (!sound_) { return; }
+    constexpr const char* keys[] = { "music_stage", "music_boss", "music_fever" };
+    constexpr float volumes[] = { 0.28f, 0.32f, 0.30f };
+    const int desired = (isGameOver_ || isGameClear_) ? -1 : (feverTimer_ > 0 ? 2 : (bossSpawned_ ? 1 : 0));
+    if (desired != musicTrack_) {
+        if (desired >= 0 && !sound_->PlayLoop(keys[desired])) {
+            Logger::Log("Music loop unavailable; gameplay continues.\n");
+        }
+        musicTrack_ = desired;
+    }
+    const float dt = dxCommon_ ? std::clamp(dxCommon_->GetDeltaTime(), 0.0f, 0.1f) : 1.0f / 60.0f;
+    const float duck = IsPhantomRaidActive() || bossPhaseTransitionTimer_ > 0 ? 0.42f : 1.0f;
+    for (int index = 0; index < 3; ++index) {
+        const float target = index == desired ? volumes[index] * duck * (IsTutorial() ? 0.70f : 1.0f) : 0.0f;
+        auto& level = musicLevels_[index];
+        const float speed = volumes[index] / (target > level ? 0.70f : 0.35f);
+        level += std::clamp(target - level, -speed * dt, speed * dt);
+        sound_->SetVolume(keys[index], level);
+        if (index != desired && level <= 0.0f) { sound_->Stop(keys[index]); }
+    }
+}
+
 void GameRuntime::SetSystems(
     DirectXCommon* dxCommon,
     SrvManager* srvManager,
@@ -724,9 +756,12 @@ void GameRuntime::Initialize(PlayMode mode)
     bossAttackStep_ = -1;
     bossAttackPattern_ = 0;
     bossAttackSequence_ = 0;
+    bossShotsFired_ = 0;
     bossPhase_ = 1;
     bossCounterTimer_ = 0;
     bossCounterDuration_ = 1;
+    bossAimPoint_ = {};
+    bossDefeatPosition_ = {};
     resultTransitionTimer_ = -1;
     railDistance_ = 0.0f;
     railSpeed_ = 0.145f;
@@ -881,9 +916,11 @@ void GameRuntime::Initialize(PlayMode mode)
     InitializeContactShadows();
     InitializePhantomRaid();
 
+    musicLevels_.fill(0.0f);
+    musicTrack_ = -1;
     sound_ = std::make_unique<SoundManager>();
     if (sound_->Initialize()) {
-        // 同時発音枠は合計25。連射は小さめ、命中・撃破を聞き分けられる音量にする。
+        // 効果音の同時発音枠は25。連射は小さめ、命中・撃破を聞き分けられる音量にする。
         sound_->Load("shot", "resources/audio/combat/shot.wav", 4, 0.30f, 0.065f);
         sound_->Load("charge", "resources/audio/combat/charge.wav", 3, 0.44f, 0.09f);
         sound_->Load("hit", "resources/audio/combat/hit.wav", 3, 0.42f, 0.05f);
@@ -896,6 +933,10 @@ void GameRuntime::Initialize(PlayMode mode)
         sound_->Load("skill_ready", "resources/audio/combat/skill_ready.wav", 1, 0.50f, 0.5f);
         sound_->Load("slash", "resources/audio/combat/slash.wav", 3, 0.62f, 0.035f);
         sound_->Load("slash_finish", "resources/audio/combat/slash_finish.wav", 1, 0.70f, 0.4f);
+        // BGM専用3枠を入場時に確保。状態切替では再ロード・ボイス生成を行わない。
+        sound_->Load("music_stage", "resources/audio/music/stage.wav", 1, 0.0f, 0.0f);
+        sound_->Load("music_boss", "resources/audio/music/boss.wav", 1, 0.0f, 0.0f);
+        sound_->Load("music_fever", "resources/audio/music/fever.wav", 1, 0.0f, 0.0f);
     }
 
 #ifdef ENABLE_DEBUG_GUI
@@ -1034,6 +1075,7 @@ void GameRuntime::Update()
 #endif
 
     UpdateResultAndSceneObjects();
+    UpdateMusic();
 }
 
 bool GameRuntime::HandleRuntimeShortcuts()
@@ -1463,9 +1505,12 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     bossAttackStep_ = -1;
     bossAttackPattern_ = 0;
     bossAttackSequence_ = 0;
+    bossShotsFired_ = 0;
     bossPhase_ = 1;
     bossCounterTimer_ = 0;
     bossCounterDuration_ = 1;
+    bossAimPoint_ = {};
+    bossDefeatPosition_ = {};
     resultTransitionTimer_ = -1;
 
     const size_t railEventCount =
@@ -1705,7 +1750,7 @@ void GameRuntime::UpdateBossActions()
     if (bossPhase_ == 1 && boss->GetHp() * 2 <= boss->GetMaxHp()) {
         bossPhase_ = 2;
         bossPhaseTransitionTimer_ = kBossPhaseTransitionDuration;
-        bossAttackCooldown_ = 24;
+        bossAttackCooldown_ = 0;
         bossAttackStepTimer_ = 0;
         bossAttackStep_ = -1;
         bossCounterTimer_ = 0;
@@ -1727,7 +1772,8 @@ void GameRuntime::UpdateBossActions()
     }
 
     const bool isPhaseTwo = bossPhase_ >= 2;
-    const int counterDuration = isPhaseTwo ? 34 : 50;
+    // 自動チャージ(88フレーム)と弾の到達時間を含め、一発を狙って返せる長さ。
+    const int counterDuration = isPhaseTwo ? 108 : 120;
     const Math::Vector3 bossPosition = boss->GetAimPosition();
     const Math::Vector3 leftCannon{
         bossPosition.x - 2.2f,
@@ -1749,18 +1795,17 @@ void GameRuntime::UpdateBossActions()
         bossAttackPattern_ = bossAttackSequence_ % 3;
         ++bossAttackSequence_;
         bossAttackStep_ = 0;
+        bossAimPoint_ = player_->GetTranslate();
+        bossAttackStepTimer_ = BossWindupDuration(bossAttackPattern_, bossPhase_);
         switch (bossAttackPattern_) {
         case 0:
-            bossAttackStepTimer_ = isPhaseTwo ? 24 : 32;
             stageCombatBeatName_ = "Boss fan volley";
             break;
         case 1:
-            bossAttackStepTimer_ = isPhaseTwo ? 20 : 28;
             stageCombatBeatName_ = "Boss sweep";
             break;
         case 2:
         default:
-            bossAttackStepTimer_ = isPhaseTwo ? 38 : 50;
             stageCombatBeatName_ = "Boss charge cannon";
             AddCameraShake(0.08f, 18);
             break;
@@ -1769,6 +1814,9 @@ void GameRuntime::UpdateBossActions()
     }
 
     if (bossAttackStepTimer_ > 0) {
+        if (bossAttackStep_ == 0 && bossAttackStepTimer_ > kBossAimLockFrames) {
+            bossAimPoint_ = player_->GetTranslate();
+        }
         --bossAttackStepTimer_;
         return;
     }
@@ -1785,10 +1833,10 @@ void GameRuntime::UpdateBossActions()
             FireEnemyBullet(
                 index % 2 == 0 ? leftCannon : rightCannon,
                 EnemyBulletStyle::BossCannon,
-                { horizontalOffset, verticalOffset });
+                { horizontalOffset, verticalOffset }, &bossAimPoint_);
         }
         bossAttackStep_ = -1;
-        bossAttackCooldown_ = isPhaseTwo ? 46 : 70;
+        bossAttackCooldown_ = counterDuration + 24;
         bossCounterDuration_ = counterDuration;
         bossCounterTimer_ = counterDuration;
         stageCombatBeatName_ = "Boss exposed";
@@ -1805,11 +1853,11 @@ void GameRuntime::UpdateBossActions()
         FireEnemyBullet(
             shotIndex % 2 == 0 ? leftCannon : rightCannon,
             EnemyBulletStyle::BossCannon,
-            { horizontalOffset, verticalOffset });
+            { horizontalOffset, verticalOffset }, &bossAimPoint_);
         ++bossAttackStep_;
         if (bossAttackStep_ >= shotCount) {
             bossAttackStep_ = -1;
-            bossAttackCooldown_ = isPhaseTwo ? 42 : 66;
+            bossAttackCooldown_ = counterDuration + 24;
             bossCounterDuration_ = counterDuration;
             bossCounterTimer_ = counterDuration;
             stageCombatBeatName_ = "Boss exposed";
@@ -1824,13 +1872,13 @@ void GameRuntime::UpdateBossActions()
             bossPosition.x,
             bossPosition.y - 0.45f,
             bossPosition.z
-        }, EnemyBulletStyle::BossCharge);
+        }, EnemyBulletStyle::BossCharge, {}, &bossAimPoint_);
         if (isPhaseTwo) {
-            FireEnemyBullet(leftCannon, EnemyBulletStyle::BossCannon, { -2.4f, 0.0f });
-            FireEnemyBullet(rightCannon, EnemyBulletStyle::BossCannon, { 2.4f, 0.0f });
+            FireEnemyBullet(leftCannon, EnemyBulletStyle::BossCannon, { -2.4f, 0.0f }, &bossAimPoint_);
+            FireEnemyBullet(rightCannon, EnemyBulletStyle::BossCannon, { 2.4f, 0.0f }, &bossAimPoint_);
         }
         bossAttackStep_ = -1;
-        bossAttackCooldown_ = isPhaseTwo ? 54 : 84;
+        bossAttackCooldown_ = counterDuration + 24;
         bossCounterDuration_ = counterDuration;
         bossCounterTimer_ = counterDuration;
         stageCombatBeatName_ = "Boss exposed";
@@ -1864,7 +1912,7 @@ void GameRuntime::UpdateGameplayCollisions()
 
 void GameRuntime::UpdateResultAndSceneObjects()
 {
-    if ((isGameClear_ || isGameOver_) && !resultSoundPlayed_) {
+    if ((isGameClear_ || isGameOver_) && bossDefeatFlashTimer_ <= 0 && !resultSoundPlayed_) {
         PlaySfx(isGameClear_ ? "clear" : "fail");
         resultSoundPlayed_ = true;
     }
@@ -1876,6 +1924,18 @@ void GameRuntime::UpdateResultAndSceneObjects()
     }
     if (bossDefeatFlashTimer_ > 0) {
         --bossDefeatFlashTimer_;
+        // 同時に白く潰すのでなく、左右→中央と時間差で崩れる余韻を作る。
+        if (bossDefeatFlashTimer_ == 32 || bossDefeatFlashTimer_ == 20 || bossDefeatFlashTimer_ == 8) {
+            const int index = (32 - bossDefeatFlashTimer_) / 12;
+            constexpr Math::Vector3 offsets[] = {
+                { -2.2f, 0.5f, -0.8f }, { 2.2f, -0.3f, 0.4f }, { 0.0f, 1.0f, 0.2f }
+            };
+            const auto& offset = offsets[index];
+            AddEnemyHitEffect({ bossDefeatPosition_.x + offset.x, bossDefeatPosition_.y + offset.y,
+                bossDefeatPosition_.z + offset.z }, index == 2 ? 2.4f : 1.55f);
+            PlaySfx("destroy");
+            AddCameraShake(index == 2 ? 0.26f : 0.12f, index == 2 ? 24 : 10);
+        }
     }
     if (bossPhaseTransitionTimer_ > 0) {
         --bossPhaseTransitionTimer_;
@@ -3505,6 +3565,7 @@ void GameRuntime::FireEnemyBullet(
         damage);
     AddEnemyMuzzleFlashEffect(spawnPosition);
     enemyBullets_.push_back(std::move(bullet));
+    if (style == EnemyBulletStyle::BossCannon || style == EnemyBulletStyle::BossCharge) { ++bossShotsFired_; }
     maxActiveEnemyBullets_ =
         (std::max)(maxActiveEnemyBullets_, enemyBullets_.size());
 }
@@ -3683,11 +3744,12 @@ void GameRuntime::SpawnBossEnemy()
     bossIntroTimer_ = kBossIntroDuration;
     bossWarningTimer_ = (std::max)(bossWarningTimer_, 42);
     bossPhaseTransitionTimer_ = 0;
-    bossAttackCooldown_ = 48;
+    bossAttackCooldown_ = 0;
     bossAttackStepTimer_ = 0;
     bossAttackStep_ = -1;
     bossAttackPattern_ = 0;
     bossAttackSequence_ = 0;
+    bossShotsFired_ = 0;
     bossPhase_ = 1;
     bossCounterTimer_ = 0;
     bossCounterDuration_ = 1;
@@ -6372,54 +6434,34 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
             continue;
         }
 
-        if (enemy->IsBoss() &&
-            bossAttackPattern_ == 2 && bossAttackStep_ >= 0 && bossAttackStepTimer_ > 0) {
-            const int chargeDuration = bossPhase_ >= 2 ? 38 : 50;
+        if (enemy->IsBoss() && bossAttackStep_ >= 0) {
+            const int chargeDuration = BossWindupDuration(bossAttackPattern_, bossPhase_);
             const float bossChargeRate = 1.0f - std::clamp(
                 static_cast<float>(bossAttackStepTimer_) /
                     static_cast<float>((std::max)(chargeDuration, 1)),
                 0.0f,
                 1.0f);
-            const float bossChargePulse =
-                0.5f + 0.5f * std::sin(cameraTimer_ * (0.55f + bossChargeRate * 0.65f));
-            const int bossLineAlpha = static_cast<int>(
-                85.0f + bossChargeRate * 140.0f + bossChargePulse * 25.0f);
-            const ImVec2 muzzle(enemyScreen.x, enemyScreen.y + 12.0f);
-            const float coreRadius = 5.0f + bossChargeRate * 9.0f;
-            drawList->AddCircleFilled(
-                muzzle,
-                coreRadius * 2.2f,
-                IM_COL32(255, 48, 18, (std::clamp)(bossLineAlpha / 5, 0, 58)),
-                32);
-            drawList->AddCircleFilled(
-                muzzle,
-                coreRadius,
-                IM_COL32(255, 104, 38, (std::clamp)(bossLineAlpha, 0, 255)),
-                24);
-            drawList->AddCircleFilled(
-                muzzle,
-                (std::max)(2.0f, coreRadius * 0.34f),
-                IM_COL32(255, 238, 178, (std::clamp)(bossLineAlpha + 20, 0, 255)),
-                18);
-            constexpr int kBossEnergyRayCount = 8;
-            for (int rayIndex = 0; rayIndex < kBossEnergyRayCount; ++rayIndex) {
-                const float angle =
-                    static_cast<float>(rayIndex) * (kTwoPi / kBossEnergyRayCount) +
-                    cameraTimer_ * 0.035f;
-                const float outerRadius = 42.0f - bossChargeRate * 14.0f +
-                    static_cast<float>(rayIndex % 2) * 5.0f;
-                const float innerRadius = 19.0f - bossChargeRate * 5.0f;
-                const ImVec2 outer(
-                    muzzle.x + std::cos(angle) * outerRadius,
-                    muzzle.y + std::sin(angle) * outerRadius);
-                const ImVec2 inner(
-                    muzzle.x + std::cos(angle) * innerRadius,
-                    muzzle.y + std::sin(angle) * innerRadius);
-                drawList->AddLine(
-                    outer,
-                    inner,
-                    IM_COL32(255, 154, 62, (std::clamp)(bossLineAlpha, 0, 255)),
-                    1.5f + bossChargeRate * 1.8f);
+            // 実際の発射位置を投影する。自機を囲む照準線・追尾マーカーは付けない。
+            const bool charge = bossAttackPattern_ == 2;
+            const bool aimLocked = bossAttackStep_ > 0 || bossAttackStepTimer_ <= kBossAimLockFrames;
+            const auto center = enemy->GetAimPosition();
+            const int muzzleCount = charge ? 1 : 2;
+            for (int index = 0; index < muzzleCount; ++index) {
+                if (bossAttackPattern_ == 1 && index != bossAttackStep_ % 2) { continue; }
+                const Math::Vector3 position{ center.x + (charge ? 0.0f : (index == 0 ? -2.2f : 2.2f)),
+                    center.y + (charge ? -0.45f : 0.25f), center.z - 1.0f };
+                Math::Vector2 screen{};
+                Math::Vector2 rim{};
+                if (!TryProjectToScreen(position, screen) ||
+                    !TryProjectToScreen({ position.x + 0.55f, position.y, position.z }, rim)) { continue; }
+                const ImVec2 muzzle(screen.x, screen.y);
+                const float radius = std::clamp(std::abs(rim.x - screen.x), 3.0f, 13.0f) *
+                    (0.55f + bossChargeRate * (charge ? 1.10f : 0.50f));
+                const int alpha = static_cast<int>(100.0f + bossChargeRate * 125.0f);
+                drawList->AddCircleFilled(muzzle, radius * 2.0f, IM_COL32(255, 65, 18, alpha / 5), 24);
+                drawList->AddCircleFilled(muzzle, radius, IM_COL32(255, 104, 32, alpha), 24);
+                drawList->AddCircleFilled(muzzle, radius * (aimLocked ? 0.55f : 0.30f),
+                    IM_COL32(255, 240, 195, aimLocked ? 255 : alpha), 16);
             }
         }
 
@@ -6805,14 +6847,11 @@ void GameRuntime::DrawBossHud()
             bossAttackPattern_ == 0 ? "拡散弾" :
             bossAttackPattern_ == 1 ? "なぎ払い" : "チャージ砲";
         const ImU32 color = counter ? CombatHud::GaugeGold : CombatHud::Danger;
-        const int duration = counter ? bossCounterDuration_ :
-            bossAttackPattern_ == 0 ? (bossPhase_ >= 2 ? 24 : 32) :
-            bossAttackPattern_ == 1 ? (bossPhase_ >= 2 ? 20 : 28) :
-                (bossPhase_ >= 2 ? 38 : 50);
+        const int duration = counter ? bossCounterDuration_ : BossWindupDuration(bossAttackPattern_, bossPhase_);
         const float remaining = std::clamp(
             static_cast<float>(counter ? bossCounterTimer_ : bossAttackStepTimer_) /
                 static_cast<float>((std::max)(duration, 1)), 0.0f, 1.0f);
-        const float rate = counter ? remaining : 1.0f - remaining;
+        const float rate = counter ? remaining : (bossAttackStep_ > 0 ? 1.0f : 1.0f - remaining);
         DrawCombatHudText(draw, p(416, 0), 16.0f * scale, color, label, true);
         CombatHud::Segments(draw, p(0, 49), p(416, 52), rate, color, 1, 0);
     }
@@ -6871,7 +6910,7 @@ void GameRuntime::DrawStageCueHud()
         const float rate =
             static_cast<float>(bossDefeatFlashTimer_) /
             static_cast<float>((std::max)(kBossDefeatFlashDuration, 1));
-        const int alpha = static_cast<int>(120.0f * rate * rate);
+        const int alpha = static_cast<int>(72.0f * rate * rate);
         drawList->AddRectFilled(
             origin,
             ImVec2(origin.x + drawSize.x, origin.y + drawSize.y),
@@ -7689,10 +7728,9 @@ void GameRuntime::UpdateEnemies()
     for (auto iterator = enemies_.begin(); iterator != enemies_.end();) {
         float attackTelegraphRate = IsTutorial() ? 0.0f : (*iterator)->GetFireControl().ChargeRate();
         if ((*iterator)->IsBoss() &&
-            bossAttackPattern_ == 2 &&
-            bossAttackStep_ >= 0 &&
+            bossAttackStep_ == 0 &&
             bossAttackStepTimer_ > 0) {
-            const int chargeDuration = bossPhase_ >= 2 ? 38 : 50;
+            const int chargeDuration = BossWindupDuration(bossAttackPattern_, bossPhase_);
             attackTelegraphRate = 1.0f - std::clamp(
                 static_cast<float>(bossAttackStepTimer_) /
                     static_cast<float>((std::max)(chargeDuration, 1)),
@@ -7706,6 +7744,8 @@ void GameRuntime::UpdateEnemies()
             sniperTelegraphAssigned = true;
         }
         (*iterator)->SetAttackTelegraphRate(attackTelegraphRate);
+        (*iterator)->SetBossRecoveryRate(static_cast<float>(bossCounterTimer_) /
+            static_cast<float>((std::max)(bossCounterDuration_, 1)));
         (*iterator)->Update(railDistance_, worldTimeScale);
         if ((*iterator)->IsDead()) {
             if ((*iterator)->HasEscaped()) {
@@ -7969,16 +8009,16 @@ void GameRuntime::OnEnemyDestroyed(Enemy& enemy, bool charged, bool fever)
     ++defeatedEnemyCountInWave_;
     if (boss) {
         bossDefeatFlashTimer_ = kBossDefeatFlashDuration;
-        if (fever) {
-            AddFeverEnemyHitEffect({ position.x - 2.2f, position.y + 0.5f, position.z - 0.8f }, 1.34f);
-            AddFeverEnemyHitEffect({ position.x + 2.2f, position.y - 0.3f, position.z + 0.4f }, 1.26f);
-            AddFeverEnemyHitEffect({ position.x, position.y + 1.2f, position.z + 1.1f }, 1.18f);
-        } else {
-            AddEnemyHitEffect({ position.x - 2.2f, position.y + 0.5f, position.z - 0.8f }, 1.55f);
-            AddEnemyHitEffect({ position.x + 2.2f, position.y - 0.3f, position.z + 0.4f }, 1.45f);
-            AddEnemyHitEffect({ position.x, position.y + 1.2f, position.z + 1.1f }, 1.35f);
+        bossDefeatPosition_ = position;
+        bossCounterTimer_ = 0;
+        bossAttackStep_ = -1;
+        // 撃破後に残弾だけが画面へ迫らないよう、確保済みプールへ返す。
+        while (!enemyBullets_.empty()) {
+            justDodgedEnemyBullets_.erase(enemyBullets_.front().get());
+            enemyBulletPool_.push_back(std::move(enemyBullets_.front()));
+            enemyBullets_.pop_front();
         }
-        AddCameraShake(0.34f, 58);
+        AddCameraShake(0.22f, 18);
         bossDefeated_ = true;
         currentWaveIndex_ = kWaveCount - 1;
         isGameClear_ = true;

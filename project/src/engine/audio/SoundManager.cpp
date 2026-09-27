@@ -140,6 +140,58 @@ bool SoundManager::Play(const std::string& key)
     return false;
 }
 
+bool SoundManager::PlayLoop(const std::string& key)
+{
+    const auto it = sounds_.find(key);
+    if (it == sounds_.end() || !it->second.voices[0] || it->second.voices[1]) { return false; }
+    auto& entry = it->second;
+    if (entry.looping) { return true; }
+    auto* voice = entry.voices[0];
+    Stop(key);
+    XAUDIO2_BUFFER buffer{};
+    buffer.pAudioData = entry.data.buffer.data();
+    buffer.AudioBytes = static_cast<UINT32>(entry.data.buffer.size());
+    buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
+    buffer.Flags = XAUDIO2_END_OF_STREAM;
+    if (FAILED(voice->SubmitSourceBuffer(&buffer)) || FAILED(voice->Start())) {
+        Stop(key);
+        return false;
+    }
+    entry.looping = true;
+    return true;
+}
+
+void SoundManager::Stop(const std::string& key)
+{
+    const auto it = sounds_.find(key);
+    if (it == sounds_.end()) { return; }
+    for (auto* voice : it->second.voices) {
+        if (voice) { voice->Stop(); voice->FlushSourceBuffers(); }
+    }
+    it->second.looping = false;
+}
+
+void SoundManager::SetVolume(const std::string& key, float volume)
+{
+    const auto it = sounds_.find(key);
+    if (it == sounds_.end()) { return; }
+    for (auto* voice : it->second.voices) {
+        if (voice) { voice->SetVolume(std::clamp(volume, 0.0f, 1.0f)); }
+    }
+}
+
+uint32_t SoundManager::GetLoopCount() const
+{
+    uint32_t count = 0;
+    for (const auto& item : sounds_) {
+        if (!item.second.looping || !item.second.voices[0]) { continue; }
+        XAUDIO2_VOICE_STATE state{};
+        item.second.voices[0]->GetState(&state, XAUDIO2_VOICE_NOSAMPLESPLAYED);
+        if (state.BuffersQueued > 0) { ++count; }
+    }
+    return count;
+}
+
 SoundData SoundManager::LoadFile(const std::string& filename)
 {
     ComPtr<IMFSourceReader> reader;
@@ -192,7 +244,7 @@ SoundData SoundManager::LoadFile(const std::string& filename)
             if (FAILED(buffer->Lock(&data, nullptr, &length))) {
                 return {};
             }
-            // 長いBGMを誤って全展開しない。効果音は最大32MBまで。
+            // 1曲のPCMは最大32MB。採用するループ素材もオフラインでこの上限を確認する。
             const bool fits = sound.buffer.size() + length <= 32u * 1024u * 1024u;
             if (fits && length > 0) {
                 sound.buffer.insert(sound.buffer.end(), data, data + length);
