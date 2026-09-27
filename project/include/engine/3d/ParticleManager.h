@@ -53,9 +53,10 @@ public:
 
     // ===== 更新 / 描画 =====
     void Update(const Math::Matrix4x4& viewMatrix,
-        const Math::Matrix4x4& projectionMatrix);
+        const Math::Matrix4x4& projectionMatrix, bool advanceSimulation = true);
 
-    void Draw();
+    // 停止中は既存粒子だけを描き、GPU上の射出・移動・寿命更新を実行しない。
+    void Draw(bool advanceSimulation = true);
 
     // ===== パーティクル発生 =====
     bool CreateParticleGroup(const std::string& name,

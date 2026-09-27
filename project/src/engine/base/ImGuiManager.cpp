@@ -350,25 +350,14 @@ void ImGuiManager::Initialize(
         iconRanges);
 
     // ライセンス同梱のフォントを使い、実行PCのインストール状況に依存させない。
+    // 表記はM PLUS 1pで統一。異なる基準サイズの英字へ和文をマージすると、
+    // 日本語だけ小さく見えるため、数値・ロゴ用のRajdhaniとは役割で分ける。
     hudFont_ = io.Fonts->AddFontFromFileTTF(
-        "resources/fonts/ZenKakuGothicNew-Medium.ttf", 24.0f, nullptr,
+        "resources/fonts/MPLUS1p-Medium.ttf", 48.0f, nullptr,
         io.Fonts->GetGlyphRangesJapanese());
     hudNumberFont_ = io.Fonts->AddFontFromFileTTF(
-        "resources/fonts/BarlowCondensed-SemiBold.ttf", 48.0f);
-
-    // 数字と和文で書体を場当たり的に切り替えず、この一組を戦闘画面全体で共有する。
-    combatFont_ = io.Fonts->AddFontFromFileTTF(
         "resources/fonts/Rajdhani-SemiBold.ttf", 48.0f);
-    if (combatFont_) {
-        ImFontConfig combatJapanese{};
-        combatJapanese.MergeMode = true;
-        combatJapanese.DstFont = combatFont_;
-        combatJapanese.GlyphOffset = ImVec2(0.0f, 2.0f);
-        static const ImWchar latinRange[] = { 0x0020, 0x00ff, 0 };
-        combatJapanese.GlyphExcludeRanges = latinRange;
-        io.Fonts->AddFontFromFileTTF("resources/fonts/MPLUS1p-Medium.ttf", 40.0f,
-            &combatJapanese, io.Fonts->GetGlyphRangesJapanese());
-    }
+    combatFont_ = hudFont_;
 
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 

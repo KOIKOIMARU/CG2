@@ -29,7 +29,7 @@ void DrawWordmark(ImDrawList* draw, ImVec2 position, float scale)
     // 二段の角形ロゴ。文字の傾き・字間・縦の濃淡を組版側で揃える。
     // 既存のフォント頂点だけを変形し、追加テクスチャや描画経路は使わない。
     const float size = 152.0f * scale;
-    ImFont* font = CombatHud::BattleFont();
+    ImFont* font = CombatHud::Font(true);
     for (int row = 0; row < 2; ++row) {
         ImVec2 pen{ position.x, position.y + static_cast<float>(row) * 104.0f * scale };
         const char* word = row == 0 ? kTitleTop : kTitleBottom;
@@ -43,8 +43,8 @@ void DrawWordmark(ImDrawList* draw, ImVec2 position, float scale)
             const float y = vertex.pos.y - (position.y + static_cast<float>(row) * 104.0f * scale);
             vertex.pos.x += (size * 0.75f - y) * 0.18f;
             const float gradient = std::clamp(y / size, 0.0f, 1.0f);
-            const ImU32 top = row == 0 ? IM_COL32(237, 88, 77, 255) : MenuUi::Paper;
-            const ImU32 bottom = row == 0 ? IM_COL32(183, 45, 44, 255) : IM_COL32(164, 185, 211, 255);
+            const ImU32 top = IM_COL32(248, 247, 244, 255);
+            const ImU32 bottom = IM_COL32(188, 192, 198, 255);
             vertex.col = CombatHud::SurfaceColor(CombatHud::Mix(top, bottom, gradient * 0.52f));
         }
     }
@@ -140,11 +140,12 @@ void TitleScene::Update()
     elapsed_ += delta;
     if (input_ && !startRequested_) {
         if (showControls_) {
-            if (input_->TriggerKey(DIK_ESCAPE) || input_->TriggerKey(DIK_H)) { showControls_ = false; }
+            if (MenuUi::Pressed(input_, DIK_ESCAPE) || MenuUi::Pressed(input_, DIK_H) ||
+                MenuUi::Pressed(input_, DIK_RETURN)) { showControls_ = false; }
         } else {
-            if (input_->TriggerKey(DIK_UP) || input_->TriggerKey(DIK_W)) { selectedItem_ = (selectedItem_ + 2) % 3; }
-            if (input_->TriggerKey(DIK_DOWN) || input_->TriggerKey(DIK_S)) { selectedItem_ = (selectedItem_ + 1) % 3; }
-            if (input_->TriggerKey(DIK_RETURN)) {
+            if (MenuUi::Pressed(input_, DIK_UP) || MenuUi::Pressed(input_, DIK_W)) { selectedItem_ = (selectedItem_ + 2) % 3; }
+            if (MenuUi::Pressed(input_, DIK_DOWN) || MenuUi::Pressed(input_, DIK_S)) { selectedItem_ = (selectedItem_ + 1) % 3; }
+            if (MenuUi::Pressed(input_, DIK_RETURN)) {
                 if (selectedItem_ == 2) { showControls_ = true; }
                 else { RequestStart(selectedItem_ == 1); }
             } else if (input_->TriggerKey(DIK_T)) { RequestStart(true); }
@@ -177,11 +178,11 @@ void TitleScene::DrawMenu(bool gameReady)
     ImGui::SetNextWindowSize(viewport->Size);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("##Title", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
     ImDrawList* draw = ImGui::GetWindowDrawList();
     // 背景を見せつつ、文字のある左側だけを暗くする。カードや説明欄は置かない。
     if (!skybox_) { draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36, 255)); }
-    const ImU32 shade = CombatHud::SurfaceColor(IM_COL32(8, 17, 32, 228));
+    const ImU32 shade = CombatHud::SurfaceColor(IM_COL32(13, 16, 22, 228));
     draw->AddRectFilledMultiColor(viewport->Pos, end, shade, IM_COL32(0, 0, 0, 0),
         IM_COL32(0, 0, 0, 0), shade);
     draw->AddRectFilledMultiColor(p(0, 490), end, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
@@ -189,7 +190,7 @@ void TitleScene::DrawMenu(bool gameReady)
     if (!showControls_) {
         DrawWordmark(draw, p(90, 106), scale);
 
-        const char* labels[] = { "出撃", "操作練習", "操作方法" };
+        const char* labels[] = { "出撃", "チュートリアル", "操作方法" };
         const float blend = 1.0f - std::exp(-12.0f * std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 0.05f));
         for (int index = 0; index < 3; ++index) {
             const float y = 450.0f + static_cast<float>(index) * 54.0f;
@@ -210,9 +211,9 @@ void TitleScene::DrawMenu(bool gameReady)
             const int alpha = static_cast<int>(245.0f * emphasis);
             draw->AddRectFilledMultiColor(p(88, y - 6), p(338, y + 38),
                 CombatHud::SurfaceColor(IM_COL32(239, 241, 244, alpha)),
-                CombatHud::SurfaceColor(IM_COL32(207, 217, 231, alpha)),
-                CombatHud::SurfaceColor(IM_COL32(184, 199, 218, alpha)),
-                CombatHud::SurfaceColor(IM_COL32(224, 231, 240, alpha)));
+                CombatHud::SurfaceColor(IM_COL32(214, 215, 219, alpha)),
+                CombatHud::SurfaceColor(IM_COL32(194, 197, 202, alpha)),
+                CombatHud::SurfaceColor(IM_COL32(229, 231, 234, alpha)));
             MenuUi::Text(draw, p(110, y + 2), 23.0f * scale,
                 CombatHud::Mix(MenuUi::Quiet, MenuUi::Ink, emphasis), labels[index]);
         }
@@ -225,7 +226,7 @@ void TitleScene::DrawMenu(bool gameReady)
     }
     ImGui::End();
     ImGui::PopStyleVar();
-    if (showControls_ && MenuUi::Controls(viewport->Pos, viewport->Size, false)) { showControls_ = false; }
+    if (showControls_ && MenuUi::Controls(viewport->Pos, viewport->Size)) { showControls_ = false; }
 }
 
 void TitleScene::Draw()

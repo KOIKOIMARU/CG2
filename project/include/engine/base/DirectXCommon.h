@@ -50,6 +50,8 @@ public:
 
     const D3D12_VIEWPORT& GetViewport() const { return viewport_; }
     const D3D12_RECT& GetScissorRect() const { return scissorRect_; }
+    const D3D12_VIEWPORT& GetPresentationViewport() const { return presentationViewport_; }
+    void ResizePresentation(); // GPU完了後、表示先だけを実ウィンドウ寸法へ作り直す。
 
     ID3D12Fence* GetFence() const { return fence_.Get(); }          // これも const でOK
     UINT64& GetFenceValue() { return fenceValue_; }            // ここだけ非constで良い
@@ -230,7 +232,8 @@ private:
         ID3D12PipelineState* pipelineState,
         uint32_t sourceSrvIndex,
         uint32_t secondarySrvIndex,
-        D3D12_GPU_VIRTUAL_ADDRESS parameterAddress);
+        D3D12_GPU_VIRTUAL_ADDRESS parameterAddress,
+        bool presentation = false);
     void DrawBloomPasses(
         uint32_t sourceSrvIndex,
         uint32_t sourceWidth,
@@ -309,6 +312,10 @@ private:
     // ビューポートとシザー矩形
     D3D12_VIEWPORT viewport_{};
     D3D12_RECT     scissorRect_{};
+    D3D12_VIEWPORT presentationViewport_{ 0, 0, 1280, 720, 0, 1 };
+    D3D12_RECT presentationScissor_{ 0, 0, 1280, 720 };
+    UINT presentationWidth_ = 1280;
+    UINT presentationHeight_ = 720;
 
     // DXC関連
     Microsoft::WRL::ComPtr<IDxcUtils>          dxcUtils_;

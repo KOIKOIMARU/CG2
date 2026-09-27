@@ -389,6 +389,7 @@ private:
     void DrawStageCueHud();
     void DrawTutorialGuideHud();
     void DrawControlsHelp();
+    void DrawPauseOverlay();
     void DrawFeverHud();
     void DrawDefeatChainHud();
     void DrawLockOnHud();
@@ -619,7 +620,11 @@ private:
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isRetryRequested_ = false; // 結果画面から同じモードを新規開始する。
-    bool showControlsHelp_ = false; // Hで開閉。本編の進行や配置は変更しない。
+    bool showControlsHelp_ = false; // 操作説明の表示中もゲーム進行を止める。
+    bool isPaused_ = false; // ESCで停止。描画とメニュー入力だけ継続する。
+    bool menuInputConsumed_ = false; // 説明を閉じたEnterを下のメニューへ通さない。
+    int pauseSelectedItem_ = 0; // 再開・再挑戦・操作方法・タイトルの選択位置。
+    int resultSelectedItem_ = 0; // 再挑戦またはタイトル。方向キーで変更する。
     bool isEditorOverlayVisible_ = false;
     bool isPerformanceOverlayVisible_ = false;
     bool isPostEffectBypassEnabled_ = false;

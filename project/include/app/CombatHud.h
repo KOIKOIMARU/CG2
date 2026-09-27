@@ -7,8 +7,8 @@
 
 // 戦闘HUD共通の文字・色・寸法。画面ごとに影や縮尺の流儀を増やさない。
 namespace CombatHud {
-inline constexpr ImU32 White = IM_COL32(241, 240, 235, 255);
-inline constexpr ImU32 Muted = IM_COL32(184, 184, 180, 255);
+inline constexpr ImU32 White = IM_COL32(239, 241, 244, 255);
+inline constexpr ImU32 Muted = IM_COL32(168, 171, 178, 255);
 inline constexpr ImU32 Blue = IM_COL32(91, 206, 242, 255);
 inline constexpr ImU32 Gold = IM_COL32(231, 189, 109, 255);
 inline constexpr ImU32 Danger = IM_COL32(237, 100, 88, 255);
@@ -18,6 +18,7 @@ inline constexpr ImU32 GaugeGold = IM_COL32(255, 202, 70, 255);
 inline constexpr ImU32 Health = IM_COL32(66, 218, 142, 255);
 inline constexpr ImU32 Energy = IM_COL32(82, 145, 244, 255);
 inline constexpr ImU32 FeverCharge = IM_COL32(245, 172, 59, 255);
+inline ImU32 SurfaceColor(ImU32 srgb);
 
 inline float Scale(const Math::Vector2& viewport)
 {
@@ -62,7 +63,7 @@ inline float ReadoutWidth(const char* text, float size)
     return BattleFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x;
 }
 
-// 数字と和文を一組にした書体で描く。タイトルのロゴ用書体は変更しない。
+// 和文ラベルはメニューと同じ書体・色変換を使う。細い影だけで背景から分離する。
 inline void Readout(ImDrawList* draw, ImVec2 position, float size, ImU32 color,
     const char* text, bool right = false)
 {
@@ -70,11 +71,19 @@ inline void Readout(ImDrawList* draw, ImVec2 position, float size, ImU32 color,
     position.x = std::round(position.x);
     position.y = std::round(position.y);
     const int alpha = static_cast<int>((color >> IM_COL32_A_SHIFT) & 0xff);
-    const ImU32 outline = IM_COL32(12, 14, 18, alpha * 4 / 5);
-    for (const ImVec2 offset : { ImVec2(-1, 0), ImVec2(1, 0), ImVec2(0, -1), ImVec2(0, 1) }) {
-        draw->AddText(BattleFont(), size, { position.x + offset.x, position.y + offset.y }, outline, text);
-    }
-    draw->AddText(BattleFont(), size, position, color, text);
+    draw->AddText(BattleFont(), size, { position.x, position.y + 1.0f },
+        IM_COL32(0, 0, 0, alpha * 4 / 5), text);
+    draw->AddText(BattleFont(), size, position, SurfaceColor(color), text);
+}
+
+// 大きな数字だけは細身の角形書体。通常の文中の数字やキー名は和文書体のまま。
+inline void Number(ImDrawList* draw, ImVec2 position, float size, ImU32 color,
+    const char* text, bool right = false)
+{
+    if (right) { position.x -= Width(text, size, true); }
+    position = { std::round(position.x), std::round(position.y) };
+    draw->AddText(Font(true), size, { position.x, position.y + 1.0f }, IM_COL32(0, 0, 0, 210), text);
+    draw->AddText(Font(true), size, position, SurfaceColor(color), text);
 }
 
 // ImGuiは頂点色をそのまま出力し、描画先がsRGBへ変換する。
@@ -110,22 +119,22 @@ inline ImU32 Mix(ImU32 from, ImU32 to, float rate)
 
 inline void Panel(ImDrawList* draw, ImVec2 min, ImVec2 max, float scale)
 {
-    const ImU32 top = SurfaceColor(IM_COL32(39, 49, 65, 248));
-    const ImU32 bottom = SurfaceColor(IM_COL32(12, 17, 26, 248));
+    const ImU32 top = SurfaceColor(IM_COL32(37, 39, 44, 248));
+    const ImU32 bottom = SurfaceColor(IM_COL32(18, 20, 24, 248));
     draw->AddRectFilledMultiColor(min, max, top, top, bottom, bottom);
-    draw->AddRect(min, max, SurfaceColor(IM_COL32(103, 120, 142, 235)), 0, 0, scale);
+    draw->AddRect(min, max, SurfaceColor(IM_COL32(105, 109, 118, 235)), 0, 0, scale);
     draw->AddLine({ min.x + scale, min.y + scale }, { max.x - scale, min.y + scale },
-        SurfaceColor(IM_COL32(179, 193, 210, 175)), scale);
+        SurfaceColor(IM_COL32(180, 184, 192, 175)), scale);
 }
 
 // 色の流れと上面反射を持つ計器。塗りは三段で繋ぎ、微小な残量にもクリップ矩形を使わない。
 inline void Meter(ImDrawList* draw, ImVec2 min, ImVec2 max, float rate, ImU32 color, float scale)
 {
     draw->AddRectFilled({ min.x - scale, min.y - scale }, { max.x + scale, max.y + 2 * scale }, IM_COL32(0, 0, 0, 210));
-    const ImU32 troughTop = SurfaceColor(IM_COL32(9, 15, 23, 255));
-    const ImU32 troughBottom = SurfaceColor(IM_COL32(37, 46, 58, 255));
+    const ImU32 troughTop = SurfaceColor(IM_COL32(12, 14, 18, 255));
+    const ImU32 troughBottom = SurfaceColor(IM_COL32(38, 41, 48, 255));
     draw->AddRectFilledMultiColor(min, max, troughTop, troughTop, troughBottom, troughBottom);
-    draw->AddRect(min, max, SurfaceColor(IM_COL32(116, 132, 149, 255)), 0.0f, 0, scale);
+    draw->AddRect(min, max, SurfaceColor(IM_COL32(116, 120, 129, 255)), 0.0f, 0, scale);
     const ImVec2 inner(min.x + 2.0f * scale, min.y + 2.0f * scale);
     const ImVec2 end(max.x - 2.0f * scale, max.y - 2.0f * scale);
     rate = std::clamp(rate, 0.0f, 1.0f);

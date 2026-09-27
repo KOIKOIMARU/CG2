@@ -510,13 +510,13 @@ void ParticleManager::DispatchUpdate(ParticleGroup& group)
 
 void ParticleManager::Update(
     const Matrix4x4& viewMatrix,
-    const Matrix4x4& projectionMatrix
+    const Matrix4x4& projectionMatrix, bool advanceSimulation
 ) {
     if (!perViewData_) {
         return;
     }
 
-    const float deltaTime = dxCommon_->GetDeltaTime();
+    const float deltaTime = advanceSimulation ? dxCommon_->GetDeltaTime() : 0.0f;
     totalTime_ += deltaTime;
 
     // ViewProjectionとBillboardはViewごとの値なので、まとめてConstantBufferへ書く
@@ -532,7 +532,7 @@ void ParticleManager::Update(
     }
 }
 
-void ParticleManager::Draw()
+void ParticleManager::Draw(bool advanceSimulation)
 {
     auto* cl = dxCommon_->GetCommandList();
 
@@ -557,10 +557,11 @@ void ParticleManager::Draw()
         }
 
         // CPU側Emitterから射出許可が出ていれば、描画前にGPUでParticleを追加する
-        DispatchEmit(group);
-
-        // 射出されたParticleも含め、描画前にGPUでParticleの移動や寿命を更新する
-        DispatchUpdate(group);
+        if (advanceSimulation) {
+            DispatchEmit(group);
+            // 射出された粒子も含め、移動と寿命を進める。
+            DispatchUpdate(group);
+        }
 
         if (group.particleResourceState != D3D12_RESOURCE_STATE_GENERIC_READ) {
             D3D12_RESOURCE_BARRIER barrier{};

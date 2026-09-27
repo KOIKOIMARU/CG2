@@ -160,6 +160,45 @@ void DirectXCommon::Initialize(WinApp* winApp)
 }
 
 
+void DirectXCommon::ResizePresentation()
+{
+    RECT client{};
+    if (!winApp_ || !GetClientRect(winApp_->GetHwnd(), &client)) { return; }
+    const UINT width = static_cast<UINT>((std::max)(client.right, 0L));
+    const UINT height = static_cast<UINT>((std::max)(client.bottom, 0L));
+    if (width == 0 || height == 0 || (width == presentationWidth_ && height == presentationHeight_)) { return; }
+
+    // 前フレーム・転送処理の参照が残る間は解放しない。ResizeBuffersはフレーム外だけで行う。
+    CheckDeviceOperation(commandQueue_->Signal(fence_.Get(), ++fenceValue_), "Resize::Signal");
+    if (fence_->GetCompletedValue() < fenceValue_) {
+        CheckDeviceOperation(fence_->SetEventOnCompletion(fenceValue_, fenceEvent_), "Resize::Fence");
+        const DWORD result = WaitForSingleObject(fenceEvent_, INFINITE);
+        CheckDeviceOperation(result == WAIT_OBJECT_0 ? S_OK : HRESULT_FROM_WIN32(ERROR_GEN_FAILURE), "Resize::Wait");
+    }
+    CheckDeviceOperation(commandAllocator_->Reset(), "Resize::AllocatorReset");
+    CheckDeviceOperation(commandList_->Reset(commandAllocator_.Get(), nullptr), "Resize::ListReset");
+    CheckDeviceOperation(commandList_->Close(), "Resize::ListClose");
+    for (auto& resource : swapChainResources_) { resource.Reset(); }
+    CheckDeviceOperation(swapChain_->ResizeBuffers(kBackBufferCount, width, height,
+        DXGI_FORMAT_R8G8B8A8_UNORM, 0), "SwapChain::ResizeBuffers");
+    InitializeRenderTargetView();
+    currentBackBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
+    presentationWidth_ = width;
+    presentationHeight_ = height;
+    // 3D・深度・ポストエフェクトの解像度は維持。16:9の映像を中央へアスペクトフィットする。
+    const float scale = (std::min)(static_cast<float>(width) / WinApp::kClientWidth,
+        static_cast<float>(height) / WinApp::kClientHeight);
+    const float fittedWidth = std::round(WinApp::kClientWidth * scale);
+    const float fittedHeight = std::round(WinApp::kClientHeight * scale);
+    presentationViewport_ = { std::floor((width - fittedWidth) * 0.5f),
+        std::floor((height - fittedHeight) * 0.5f), fittedWidth, fittedHeight, 0, 1 };
+    presentationScissor_ = { static_cast<LONG>(presentationViewport_.TopLeftX),
+        static_cast<LONG>(presentationViewport_.TopLeftY),
+        static_cast<LONG>(presentationViewport_.TopLeftX + fittedWidth),
+        static_cast<LONG>(presentationViewport_.TopLeftY + fittedHeight) };
+    FlushDebugMessages();
+}
+
 void DirectXCommon::PreDraw() {
     assert(renderTextureResource_);
 
@@ -501,8 +540,10 @@ void DirectXCommon::DrawRenderTextureToSwapChain(int postEffectMode)
     );
     commandList_->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
-    commandList_->RSSetViewports(1, &viewport_);
-    commandList_->RSSetScissorRects(1, &scissorRect_);
+    const float black[] = { 0, 0, 0, 1 };
+    commandList_->ClearRenderTargetView(rtvHandle, black, 0, nullptr);
+    commandList_->RSSetViewports(1, &presentationViewport_);
+    commandList_->RSSetScissorRects(1, &presentationScissor_);
 
     commandList_->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
     commandList_->SetGraphicsRootSignature(fullscreenRootSignature_.Get());
@@ -822,6 +863,9 @@ void DirectXCommon::InitializeSwapChain()
     // IDXGISwapChain4 にキャストしてメンバに保持
     hr = swapChain1.As(&swapChain_);
     assert(SUCCEEDED(hr));
+    // Alt+EnterはWinAppの枠なし全画面で処理し、DXGIの排他的切り替えと競合させない。
+    CheckDeviceOperation(dxgiFactory_->MakeWindowAssociation(winApp_->GetHwnd(), DXGI_MWA_NO_ALT_ENTER),
+        "DXGI::MakeWindowAssociation");
 }
 
 void DirectXCommon::InitializeDepthBuffer()
@@ -1590,7 +1634,7 @@ void DirectXCommon::DrawFullscreenPass(
     ID3D12PipelineState* pipelineState,
     uint32_t sourceSrvIndex,
     uint32_t secondarySrvIndex,
-    D3D12_GPU_VIRTUAL_ADDRESS parameterAddress)
+    D3D12_GPU_VIRTUAL_ADDRESS parameterAddress, bool presentation)
 {
     assert(pipelineState);
     assert(srvDescriptorHeap_);
@@ -1608,6 +1652,13 @@ void DirectXCommon::DrawFullscreenPass(
     scissorRect.top = 0;
     scissorRect.right = static_cast<LONG>(width);
     scissorRect.bottom = static_cast<LONG>(height);
+
+    if (presentation) {
+        viewport = presentationViewport_;
+        scissorRect = presentationScissor_;
+        const float black[] = { 0, 0, 0, 1 };
+        commandList_->ClearRenderTargetView(rtvHandle, black, 0, nullptr);
+    }
 
     ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap_.Get() };
     commandList_->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
@@ -1747,7 +1798,7 @@ void DirectXCommon::DrawBloomCompositeToBackBuffer(
         bloomCompositePipelineState_.Get(),
         sourceSrvIndex,
         halfB.srvIndex,
-        bloomParameterResource_->GetGPUVirtualAddress());
+        bloomParameterResource_->GetGPUVirtualAddress(), true);
 }
 
 void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)

@@ -26,6 +26,10 @@ public: // メンバ関数
 	// メッセージの処理
 	bool ProcessMessage();
 
+    // 排他的モードは使わず、現在のモニターを覆う枠なし全画面へ切り替える。
+    void ToggleFullscreen();
+    bool IsFullscreen() const { return isFullscreen_; }
+
 
 private:
 	// ウィンドウハンドル
@@ -33,4 +37,7 @@ private:
 
 	// ウィンドウクラスの定義
 	WNDCLASS wc = {};
+    bool isFullscreen_ = false;
+    bool toggleFullscreenRequested_ = false; // ウィンドウ処理を抜けたフレーム境界で適用する。
+    WINDOWPLACEMENT windowedPlacement_{ sizeof(WINDOWPLACEMENT) }; // 元の位置・最大化状態。
 };

@@ -429,7 +429,8 @@ void GameRuntime::DrawPhantomRaidOverlay()
     }
     const ImVec2 panel{ min.x + size.x - 264.0f * hudScale, min.y + size.y - 82.0f * hudScale };
     const auto p = [&](float x, float y) { return ImVec2(panel.x + x * hudScale, panel.y + y * hudScale); };
-    const ImU32 hudAccent = gold ? CombatHud::FeverCharge : CombatHud::Energy;
+    // フィーバー中も「スキル＝青」の意味は変えない。強化演出の金色は斬撃側だけに使う。
+    const ImU32 hudAccent = CombatHud::Energy;
     const bool ready = phantomReady_ || active;
     const float readyBurst = std::clamp(phantomReadyFlash_ / 72.0f, 0.0f, 1.0f);
     CombatHud::Shade(draw, p(-30, -12), { min.x + size.x, min.y + size.y }, true);
@@ -453,7 +454,7 @@ void GameRuntime::DrawPhantomRaidOverlay()
         PhantomText(draw, p(62, 28), 14.0f * hudScale, CombatHud::Muted, "対象なし");
     } else if (!active && !phantomReady_ && phantomCooldown_ > 0.0f) {
         char cooldown[24]{};
-        std::snprintf(cooldown, sizeof(cooldown), "%.1fs", static_cast<double>(phantomCooldown_ / 60.0f));
+        std::snprintf(cooldown, sizeof(cooldown), "%.1f秒", static_cast<double>(phantomCooldown_ / 60.0f));
         CombatHud::Readout(draw, p(62, 27), 18.0f * hudScale, CombatHud::White, cooldown);
     }
     const float recovery = ready ? 1.0f : 1.0f - std::clamp(phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f);

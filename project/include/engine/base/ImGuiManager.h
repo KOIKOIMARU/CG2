@@ -106,7 +106,7 @@ public:
     // ゲーム表示用。エディタの標準フォントとは分け、数字は専用書体で読ませる。
     static ImFont* GetHudFont();
     static ImFont* GetHudNumberFont();
-    static ImFont* GetCombatFont(); // 戦闘用。角形英数字と和文を同じアトラスへ統合。
+    static ImFont* GetCombatFont(); // 戦闘・メニューで共有する和文書体。
 #endif
 
     void ShowEditorController(EditorDebugSettings& settings);

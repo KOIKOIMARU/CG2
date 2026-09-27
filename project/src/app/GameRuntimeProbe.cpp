@@ -176,6 +176,8 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
     static float longestEmptyGap = 0.0f;
     static int encounterGapCount = 0;
     static bool wasEmpty = false;
+    static std::vector<float> pausedState;
+    static int delayedEscapeEvents = 0;
     const auto log = [&](const std::string& message) {
         std::ofstream file(logPath, std::ios::app);
         file << "PLAYTHROUGH " << message << '\n';
@@ -220,6 +222,51 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
         log("START normal_damage=1 normal_collisions=1 audio_voices=28");
     }
     ++frame;
+    // 実際のESC経路で停止し、各フレームの進行値と全アクター位置が不変であることを検証する。
+    const auto snapshot = [&]() {
+        std::vector<float> values{ gameplayElapsedSeconds_, stageProgress_, railDistance_, cameraTimer_,
+            static_cast<float>(chargeTimer_), static_cast<float>(feverTimer_), static_cast<float>(feverGauge_), phantomCooldown_,
+            static_cast<float>(score_), static_cast<float>(player_->GetHp()),
+            static_cast<float>(enemies_.size()), static_cast<float>(playerBullets_.size()),
+            static_cast<float>(enemyBullets_.size()), static_cast<float>(playerShotsFired_) };
+        const auto position = [&](const Math::Vector3& p) { values.insert(values.end(), { p.x, p.y, p.z }); };
+        position(player_->GetTranslate());
+        for (const auto& enemy : enemies_) { position(enemy->GetTranslate()); }
+        for (const auto& bullet : playerBullets_) { position(bullet->GetTranslate()); }
+        for (const auto& bullet : enemyBullets_) { position(bullet->GetTranslate()); }
+        return values;
+    };
+    if (frame == 721) {
+        if (!isPaused_ || showControlsHelp_) { throw std::runtime_error("ESC did not open pause menu"); }
+        pausedState = snapshot();
+    }
+    if (frame > 721 && frame <= 840 && (!isPaused_ || snapshot() != pausedState)) {
+        throw std::runtime_error("Gameplay changed while pause menu was open");
+    }
+    if (frame == 841) {
+        if (isPaused_) { throw std::runtime_error("ESC did not resume gameplay"); }
+        if (delayedEscapeEvents != 2) { throw std::runtime_error("Delayed UI input fixture did not execute"); }
+        log("PAUSE_OK frames=120 time_rail_actors_bullets_hp_charge_fever_skill_frozen=1 resume=1");
+        log("MENU_INPUT_OK escape_hold=31_frames delayed_ui_duplicates_ignored=2 wasd_arrows_hold=1");
+    }
+    if ((frame >= 720 && frame <= 750) || (frame >= 840 && frame <= 860)) { keys[DIK_ESCAPE] = 0x80; }
+    // 物理キーとUIイベントが別フレームに届く状況を再現。旧OR判定はここでポーズを再度切り替える。
+    if (frame == 722 || frame == 780) { ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, true); }
+    if (frame == 725 || frame == 782) { ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false); }
+    if (frame > 720 && frame < 840 && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { ++delayedEscapeEvents; }
+    if (frame >= 735 && frame <= 744) { keys[DIK_S] = 0x80; }
+    if (frame >= 755 && frame <= 764) { keys[DIK_W] = 0x80; }
+    if (frame >= 775 && frame <= 784) { keys[DIK_DOWN] = 0x80; }
+    if (frame >= 805 && frame <= 814) { keys[DIK_UP] = 0x80; }
+    if (frame == 739) { ImGui::GetIO().AddKeyEvent(ImGuiKey_S, true); }
+    if (frame == 742) { ImGui::GetIO().AddKeyEvent(ImGuiKey_S, false); }
+    if (frame == 778) { ImGui::GetIO().AddKeyEvent(ImGuiKey_DownArrow, true); }
+    if (frame == 781) { ImGui::GetIO().AddKeyEvent(ImGuiKey_DownArrow, false); }
+    if (frame > 735 && frame <= 840) {
+        const int expected = frame <= 755 || (frame > 775 && frame <= 805) ? 1 : 0;
+        if (pauseSelectedItem_ != expected) { throw std::runtime_error("Pause selection repeated during key hold or delayed UI event"); }
+    }
+    if (frame > 841 && frame <= 861 && isPaused_) { throw std::runtime_error("Held ESC reopened pause after resume"); }
     const bool empty = !bossSpawned_ && enemies_.empty() && defeatedEnemyCount_ > 0;
     if (empty && std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return !v; })) {
         longestEmptyGap = (std::max)(longestEmptyGap, stageEmptyFrames_);
@@ -227,10 +274,10 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
     }
     if (wasEmpty && !empty) { ++encounterGapCount; }
     wasEmpty = empty;
-    if (frame == 61 && !showControlsHelp_) {
+    if (frame == 61 && (!showControlsHelp_ || !isPaused_)) {
         throw std::runtime_error("H did not open controls help");
     }
-    if (frame == 301 && showControlsHelp_) {
+    if (frame == 301 && (showControlsHelp_ || isPaused_)) {
         throw std::runtime_error("H did not close controls help");
     }
     if (frame == 61) {
@@ -241,11 +288,31 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
     if (frame == 60 || frame == 300) {
         keys[DIK_H] = 0x80;
     }
+    if (frame >= 720 && frame < 840) {
+        input_->SetTestFrame(keys, mouse);
+        return false; // この区間はメニュー試験のキーだけを入力する。
+    }
     if (isGameClear_) {
+        if (resultTransitionTimer_ <= 0) {
+            constexpr BYTE directKeys[] = { DIK_RIGHT, DIK_LEFT, DIK_DOWN, DIK_UP, DIK_D, DIK_A, DIK_S, DIK_W };
+            constexpr ImGuiKey uiKeys[] = { ImGuiKey_RightArrow, ImGuiKey_LeftArrow, ImGuiKey_DownArrow, ImGuiKey_UpArrow,
+                ImGuiKey_D, ImGuiKey_A, ImGuiKey_S, ImGuiKey_W };
+            const int action = resultFrames / 30;
+            const int offset = resultFrames % 30;
+            if (action < 8) {
+                if (offset < 10) { keys[directKeys[action]] = 0x80; }
+                if (offset == 3) { ImGui::GetIO().AddKeyEvent(uiKeys[action], true); }
+                if (offset == 5) { ImGui::GetIO().AddKeyEvent(uiKeys[action], false); }
+                if (offset > 0 && resultSelectedItem_ != (action + 1) % 2) {
+                    throw std::runtime_error("Result selection repeated during key hold or delayed UI event");
+                }
+            }
+            if (resultFrames == 240) { log("RESULT_KEYS_OK all_8_keys_hold=1 delayed_ui_duplicates_ignored=1"); }
+        }
         if (!bossDefeated_ || !std::all_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return v; })) {
             throw std::runtime_error("Clear without full schedule and boss defeat");
         }
-        if (resultTransitionTimer_ <= 0 && ++resultFrames >= 120 && phase == 0) {
+        if (resultTransitionTimer_ <= 0 && ++resultFrames >= 260 && phase == 0) {
             if (bossShotsFired_ <= 0) {
                 throw std::runtime_error("Boss was defeated without firing any attack");
             }
@@ -273,7 +340,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
                 " max_bullets_e=" + std::to_string(maxActiveEnemyBullets_) +
                 " sounds=" + std::to_string(sound_->GetPlayCount()) +
                 " voices=" + std::to_string(sound_->GetVoiceCount()));
-            keys[DIK_R] = 0x80; // 実際の結果画面ショートカットから再挑戦する。
+            keys[DIK_RETURN] = 0x80; // 選択中の「再挑戦」をEnterで決定する。
             phase = 1;
         }
         input_->SetTestFrame(keys, mouse);
@@ -596,18 +663,23 @@ bool GameRuntime::RunBossProbe(const std::string& logPath, bool preview)
     const auto require = [&](bool ok, const char* message) {
         if (!ok) { log(std::string("FAIL ") + message); throw std::runtime_error(message); }
     };
-    if (preview && (frame == 138 || frame == 172 || frame == 366 || frame == 606 || frame == 773 ||
+    if (preview && (frame == 30 || frame == 31 || frame == 138 || frame == 172 || frame == 366 || frame == 606 || frame == 773 ||
         frame == 880 || frame == 901 || frame == 931)) {
         phantomPreviewPaused_ = true;
-        ImGui::SetNextWindowPos({ 20.0f, 30.0f }, ImGuiCond_Always);
+        // 同じHUDを背後に残したポーズ・操作方法も、通常起動を変えずに実画面で確認する。
+        isPaused_ = frame == 30 || frame == 31;
+        showControlsHelp_ = frame == 31;
+        ImGui::SetNextWindowPos({ 20.0f, 150.0f }, ImGuiCond_Always);
         ImGui::Begin("Boss visual fixture", nullptr,
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
-        ImGui::TextUnformatted("TEST ONLY: boss / clear / failed / training");
+        ImGui::TextUnformatted("TEST ONLY: pause / controls / boss / results");
         ImGui::Text("Frame %d   Pattern %d   Counter %d", frame, bossAttackPattern_, bossCounterTimer_);
-        const bool next = ImGui::Button("NEXT / resume test", { 220.0f, 36.0f });
+        // 全画面の操作説明ウィンドウがマウスを覆っていても、映像試験を進められる。
+        const bool next = ImGui::Button("NEXT / F8", { 220.0f, 36.0f }) || ImGui::IsKeyPressed(ImGuiKey_F8, false);
         ImGui::End();
         if (!next) { input_->SetTestFrame({}, { 640, 320 }); return false; }
         phantomPreviewPaused_ = false;
+        isPaused_ = showControlsHelp_ = false;
     }
     ++frame;
     if (frame == 1) {

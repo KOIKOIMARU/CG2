@@ -61,6 +61,7 @@ void Framework::Update() {
         return;
     }
 
+    dxCommon_->ResizePresentation();
     input_->Update();
 }
 
