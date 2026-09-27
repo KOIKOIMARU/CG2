@@ -97,6 +97,8 @@ Enemy* GameRuntime::FindPhantomTarget(const Enemy* target) const
 
 bool GameRuntime::TryActivatePhantomRaid()
 {
+    if (IsTutorial() && (tutorial_.success > 0.0f ||
+        (tutorial_.lesson != TutorialLesson::Skill && tutorial_.lesson != TutorialLesson::Fever))) { return false; }
     if (!phantomReady_ || IsPhantomRaidActive() || !player_ || player_->IsDead() || isGameClear_ || isGameOver_) {
         return false;
     }
@@ -431,7 +433,8 @@ void GameRuntime::DrawPhantomRaidOverlay()
     const auto p = [&](float x, float y) { return ImVec2(panel.x + x * hudScale, panel.y + y * hudScale); };
     // フィーバー中も「スキル＝青」の意味は変えない。強化演出の金色は斬撃側だけに使う。
     const ImU32 hudAccent = CombatHud::Energy;
-    const bool ready = phantomReady_ || active;
+    const bool lessonLocked = IsTutorial() && tutorial_.lesson < TutorialLesson::Skill;
+    const bool ready = !lessonLocked && (phantomReady_ || active);
     const float readyBurst = std::clamp(phantomReadyFlash_ / 72.0f, 0.0f, 1.0f);
     CombatHud::Shade(draw, p(-30, -12), { min.x + size.x, min.y + size.y }, true);
     // 弾薬表示と同じ小さな枠。回復完了は紋章の点灯で伝え、巨大な色面を置かない。
@@ -450,14 +453,16 @@ void GameRuntime::DrawPhantomRaidOverlay()
             (hudAccent & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT),
             3.0f * hudScale, 0, hudScale);
     }
-    if (!active && phantomNoTargetNotice_ > 0.0f) {
+    if (lessonLocked) {
+        PhantomText(draw, p(62, 28), 14.0f * hudScale, CombatHud::Muted, "練習待機");
+    } else if (!active && phantomNoTargetNotice_ > 0.0f) {
         PhantomText(draw, p(62, 28), 14.0f * hudScale, CombatHud::Muted, "対象なし");
     } else if (!active && !phantomReady_ && phantomCooldown_ > 0.0f) {
         char cooldown[24]{};
         std::snprintf(cooldown, sizeof(cooldown), "%.1f秒", static_cast<double>(phantomCooldown_ / 60.0f));
         CombatHud::Readout(draw, p(62, 27), 18.0f * hudScale, CombatHud::White, cooldown);
     }
-    const float recovery = ready ? 1.0f : 1.0f - std::clamp(phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f);
+    const float recovery = lessonLocked ? 0.0f : (ready ? 1.0f : 1.0f - std::clamp(phantomCooldown_ / kPhantomCooldownFrames, 0.0f, 1.0f));
     CombatHud::Meter(draw, p(62, 50), p(230, 61), recovery, hudAccent, hudScale);
     draw->PopClipRect();
 }

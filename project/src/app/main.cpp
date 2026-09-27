@@ -54,6 +54,10 @@ SmokeTestOptions ParseSmokeTestOptions()
         } else if (argument == L"--smoke-tutorial") {
             options.tutorial = true;
 #ifdef _DEBUG
+        } else if (argument == L"--smoke-tutorial-preview") {
+            options.tutorial = true;
+            options.playthrough = true;
+            options.tutorialPreview = true;
         } else if (argument == L"--smoke-playthrough") {
             options.playthrough = true;
         } else if (argument == L"--smoke-phantom") {

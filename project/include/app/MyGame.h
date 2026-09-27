@@ -12,6 +12,7 @@ class AbstractSceneFactory;
 struct SmokeTestOptions {
     bool enabled = false;
     bool tutorial = false; // スモークテストの入場先。通常起動には影響しない。
+    bool tutorialPreview = false; // Debug専用。各練習の実画面で止めて確認する。
     bool playthrough = false; // Debug専用。通常の射撃・被弾ルールでクリアと再挑戦を検証。
     bool phantom = false; // Debug専用。残像連撃の条件・対象消失・ボス撃破を試験配置で検証。
     bool phantomPreview = false; // 映像確認用。代表フレームで止め、NEXTボタンで再開する。

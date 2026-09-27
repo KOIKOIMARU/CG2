@@ -115,6 +115,7 @@ void Enemy::Initialize(
     fireControl_ = {};
     sniperBracePosition_ = {};
     sniperBraced_ = false;
+    trainingTarget_ = false;
     attackTelegraphRate_ = 0.0f;
     bossRecoveryRate_ = 0.0f;
 
@@ -256,6 +257,7 @@ void Enemy::Update(float railDistance, float timeScale)
         behavior_ == Behavior::Boss ?
             motionScale : motionScale * kStandardEnemyActionTimeScale;
     ageTimer_ += actionTimeScale;
+    if (trainingTarget_) { ageTimer_ = (std::min)(ageTimer_, 110.0f); }
     age_ = static_cast<int>(std::floor(ageTimer_));
     // ボスは構え・反動中に不規則な横揺れを止め、攻撃と反撃の狙いを読みやすくする。
     if (behavior_ != Behavior::Boss || (attackTelegraphRate_ <= 0.0f && bossRecoveryRate_ <= 0.0f)) {

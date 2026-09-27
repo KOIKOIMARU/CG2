@@ -12,6 +12,7 @@ param(
     [switch]$SkipBuild,
 
     [switch]$Tutorial,
+    [switch]$TutorialPreview,
     [switch]$Playthrough,
     [switch]$Phantom,
     [switch]$PhantomPreview,
@@ -142,6 +143,14 @@ $arguments =
     "--smoke-test $gameplayText " +
     "--smoke-timeout $startupTimeoutText " +
     "--smoke-log `"$smokeLogPath`""
+if ($TutorialPreview) {
+    if ($Configuration -ne 'Debug' -or $StartPhase -ne 'Opening') {
+        throw 'TutorialPreview requires Debug and Opening.'
+    }
+    $Tutorial = $true
+    $Playthrough = $true
+    $arguments += ' --smoke-tutorial-preview'
+}
 if ($Tutorial) {
     if ($StartPhase -ne 'Opening') {
         throw 'Tutorial cannot be combined with a main-game StartPhase.'
@@ -149,8 +158,8 @@ if ($Tutorial) {
     $arguments += ' --smoke-tutorial'
 }
 if ($Playthrough) {
-    if ($Configuration -ne 'Debug' -or $Tutorial -or $StartPhase -ne 'Opening') {
-        throw 'Playthrough requires Debug, main game, and Opening.'
+    if ($Configuration -ne 'Debug' -or $StartPhase -ne 'Opening') {
+        throw 'Playthrough requires Debug and Opening.'
     }
     $arguments += ' --smoke-playthrough'
 }

@@ -135,10 +135,6 @@ constexpr int kStageEncounterBreatherFrames = 84;
 constexpr float kEmptyEncounterMaxFrames = 60.0f;
 constexpr float kEmptyBossApproachMaxFrames = 120.0f;
 constexpr float kStageEncounterGroupingDistance = 10.5f;
-constexpr float kTutorialReturnFireDistance = 36.0f;
-constexpr float kTutorialFullCombatDistance = 68.0f;
-constexpr int kTutorialShotIntervalFrames = 96;
-constexpr int kTutorialGuideDurationFrames = 240;
 constexpr int kBossWarningDuration = 150;
 constexpr int kBossIntroDuration = 72;
 constexpr int kBossDefeatFlashDuration = 44;
@@ -242,8 +238,6 @@ struct StageEnemySpawnEvent {
     int maxHpOverride;
     float scaleMultiplier;
     const char* beatName;
-    // 初登場の操作だけを短く案内する。同じ編隊の後続機では再表示しない。
-    const char* guide = nullptr;
 };
 
 constexpr int kWaveCount = 3;
@@ -264,21 +258,6 @@ constexpr StageRailEvent kStageRailEvents[] = {
     { 246.0f,  0, 0.066f, 10 }
 };
 
-constexpr StageEnemySpawnEvent kTutorialEnemySpawnEvents[] = {
-    // 狙う → 一撃で倒す → 回避 → 追いかけて狙う → 撃破をつないでフィーバーへ。
-    // 最初の3機は通常弾3発／チャージ弾1発。操作を試す間は反撃させない。
-    {   6.0f,  0.0f,  0.3f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::Direct,     0.000f,  0,  3, 1.18f, "First target", "マウスで狙う / SPACE長押しで連射" },
-    {  18.0f, -2.4f,  0.0f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.000f,  0,  3, 1.14f, "Charge pair", "SPACEを離してチャージ、押して発射" },
-    {  24.0f,  2.4f,  0.4f, 42.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.000f,  0,  3, 1.14f, "Charge pair" },
-    {  36.0f,  0.0f,  0.8f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.025f,  5,  5, 1.20f, "Dodge lesson", "A・D + SHIFTで回避" },
-    {  48.0f, -4.6f,  0.8f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.020f,  4,  3, 1.12f, "Sweep lesson" },
-    {  55.0f,  4.6f,  1.1f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.020f,  4,  3, 1.12f, "Sweep lesson" },
-    {  68.0f, -2.8f, -0.3f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway", "撃破でゲージをためる / 満タンで自動フィーバー" },
-    {  72.0f,  0.0f,  0.8f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway" },
-    {  76.0f,  2.8f, -0.3f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.020f,  4,  3, 1.12f, "Fever runway" },
-    {  88.0f, -3.2f,  1.3f, 48.0f, Enemy::Behavior::Sniper,         Enemy::EntryStyle::PopShooter, 0.040f,  8,  6, 1.18f, "Sniper lock" },
-    {  98.0f,  3.2f,  0.9f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Dodge target" },
-};
 
 // 本編の配置。チュートリアルの案内・練習用HP・反撃制限は適用しない。
 constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
@@ -330,11 +309,10 @@ constexpr bool IsStageEnemyScheduleValid(const StageEnemySpawnEvent (&events)[Co
     return Count > 0;
 }
 static_assert(IsStageEnemyScheduleValid(kStageEnemySpawnEvents));
-static_assert(IsStageEnemyScheduleValid(kTutorialEnemySpawnEvents));
 
 std::span<const StageEnemySpawnEvent> GetEnemySchedule(bool isTutorial)
 {
-    return isTutorial ? std::span<const StageEnemySpawnEvent>(kTutorialEnemySpawnEvents) :
+    return isTutorial ? std::span<const StageEnemySpawnEvent>{} :
         std::span<const StageEnemySpawnEvent>(kStageEnemySpawnEvents);
 }
 
@@ -721,6 +699,8 @@ void GameRuntime::Initialize(PlayMode mode)
     playMode_ = mode;
     isExitRequested_ = false;
     isRetryRequested_ = false;
+    isMainGameRequested_ = false;
+    tutorial_ = {};
     showControlsHelp_ = false;
     isPaused_ = false;
     pauseSelectedItem_ = resultSelectedItem_ = 0;
@@ -776,8 +756,6 @@ void GameRuntime::Initialize(PlayMode mode)
     stageTimelineWasBlocked_ = false;
     stageEncounterBreatherTimer_ = 0;
     stageEmptyFrames_ = 0.0f;
-    tutorialGuideText_ = nullptr;
-    tutorialGuideTimer_ = 0;
     stageCameraYawBias_ = 0.0f;
     stageCameraRollBias_ = 0.0f;
     stageCameraLiftBias_ = 0.0f;
@@ -1070,7 +1048,7 @@ void GameRuntime::Update()
     UpdatePhantomRaid();
 
     if (!isGameOver_ && !isGameClear_) {
-        if (!IsPhantomRaidActive()) {
+        if (!IsPhantomRaidActive() && TutorialAllowsShooting()) {
             UpdatePlayerShooting();
         }
         UpdateEnemyActions();
@@ -1078,6 +1056,7 @@ void GameRuntime::Update()
 
     UpdateWorldEntities();
     UpdateGameplayCollisions();
+    UpdateTutorialLesson();
     UpdateDefeatChain();
     AdvanceEnemyWaveIfCleared();
     UpdateLockOnTarget();
@@ -1141,8 +1120,10 @@ bool GameRuntime::HandleRuntimeShortcuts()
 
 void GameRuntime::UpdateStageDirector()
 {
-    if (tutorialGuideTimer_ > 0) {
-        --tutorialGuideTimer_;
+    if (IsTutorial()) {
+        targetRailSpeed_ = 0.145f * (feverTimer_ > 0 ? kFeverRailSpeedMultiplier : 1.0f);
+        stageSectionName_ = "Tutorial";
+        return;
     }
     const StageSegment* activeSegment = &kStageSegments[0];
     for (const StageSegment& segment : kStageSegments) {
@@ -1209,6 +1190,8 @@ void GameRuntime::UpdateRailProgress()
             feverTimer_ > 0 ? kFeverRailAccelerationResponse : 0.070f);
         const float worldTimeScale = GetCinematicWorldTimeScale();
         railDistance_ += railSpeed_ * worldTimeScale;
+        // 背景は流し続けるが、練習の進行は距離ではなく操作の達成で決める。
+        if (IsTutorial()) { return; }
 
         int activeStageEnemyCount = 0;
         for (const auto& enemy : enemies_) {
@@ -1401,6 +1384,7 @@ void GameRuntime::ActivateFever()
 
 void GameRuntime::AddFeverGauge(int amount)
 {
+    if (IsTutorial() && tutorial_.lesson != TutorialLesson::Fever) { return; }
     if (amount <= 0 || feverTimer_ > 0 || isGameOver_ || isGameClear_) {
         return;
     }
@@ -1511,8 +1495,6 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     }
 
     stageProgress_ = targetProgress;
-    tutorialGuideText_ = nullptr;
-    tutorialGuideTimer_ = 0;
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
     stageEncounterBreatherTimer_ = 0;
@@ -1595,93 +1577,13 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
 
 void GameRuntime::UpdateEnemyActions()
 {
-    if (justDodgeSlowTimer_ > 0) {
-        return;
-    }
-
+    if (IsTutorial()) { UpdateTutorialAttack(); return; }
+    if (justDodgeSlowTimer_ > 0) { return; }
     UpdateEnemyWave();
     UpdateBossActions();
-
-    if (IsTutorial() && stageProgress_ < kTutorialReturnFireDistance) {
-        return;
-    }
-    const bool isTutorialCombat =
-        IsTutorial() && stageProgress_ < kTutorialFullCombatDistance;
-
-    bool hasSupportDrone = false;
-    for (const auto& enemy : enemies_) {
-        if (enemy && !enemy->IsDead() && enemy->IsSupport()) {
-            hasSupportDrone = true;
-            break;
-        }
-    }
-
-    if (!IsTutorial()) {
-        UpdateEnemyAttackPatterns(hasSupportDrone);
-        return;
-    }
-
-    // 練習の反撃制限と単発射撃は維持。本編だけ敵ごとの射撃制御へ切り替える。
-    --enemyShotTimer_;
-    if (enemyShotTimer_ <= 0) {
-        int normalEnemyShotsThisVolley = 0;
-        const int maxNormalEnemyShotsThisVolley =
-            isTutorialCombat ? 1 : (hasSupportDrone ? 3 : 2);
-        for (const auto& enemy : enemies_) {
-            if (enemy->IsSniper() && enemy->CanShoot() &&
-                normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
-                FireEnemyBullet(
-                    enemy->GetAimPosition(),
-                    EnemyBulletStyle::Sniper);
-                ++normalEnemyShotsThisVolley;
-                break;
-            }
-        }
-        for (const auto& enemy : enemies_) {
-            if (enemy->IsCrossfire() && enemy->CanShoot() &&
-                normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
-                const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
-                FireEnemyBullet(
-                    enemyAimPosition,
-                    EnemyBulletStyle::Crossfire,
-                    { enemyAimPosition.x < 0.0f ? 1.25f : -1.25f, 0.0f });
-                ++normalEnemyShotsThisVolley;
-            }
-        }
-        for (const auto& enemy : enemies_) {
-            if (enemy->CanShoot()) {
-                if (enemy->IsBoss()) {
-                    continue;
-                }
-
-                const Math::Vector3 enemyAimPosition = enemy->GetAimPosition();
-                if (enemy->IsShield() &&
-                    normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
-                    FireEnemyBullet(
-                        enemyAimPosition,
-                        EnemyBulletStyle::ShieldOrb,
-                        { -3.0f, 0.15f });
-                    FireEnemyBullet(
-                        enemyAimPosition,
-                        EnemyBulletStyle::ShieldOrb,
-                        { 0.0f, -0.25f });
-                    FireEnemyBullet(
-                        enemyAimPosition,
-                        EnemyBulletStyle::ShieldOrb,
-                        { 3.0f, 0.15f });
-                    ++normalEnemyShotsThisVolley;
-                } else if (!enemy->IsCrossfire() && !enemy->IsSniper() &&
-                    normalEnemyShotsThisVolley < maxNormalEnemyShotsThisVolley) {
-                    FireEnemyBullet(
-                        enemyAimPosition,
-                        EnemyBulletStyle::Standard);
-                    ++normalEnemyShotsThisVolley;
-                }
-            }
-        }
-        enemyShotTimer_ = isTutorialCombat ? kTutorialShotIntervalFrames :
-            (std::max)(24, enemyShotInterval_ - (hasSupportDrone ? 18 : 0));
-    }
+    const bool hasSupportDrone = std::any_of(enemies_.begin(), enemies_.end(),
+        [](const auto& enemy) { return enemy && !enemy->IsDead() && enemy->IsSupport(); });
+    UpdateEnemyAttackPatterns(hasSupportDrone);
 }
 
 void GameRuntime::UpdateEnemyAttackPatterns(bool hasSupportDrone)
@@ -3808,6 +3710,7 @@ void GameRuntime::SpawnBossEnemy()
 
 void GameRuntime::UpdateStageEnemyEvents()
 {
+    if (IsTutorial()) { return; }
     if (isGameOver_ || isGameClear_) {
         return;
     }
@@ -3852,10 +3755,6 @@ void GameRuntime::UpdateStageEnemyEvents()
 
         stageEnemyEventTriggered_[index] = true;
         stageCombatBeatName_ = event.beatName;
-        if (IsTutorial() && event.guide) {
-            tutorialGuideText_ = event.guide;
-            tutorialGuideTimer_ = kTutorialGuideDurationFrames;
-        }
         SpawnStageEnemy(
             event.x,
             event.y,
@@ -3883,11 +3782,7 @@ void GameRuntime::AdvanceEnemyWaveIfCleared()
     }
 
     if (IsTutorial()) {
-        // 練習区間で終了。本編やボス戦へは自動的に進めない。
-        if (stageProgress_ >= 104.0f && enemies_.empty()) {
-            isGameClear_ = true;
-            resultTransitionTimer_ = 30;
-        }
+        // 練習はUpdateTutorialLessonで達成を確認して終了する。
         return;
     }
 
@@ -6828,34 +6723,6 @@ void GameRuntime::DrawPauseOverlay()
     ImGui::End();
     ImGui::PopStyleVar();
 }
-void GameRuntime::DrawTutorialGuideHud()
-{
-    if (!IsTutorial() || !tutorialGuideText_ || tutorialGuideTimer_ <= 0 ||
-        isGameOver_ || isGameClear_ || bossSpawned_) {
-        return;
-    }
-
-    Math::Vector2 hudMin{};
-    Math::Vector2 hudSize{};
-    GetEffectiveHudViewportRect(hudMin, hudSize);
-    const float hudScale = GetCombatHudScale(hudSize);
-    const float fontSize = 22.0f * hudScale;
-    const float fade = (std::min)(
-        std::clamp(static_cast<float>(kTutorialGuideDurationFrames - tutorialGuideTimer_) / 12.0f, 0.0f, 1.0f),
-        std::clamp(static_cast<float>(tutorialGuideTimer_) / 36.0f, 0.0f, 1.0f));
-    const ImVec2 textSize = CombatHud::BattleFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, tutorialGuideText_);
-    const ImVec2 textPosition(
-        hudMin.x + (hudSize.x - textSize.x) * 0.5f,
-        hudMin.y + hudSize.y * 0.14f);
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-    drawList->AddRectFilled(
-        ImVec2(textPosition.x - 16.0f * hudScale, textPosition.y - 9.0f * hudScale),
-        ImVec2(textPosition.x + textSize.x + 16.0f * hudScale, textPosition.y + textSize.y + 9.0f * hudScale),
-        IM_COL32(12, 20, 30, static_cast<int>(154.0f * fade)), 4.0f * hudScale);
-    DrawCombatHudText(drawList, textPosition, fontSize,
-        IM_COL32(234, 243, 249, static_cast<int>(245.0f * fade)), tutorialGuideText_);
-}
-
 void GameRuntime::DrawBossHud()
 {
     const Enemy* boss = GetBossEnemy();
@@ -7155,7 +7022,8 @@ void GameRuntime::DrawFeverHud()
             1.5f);
     }
 
-    if (feverActivationFlashTimer_ > 0) {
+    // 練習中は課題カードが発動を伝える。中央の大見出しを重ねて案内を隠さない。
+    if (feverActivationFlashTimer_ > 0 && !IsTutorial()) {
         const float remaining = static_cast<float>(feverActivationFlashTimer_) /
             static_cast<float>(kFeverActivationFlashFrames);
         const float elapsed = 1.0f - remaining;
@@ -7389,6 +7257,7 @@ void GameRuntime::DrawPlayerDamageHud()
 void GameRuntime::DrawResultOverlay()
 {
     if ((!isGameOver_ && !isGameClear_) || resultTransitionTimer_ > 0) { return; }
+    if (IsTutorial() && isGameClear_) { DrawTutorialResult(); return; }
 
     Math::Vector2 hudMin{}, hudSize{};
     GetEffectiveHudViewportRect(hudMin, hudSize);
@@ -7929,6 +7798,9 @@ bool GameRuntime::DealPlayerShotDamage(Enemy& enemy, const Math::Vector3& impact
         AddEnemyImpactEffect(impactPosition, boss ? 1.85f : (charged ? 1.42f : 1.20f));
     }
     const bool destroyed = enemy.Damage(damage);
+    if (IsTutorial() && tutorial_.lesson == TutorialLesson::Charge && charged && !splash) {
+        tutorial_.chargedHit = true;
+    }
     RecoverPhantomRaidOnHit(charged, destroyed);
     AddFeverGauge(destroyed ? (boss ? 25 : (charged ? 16 : 13)) : (charged ? 4 : 2));
     // 音・照準表示・画面揺れは直撃で一回。巻き込み数ぶん画面を揺らさない。
@@ -8052,10 +7924,9 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
             ++playerDamageCount_;
             PlaySfx("damage");
             BreakEnemyDefeatChain();
-            player_->Damage(
-                feverTimer_ > 0 ?
-                    (std::max)(1, (incomingDamage + 1) / 2) :
-                    incomingDamage);
+            const int damage = feverTimer_ > 0 ? (std::max)(1, (incomingDamage + 1) / 2) : incomingDamage;
+            // 練習では被弾の反応は残し、HP1で止めて何度でも試せるようにする。
+            player_->Damage(IsTutorial() ? (std::min)(damage, (std::max)(0, player_->GetHp() - 1)) : damage);
             if (feverTimer_ <= 0) {
                 feverGauge_ = (std::max)(0, feverGauge_ - 20);
             }

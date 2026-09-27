@@ -109,7 +109,7 @@ void MyGame::Update() {
                 game->RunChargeShotProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.chargePreview) :
                 smokeTestOptions_.phantom ?
                 game->RunPhantomProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.phantomPreview) :
-                game->RunPlaythroughProbe(smokeTestOptions_.logPath.string());
+                game->RunPlaythroughProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.tutorialPreview);
         }
     }
 #endif

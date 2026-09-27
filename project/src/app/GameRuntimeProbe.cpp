@@ -168,8 +168,19 @@ void CheckDodgeControls(Object3dCommon* common, Model* model)
 }
 } // namespace
 
-bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
+bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialPreview)
 {
+    static bool wasTutorial = false;
+    if (IsTutorial()) { wasTutorial = true; return RunTutorialProbe(logPath, tutorialPreview); }
+    if (wasTutorial) {
+        if (player_->GetHp() != 100 || score_ != 0 || tutorial_.started ||
+            feverActivationCount_ != 0 || isGameClear_ || isMainGameRequested_) {
+            throw std::runtime_error("Main game inherited tutorial state");
+        }
+        std::ofstream file(logPath, std::ios::app);
+        file << "TUTORIAL MAIN_ENTRY_OK fresh_hp_score_fever=1\n";
+        wasTutorial = false;
+    }
     static int phase = 0; // 0: 通常戦闘 1: クリア後の再挑戦待ち 2: 完了
     static int frame = 0;
     static int resultFrames = 0;

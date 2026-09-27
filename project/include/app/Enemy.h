@@ -49,6 +49,8 @@ public:
         float scaleMultiplier = 1.0f,
         const char* textureOverride = nullptr);
     void Update(float railDistance, float timeScale = 1.0f);
+    // 練習標的だけは入場後に滞在し、操作を試している間に退場しない。
+    void SetTrainingTarget(bool enabled) { trainingTarget_ = enabled; }
     void Draw();
     void DrawShadow(const Math::Matrix4x4& lightViewProjection);
 
@@ -111,6 +113,7 @@ private:
     EnemyFireControl::Cycle fireControl_{}; // 共通タイマーではなく、各機の構え・連射・休止を保持。
     Math::Vector3 sniperBracePosition_{}; // 構え始めの位置。zはレールからの距離。
     bool sniperBraced_ = false;
+    bool trainingTarget_ = false;
     Behavior behavior_ = Behavior::Formation;
     EntryStyle entryStyle_ = EntryStyle::Direct;
     LifeState lifeState_ = LifeState::Alive;

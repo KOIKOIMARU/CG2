@@ -173,6 +173,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="src\app\Enemy.cpp" />
     <ClCompile Include="src\app\GameRuntime.cpp" />
     <ClCompile Include="src\app\GameRuntimeProbe.cpp" />
+    <ClCompile Include="src\app\GameRuntimeTutorial.cpp" />
     <ClCompile Include="src\app\GameRuntimePhantom.cpp" />
     <ClCompile Include="src\app\MyGame.cpp" />
     <ClCompile Include="src\app\Player.cpp" />

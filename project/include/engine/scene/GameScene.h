@@ -25,7 +25,7 @@ public:
     const Math::Matrix4x4& GetProjectionMatrix() const;
     bool IsTutorial() const { return mode_ == GameRuntime::PlayMode::Tutorial; }
 #ifdef _DEBUG
-    bool RunPlaythroughProbe(const std::string& logPath) { return runtime_.RunPlaythroughProbe(logPath); }
+    bool RunPlaythroughProbe(const std::string& logPath, bool tutorialPreview = false) { return runtime_.RunPlaythroughProbe(logPath, tutorialPreview); }
     bool RunPhantomProbe(const std::string& logPath, bool preview) { return runtime_.RunPhantomProbe(logPath, preview); }
     bool RunChargeShotProbe(const std::string& logPath, bool preview) { return runtime_.RunChargeShotProbe(logPath, preview); }
     bool RunBossProbe(const std::string& logPath, bool preview) { return runtime_.RunBossProbe(logPath, preview); }

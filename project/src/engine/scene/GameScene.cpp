@@ -60,7 +60,9 @@ void GameScene::Finalize()
 void GameScene::Update()
 {
     runtime_.Update();
-    if (runtime_.IsRetryRequested() && sceneManager_) {
+    if (runtime_.IsMainGameRequested() && sceneManager_) {
+        sceneManager_->SetNextScene(SceneType::Game);
+    } else if (runtime_.IsRetryRequested() && sceneManager_) {
         sceneManager_->SetNextScene(IsTutorial() ? SceneType::Tutorial : SceneType::Game);
     } else if (runtime_.IsExitRequested() && sceneManager_) {
         sceneManager_->SetNextScene(SceneType::Title);

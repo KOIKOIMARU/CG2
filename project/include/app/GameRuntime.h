@@ -55,11 +55,13 @@ public:
     const Math::Matrix4x4& GetProjectionMatrix() const;
     bool IsExitRequested() const { return isExitRequested_; }
     bool IsRetryRequested() const { return isRetryRequested_; }
+    bool IsMainGameRequested() const { return isMainGameRequested_; }
     bool IsTutorial() const { return playMode_ == PlayMode::Tutorial; }
     int GetPlayerHp() const;
     int GetPlayerMaxHp() const { return 100; }
 #ifdef _DEBUG
-    bool RunPlaythroughProbe(const std::string& logPath);
+    bool RunPlaythroughProbe(const std::string& logPath, bool tutorialPreview = false);
+    bool RunTutorialProbe(const std::string& logPath, bool preview = false);
     bool RunPhantomProbe(const std::string& logPath, bool preview = false);
     bool RunChargeShotProbe(const std::string& logPath, bool preview = false);
     bool RunBossProbe(const std::string& logPath, bool preview = false);
@@ -116,6 +118,30 @@ private:
     int musicTrack_ = -1; // -1は結果画面などの無音状態。
     bool resultSoundPlayed_ = false;
     PlayMode playMode_ = PlayMode::Game; // 入場時に確定。本編と練習の進行・成績を混在させない。
+    enum class TutorialLesson { Move, Shoot, Dodge, Charge, Skill, Fever, Complete };
+    struct TutorialState {
+        TutorialLesson lesson = TutorialLesson::Move;
+        float elapsed = 0.0f; // 現在の練習の経過時間。60fps換算、ポーズ中は止める。
+        float success = 0.0f; // 成功表示の残り時間。終了後に次の練習へ移る。
+        float markerHold = 0.0f; // 移動先に自機が重なった時間。通り過ぎても少し余裕を持つ。
+        float attackTimer = 120.0f;
+        float feverExperience = 0.0f;
+        int progress = 0; // 移動地点数、撃破数、回避成功数など各練習の実績。
+        int defeatedAtStart = 0;
+        int skillAtStart = 0;
+        int feverDefeatedAtStart = -1;
+        bool chargedHit = false; // 発射ではなく、チャージ弾の直撃を確認する。
+        bool dodgeConfirmed = false;
+        bool started = false;
+    } tutorial_;
+    void BeginTutorialLesson(TutorialLesson lesson);
+    void UpdateTutorialLesson();
+    void UpdateTutorialAttack();
+    void SpawnTutorialTargets(int count, int hp);
+    void CompleteTutorialLesson();
+    bool TutorialAllowsShooting() const;
+    Math::Vector3 GetTutorialMoveTarget() const;
+    void DrawTutorialResult();
     enum class HitEffectType {
         EnemyImpact,
         EnemyDestroy,
@@ -614,12 +640,11 @@ private:
     bool stageTimelineWasBlocked_ = false;
     int stageEncounterBreatherTimer_ = 0;
     float stageEmptyFrames_ = 0.0f; // 敵不在の経過時間。通常編隊間だけ次の出現までの待ちを制限する。
-    const char* tutorialGuideText_ = nullptr; // チュートリアルの配置イベントに対応する操作案内。
-    int tutorialGuideTimer_ = 0; // 案内の残り表示フレーム。初回の編隊出現で設定する。
     int postEffectMode_ = 12;
     bool isGameOver_ = false;
     bool isGameClear_ = false;
     bool isRetryRequested_ = false; // 結果画面から同じモードを新規開始する。
+    bool isMainGameRequested_ = false; // 練習完了画面から本編を新規開始する。
     bool showControlsHelp_ = false; // 操作説明の表示中もゲーム進行を止める。
     bool isPaused_ = false; // ESCで停止。描画とメニュー入力だけ継続する。
     bool menuInputConsumed_ = false; // 説明を閉じたEnterを下のメニューへ通さない。
