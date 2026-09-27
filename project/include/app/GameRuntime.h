@@ -248,6 +248,9 @@ private:
         float drawFarLocalZ = 300.0f;
         bool isVisible = true;
         bool billboard = false;
+        bool isBuilding = false; // 街区ごとに幅と高さを変える対象。元のanchor/scaleは保持する。
+        bool isRoad = false;
+        bool isBackRow = false; // 奥の建物は道路沿いより外側へ置き、空の輪郭を作る。
     };
 
     struct DepthCueEffect {
@@ -298,6 +301,7 @@ private:
     void DrawDepthCueEffects();
     void InitializeRailScenery();
     void UpdateRailScenery();
+    Math::Vector2 GetSceneryDistrictWeights(float worldZ) const;
     void RenderShadowMap();
     void DrawRailScenery(ModelDrawPass drawPass);
     void InitializeContactShadows();
@@ -407,7 +411,6 @@ private:
         const Math::Vector3& playerRotate);
     void UpdateAndDrawPlayerExhaustParticles();
     void DrawPlayerFlightAura();
-    void DrawEditorOverlayGuiRich();
     void DrawFeverBackdrop();
     void DrawEnemyTypeTelegraphs();
     void DrawHud();
@@ -422,8 +425,9 @@ private:
     void DrawHitConfirmHud();
     void DrawPlayerDamageHud();
     void DrawResultOverlay();
-    void DrawPerformanceOverlay();
 #ifdef ENABLE_DEBUG_GUI
+    void DrawEditorOverlayGuiRich();
+    void DrawPerformanceOverlay();
     void DebugJumpToStagePhase(int phaseIndex);
 #endif
     void DrawBulletEffectObjects();
@@ -477,6 +481,9 @@ private:
     std::vector<HitEffect> hitEffects_;
     std::vector<std::unique_ptr<Object3d>> hitEffectObjectPool_;
     std::vector<RailSceneryObject> railSceneryObjects_;
+    // 街区の切替地点をワールド座標に一度だけ固定する。手前の建物は変形させない。
+    float sceneryCanyonStartZ_ = -1.0f;
+    float sceneryPlazaStartZ_ = -1.0f;
     // 初期化時に容量を確保し、建物の半透明部分を奥から手前へ並べるために再利用する。
     std::vector<const RailSceneryObject*> transparentSceneryDrawOrder_;
     std::vector<DepthCueEffect> depthCueEffects_;

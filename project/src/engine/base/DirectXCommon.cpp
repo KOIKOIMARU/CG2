@@ -185,17 +185,10 @@ void DirectXCommon::ResizePresentation()
     currentBackBufferIndex_ = swapChain_->GetCurrentBackBufferIndex();
     presentationWidth_ = width;
     presentationHeight_ = height;
-    // 3D・深度・ポストエフェクトの解像度は維持。16:9の映像を中央へアスペクトフィットする。
-    const float scale = (std::min)(static_cast<float>(width) / WinApp::kClientWidth,
-        static_cast<float>(height) / WinApp::kClientHeight);
-    const float fittedWidth = std::round(WinApp::kClientWidth * scale);
-    const float fittedHeight = std::round(WinApp::kClientHeight * scale);
-    presentationViewport_ = { std::floor((width - fittedWidth) * 0.5f),
-        std::floor((height - fittedHeight) * 0.5f), fittedWidth, fittedHeight, 0, 1 };
-    presentationScissor_ = { static_cast<LONG>(presentationViewport_.TopLeftX),
-        static_cast<LONG>(presentationViewport_.TopLeftY),
-        static_cast<LONG>(presentationViewport_.TopLeftX + fittedWidth),
-        static_cast<LONG>(presentationViewport_.TopLeftY + fittedHeight) };
+    // 内部解像度は維持し、表示先はクライアント領域全体を使う。
+    // カメラも表示先の縦横比を使うため、機体を横に引き伸ばさず黒帯だけをなくせる。
+    presentationViewport_ = { 0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1 };
+    presentationScissor_ = { 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
     FlushDebugMessages();
 }
 

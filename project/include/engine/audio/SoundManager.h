@@ -23,9 +23,14 @@ public:
     bool Initialize(); // 音声デバイスが使えなくてもゲームは継続できる。
     void Finalize();
     bool Load(const std::string& key, const std::string& filename,
-        uint32_t voiceCount = 3, float volume = 0.5f, float minimumInterval = 0.04f);
+        uint32_t voiceCount = 3, float volume = 0.5f, float minimumInterval = 0.04f,
+        float pitchVariation = 0.0f, float gainVariation = 0.0f);
+    // 同じ用途の別テイクを最大4個保持する。再生枠は増やさず、同じテイクの連続を避ける。
+    bool LoadVariations(const std::string& key, const std::vector<std::string>& filenames,
+        uint32_t voiceCount, float volume, float minimumInterval,
+        float pitchVariation = 0.0f, float gainVariation = 0.0f);
     void Unload(const std::string& key);
-    bool Play(const std::string& key); // 満杯時は追加生成せず、その一音だけ見送る。
+    bool Play(const std::string& key, float gain = 1.0f); // 満杯時は追加生成せず、その一音だけ見送る。
     bool PlayLoop(const std::string& key); // 1ボイスでロードした曲を無限ループ。再呼び出しで重ねない。
     void Stop(const std::string& key);
     void SetVolume(const std::string& key, float volume);
@@ -34,9 +39,14 @@ public:
     uint64_t GetPlayCount() const { return playCount_; }
 private:
     struct Entry {
-        SoundData data;
+        std::vector<SoundData> variations; // 初期化時に読み込むPCM。再生中は追加・デコードしない。
         std::array<IXAudio2SourceVoice*, 4> voices{};
         float minimumInterval = 0.04f; // 同じ音の重なり過ぎを防ぐ秒数。
+        float volume = 0.5f;
+        float pitchVariation = 0.0f; // 再生速度の微変化幅。0なら元音程（BGM・通知音）。
+        float gainVariation = 0.0f; // 強さの微変化幅。0なら一定。
+        uint32_t lastVariation = 0;
+        uint32_t randomState = 0xA341316Cu; // ゲームの敵配置等とは独立した、音専用の乱数状態。
         bool looping = false;
         std::chrono::steady_clock::time_point lastPlay{};
     };

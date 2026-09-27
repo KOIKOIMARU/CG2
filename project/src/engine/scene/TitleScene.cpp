@@ -110,8 +110,7 @@ void TitleScene::PrepareBackdrop()
 void TitleScene::UpdateBackdrop()
 {
     if (!camera_) { return; }
-    const auto size = dxCommon_->GetRenderTextureSize();
-    camera_->SetAspectRatio(size.x / (std::max)(1.0f, size.y));
+    camera_->SetAspectRatio(dxCommon_->GetPresentationAspectRatio());
     camera_->SetTranslate({ 0.0f, 5.0f, -12.5f });
     camera_->SetRotate({ 0.29f, 0.006f * std::sin(elapsed_ * 0.12f), -0.025f });
     camera_->Update();

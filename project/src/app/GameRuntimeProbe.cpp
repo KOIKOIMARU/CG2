@@ -9,6 +9,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <iterator>
+#include <cstdlib>
 
 namespace {
 void CheckSniperPosture(Object3dCommon* common, Model* model)
@@ -189,6 +190,22 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     static bool wasEmpty = false;
     static std::vector<float> pausedState;
     static int delayedEscapeEvents = 0;
+    static unsigned int sceneryCoverage = 0;
+    static unsigned int sceneryPreviewSeen = 0;
+    static const bool sceneryPreview = [] {
+        char* value = nullptr;
+        size_t length = 0;
+        const bool enabled = _dupenv_s(&value, &length, "CG2_SCENERY_PREVIEW") == 0 &&
+            value && value[0] == '1';
+        std::free(value);
+        return enabled;
+    }();
+    struct ScenerySnapshot {
+        Math::Vector3 position{};
+        Math::Vector3 scale{};
+        bool visible = false;
+    };
+    static std::vector<ScenerySnapshot> previousScenery;
     const auto log = [&](const std::string& message) {
         std::ofstream file(logPath, std::ios::app);
         file << "PLAYTHROUGH " << message << '\n';
@@ -202,6 +219,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
         if (player_->GetHp() != 100 || score_ != 0 || feverGauge_ != 0 ||
             feverTimer_ != 0 || feverActivationCount_ != 0 ||
             playerShotsFired_ != 0 || !enemies_.empty() ||
+            sceneryCanyonStartZ_ != -1.0f || sceneryPlazaStartZ_ != -1.0f ||
             std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return v; })) {
             throw std::runtime_error("Retry did not reset gameplay state");
         }
@@ -210,13 +228,57 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             sound_->GetLoopCount() != 1 || musicTrack_ != 0) {
             throw std::runtime_error("Retry did not recreate the bounded audio bank");
         }
-        log("RETRY_RESET_OK hp=100 score=0 fever=0 voices=28 music_loops=1 track=stage");
+        log("RETRY_RESET_OK hp=100 score=0 fever=0 voices=28 music_loops=1 track=stage scenery=avenue");
         phase = 2;
         input_->SetTestFrame(keys, mouse);
         return true;
     }
     if (phase == 2) {
         return true;
+    }
+    // 通常プレイを最後まで通し、街区の到達と、表示中の建物が変形しないことを検証する。
+    const auto district = GetSceneryDistrictWeights(railDistance_ + 48.0f);
+    const unsigned int districtBit = district.y > 0.98f ? 4u :
+        (district.x > 0.98f && district.y < 0.02f ? 2u : (district.x < 0.02f ? 1u : 0u));
+    if (districtBit != 0 && (sceneryCoverage & districtBit) == 0) {
+        sceneryCoverage |= districtBit;
+        log("SCENERY_DISTRICT bit=" + std::to_string(districtBit) +
+            " stage=" + std::to_string(stageProgress_) + " rail=" + std::to_string(railDistance_));
+    }
+    if (previousScenery.empty()) { previousScenery.resize(railSceneryObjects_.size()); }
+    if (previousScenery.size() != railSceneryObjects_.size()) {
+        throw std::runtime_error("Scenery object count changed during play");
+    }
+    for (size_t i = 0; i < railSceneryObjects_.size(); ++i) {
+        const auto& scenery = railSceneryObjects_[i];
+        if (!scenery.object || (!scenery.isBuilding && !scenery.isRoad)) { continue; }
+        const ScenerySnapshot current{ scenery.object->GetTranslate(), scenery.object->GetScale(), scenery.isVisible };
+        const auto& previous = previousScenery[i];
+        if (previous.visible && current.visible && std::abs(current.position.z - previous.position.z) < 0.05f &&
+            (std::abs(current.position.x - previous.position.x) > 0.01f ||
+                std::abs(current.scale.x - previous.scale.x) > 0.01f ||
+                std::abs(current.scale.y - previous.scale.y) > 0.01f)) {
+            throw std::runtime_error("Visible scenery moved sideways or changed scale");
+        }
+        if (scenery.isBuilding && std::abs(current.position.x) < 31.49f) {
+            throw std::runtime_error("Building entered central combat corridor");
+        }
+        previousScenery[i] = current;
+    }
+    // 明示指定されたDebug試験だけ、各街区で画面確認用に停止する。通常起動/Releaseには入らない。
+    if (sceneryPreview && frame > 30 && districtBit != 0 && (sceneryPreviewSeen & districtBit) == 0) {
+        sceneryPreviewSeen |= districtBit;
+        phantomPreviewPaused_ = true;
+    }
+    if (sceneryPreview && phantomPreviewPaused_) {
+        ImGui::SetNextWindowPos({ 20.0f, 155.0f }, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({ 180.0f, 72.0f }, ImGuiCond_Always);
+        ImGui::Begin("Scenery QA", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);
+        const bool next = ImGui::Button("NEXT / F8") || ImGui::IsKeyPressed(ImGuiKey_F8, false);
+        ImGui::End();
+        if (next) { phantomPreviewPaused_ = false; }
+        input_->SetTestFrame({}, mouse);
+        return false;
     }
     if (isGameOver_) {
         log("FAIL player_dead progress=" + std::to_string(stageProgress_));
@@ -331,6 +393,8 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
                 throw std::runtime_error("Fever did not auto activate during normal combat");
             }
             log("FEVER_AUTO_OK no_activation_key=1");
+            if (sceneryCoverage != 7u) { throw std::runtime_error("Playthrough did not reach all three scenery districts"); }
+            log("SCENERY_OK avenue_canyon_plaza=1 visible_transforms_stable=1 bounded_objects=1");
             log("PACING_OK encounter_gaps=" + std::to_string(encounterGapCount) +
                 " longest_empty_frames=" + std::to_string(longestEmptyGap));
             log("CLEAR hp=" + std::to_string(player_->GetHp()) +
@@ -359,6 +423,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     }
     if (frame % 600 == 0) {
         log("PROGRESS stage=" + std::to_string(stageProgress_) +
+            " rail=" + std::to_string(railDistance_) +
             " hp=" + std::to_string(player_->GetHp()) +
             " defeated=" + std::to_string(defeatedEnemyCount_));
     }

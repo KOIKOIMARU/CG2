@@ -481,7 +481,9 @@ GameRuntime::~GameRuntime() = default;
 void GameRuntime::PlaySfx(const char* key)
 {
     if (sound_) {
-        sound_->Play(key);
+        // 一斉撃破の爆発で連撃の締めを隠さない。通常の撃破音量はそのまま。
+        const float gain = IsPhantomRaidActive() && std::string_view(key) == "destroy" ? 0.45f : 1.0f;
+        sound_->Play(key, gain);
     }
 }
 
@@ -749,6 +751,7 @@ void GameRuntime::Initialize(PlayMode mode)
     bossDefeatPosition_ = {};
     resultTransitionTimer_ = -1;
     railDistance_ = 0.0f;
+    sceneryCanyonStartZ_ = sceneryPlazaStartZ_ = -1.0f;
     railSpeed_ = 0.145f;
     targetRailSpeed_ = 0.145f;
     stageProgress_ = 0.0f;
@@ -855,6 +858,7 @@ void GameRuntime::Initialize(PlayMode mode)
     camera_->SetRotate({ 0.06f, 0.0f, 0.0f });
     camera_->SetTranslate({ 0.0f, 2.65f, -kGameplayCameraInitialDistance });
     camera_->SetFovY(kGameplayCameraBaseFovY);
+    camera_->SetAspectRatio(dxCommon_->GetPresentationAspectRatio());
     camera_->SetFarClip(520.0f);
     camera_->Update();
     object3dCommon_->SetDefaultCamera(camera_.get());
@@ -904,19 +908,24 @@ void GameRuntime::Initialize(PlayMode mode)
     musicTrack_ = -1;
     sound_ = std::make_unique<SoundManager>();
     if (sound_->Initialize()) {
-        // 効果音の同時発音枠は25。連射は小さめ、命中・撃破を聞き分けられる音量にする。
-        sound_->Load("shot", "resources/audio/combat/shot.wav", 4, 0.30f, 0.065f);
-        sound_->Load("charge", "resources/audio/combat/charge.wav", 3, 0.44f, 0.09f);
-        sound_->Load("hit", "resources/audio/combat/hit.wav", 3, 0.42f, 0.05f);
-        sound_->Load("destroy", "resources/audio/combat/destroy.wav", 3, 0.60f, 0.07f);
-        sound_->Load("damage", "resources/audio/combat/damage.wav", 2, 0.58f, 0.15f);
-        sound_->Load("dodge", "resources/audio/combat/dodge.wav", 2, 0.50f, 0.12f);
-        sound_->Load("fever", "resources/audio/combat/fever.wav", 1, 0.60f, 0.5f);
-        sound_->Load("clear", "resources/audio/combat/clear.wav", 1, 0.60f, 1.0f);
-        sound_->Load("fail", "resources/audio/combat/fail.wav", 1, 0.50f, 1.0f);
-        sound_->Load("skill_ready", "resources/audio/combat/skill_ready.wav", 1, 0.50f, 0.5f);
-        sound_->Load("slash", "resources/audio/combat/slash.wav", 3, 0.62f, 0.035f);
-        sound_->Load("slash_finish", "resources/audio/combat/slash_finish.wav", 1, 0.70f, 0.4f);
+        // 発音枠は従来と同じ25。連発する4種は3テイクを共有し、毎回の音色を少し変える。
+        const auto varied = [this](const char* key, uint32_t voices, float volume, float interval, float pitch) {
+            const std::string base = std::string("resources/audio/combat/") + key;
+            sound_->LoadVariations(key, { base + ".wav", base + "_02.wav", base + "_03.wav" },
+                voices, volume, interval, pitch, 0.05f);
+        };
+        varied("shot", 4, 0.34f, 0.065f, 0.035f);
+        sound_->Load("charge", "resources/audio/combat/charge.wav", 3, 0.47f, 0.16f, 0.02f, 0.03f);
+        varied("hit", 3, 0.39f, 0.06f, 0.05f);
+        varied("destroy", 3, 0.53f, 0.11f, 0.055f);
+        sound_->Load("damage", "resources/audio/combat/damage.wav", 2, 0.63f, 0.15f, 0.015f);
+        sound_->Load("dodge", "resources/audio/combat/dodge.wav", 2, 0.44f, 0.12f, 0.03f);
+        sound_->Load("fever", "resources/audio/combat/fever.wav", 1, 0.56f, 0.5f);
+        sound_->Load("clear", "resources/audio/combat/clear.wav", 1, 0.54f, 1.0f);
+        sound_->Load("fail", "resources/audio/combat/fail.wav", 1, 0.48f, 1.0f);
+        sound_->Load("skill_ready", "resources/audio/combat/skill_ready.wav", 1, 0.37f, 0.5f);
+        varied("slash", 3, 0.55f, 0.045f, 0.045f);
+        sound_->Load("slash_finish", "resources/audio/combat/slash_finish.wav", 1, 0.67f, 0.4f);
         // BGM専用3枠を入場時に確保。状態切替では再ロード・ボイス生成を行わない。
         sound_->Load("music_stage", "resources/audio/music/stage.wav", 1, 0.0f, 0.0f);
         sound_->Load("music_boss", "resources/audio/music/boss.wav", 1, 0.0f, 0.0f);
@@ -1016,6 +1025,18 @@ void GameRuntime::Finalize()
 
 void GameRuntime::Update()
 {
+    // ゲーム進行を止めたままでも、表示先の変更だけは反映する。
+    if (camera_) {
+        Math::Vector2 viewportMin{}, viewportSize{};
+        GetEffectiveHudViewportRect(viewportMin, viewportSize);
+        const float aspect = viewportSize.x / (std::max)(viewportSize.y, 1.0f);
+        if (aspect > 0.0f && camera_->GetAspectRatio() != aspect) {
+            camera_->SetAspectRatio(aspect);
+            camera_->Update();
+            if (skybox_) { skybox_->Update(camera_.get()); }
+            UpdateLockOnTarget();
+        }
+    }
 #ifdef _DEBUG
     if (phantomPreviewPaused_) {
         DrawHud();
@@ -1061,7 +1082,9 @@ void GameRuntime::Update()
     AdvanceEnemyWaveIfCleared();
     UpdateLockOnTarget();
     DrawHud();
+#ifdef ENABLE_DEBUG_GUI
     DrawPerformanceOverlay();
+#endif
     DrawResultOverlay();
     DrawControlsHelp();
 #ifdef ENABLE_DEBUG_GUI
@@ -1094,11 +1117,11 @@ bool GameRuntime::HandleRuntimeShortcuts()
         return true;
     }
 #ifdef ENABLE_DEBUG_GUI
+    // 提出版では診断表示・描画切り替え・強制シーン移動を受け付けない。
     if (input_ && input_->TriggerKey(DIK_F1)) {
         isEditorOverlayVisible_ = !isEditorOverlayVisible_;
         return true;
     }
-#endif
     if (input_ && input_->TriggerKey(DIK_F3)) {
         isPerformanceOverlayVisible_ = !isPerformanceOverlayVisible_;
         return true;
@@ -1115,6 +1138,7 @@ bool GameRuntime::HandleRuntimeShortcuts()
         isExitRequested_ = true;
         return true;
     }
+#endif
     return false;
 }
 
@@ -1495,6 +1519,9 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     }
 
     stageProgress_ = targetProgress;
+    // 明示的なデバッグ移動だけは、対象街区の中から始める。通常の遷移は前方から行う。
+    sceneryCanyonStartZ_ = targetProgress >= 104.0f ? railDistance_ - 600.0f : -1.0f;
+    sceneryPlazaStartZ_ = targetProgress >= 230.0f ? railDistance_ - 400.0f : -1.0f;
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
     stageEncounterBreatherTimer_ = 0;
@@ -2376,6 +2403,9 @@ void GameRuntime::InitializeRailScenery()
             scenery.driftSpeed = 0.0f;
             scenery.phase = phase;
             scenery.currentLocalZ = anchor.z;
+            scenery.isBuilding = modelPathText.find("Building") != std::string::npos;
+            scenery.isRoad = modelPathText.find("Street") != std::string::npos;
+            scenery.isBackRow = scenery.isBuilding && std::abs(anchor.x) > 40.0f;
             scenery.drawFarLocalZ = kSceneryFarLocalZ;
             if (modelPathText.find("Building") != std::string::npos) {
                 const bool isBackRow = std::abs(anchor.x) > 40.0f;
@@ -2596,8 +2626,28 @@ void GameRuntime::InitializeRailScenery()
     transparentSceneryDrawOrder_.reserve(railSceneryObjects_.size());
 }
 
+Math::Vector2 GameRuntime::GetSceneryDistrictWeights(float worldZ) const
+{
+    if (IsTutorial()) { return {}; }
+    const auto blend = [worldZ](float start, float length) {
+        if (start == -1.0f) { return 0.0f; }
+        const float t = std::clamp((worldZ - start) / length, 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    };
+    return { blend(sceneryCanyonStartZ_, 96.0f), blend(sceneryPlazaStartZ_, 144.0f) };
+}
+
 void GameRuntime::UpdateRailScenery()
 {
+    if (!IsTutorial()) {
+        // 描画範囲（建物220、道路300）より先へ配置し、建物をその場で動かさず街区へ入る。
+        if (sceneryCanyonStartZ_ == -1.0f && stageProgress_ >= 28.0f) {
+            sceneryCanyonStartZ_ = railDistance_ + 310.0f;
+        }
+        if (sceneryPlazaStartZ_ == -1.0f && stageProgress_ >= 160.0f) {
+            sceneryPlazaStartZ_ = (std::max)(railDistance_ + 310.0f, sceneryCanyonStartZ_ + 180.0f);
+        }
+    }
     visibleSceneryCount_ = 0;
     for (RailSceneryObject& scenery : railSceneryObjects_) {
         if (!scenery.object) {
@@ -2627,7 +2677,7 @@ void GameRuntime::UpdateRailScenery()
             0.0f,
             1.0f);
 
-        const Math::Vector3 position{
+        Math::Vector3 position{
             scenery.anchor.x +
                 std::sin(driftPhase) * scenery.lateralDrift +
                 railCurve * scenery.curveInfluence *
@@ -2646,8 +2696,27 @@ void GameRuntime::UpdateRailScenery()
             scenery.rotate.z + railDistance_ * scenery.rollSpeed
         };
 
+        Math::Vector3 scale = scenery.scale;
+        if (!IsTutorial()) {
+            const auto district = GetSceneryDistrictWeights(position.z);
+            const auto value = [district](float avenue, float canyon, float plaza) {
+                return Lerp(Lerp(avenue, canyon, district.x), plaza, district.y);
+            };
+            if (scenery.isBuilding) {
+                const float side = scenery.anchor.x < 0.0f ? -1.0f : 1.0f;
+                // 最も狭い街区でも旧配置の31.5mを下回らず、既存の退場ルートを塞がない。
+                const float facadeX = scenery.isBackRow ? value(54.0f, 46.0f, 89.0f) :
+                    value(38.0f, 31.5f, 64.0f);
+                position.x = side * facadeX;
+                // 建物ごとの元の高さの差は残す。ボス広場は低い街並みと空でシルエットを抜く。
+                scale.y *= scenery.isBackRow ? value(0.95f, 1.65f, 0.90f) : value(0.80f, 1.65f, 0.72f);
+            } else if (scenery.isRoad) {
+                scale.x *= value(14.8f, 12.0f, 24.0f) / 14.0f;
+            }
+        }
         scenery.object->SetTranslate(position);
         scenery.object->SetRotate(rotate);
+        scenery.object->SetScale(scale);
         scenery.object->Update();
     }
 }
@@ -2875,29 +2944,13 @@ void GameRuntime::DrawContactShadows()
         }
     }
 
-    constexpr float kBuildingAoLoopLength = 324.0f;
-    for (int index = 0; index < 8; ++index) {
-        const float localZ =
-            WrapSceneryLocalZ(-4.0f + 42.0f * static_cast<float>(index) - railDistance_,
-                kBuildingAoLoopLength);
-        if (localZ < kSceneryNearLocalZ || localZ > 220.0f) {
-            continue;
-        }
-        const float worldZ = railDistance_ + localZ;
-        const float distanceFade =
-            std::clamp(1.0f - (localZ - 28.0f) / 230.0f, 0.36f, 1.0f);
-        drawNextShadow(
-            { -24.2f, kContactShadowY, worldZ },
-            7.5f,
-            15.0f,
-            0.050f * distanceFade,
-            0.0f);
-        drawNextShadow(
-            { 24.2f, kContactShadowY, worldZ + 18.0f },
-            7.8f,
-            15.5f,
-            0.048f * distanceFade,
-            0.0f);
+    // 道路沿いの実際の建物に接地影を合わせる。広場の中央へ旧配置の影を残さない。
+    for (const RailSceneryObject& scenery : railSceneryObjects_) {
+        if (!scenery.isBuilding || scenery.isBackRow || !scenery.isVisible) { continue; }
+        const auto p = scenery.object->GetTranslate();
+        const float distanceFade = std::clamp(1.0f - (scenery.currentLocalZ - 28.0f) / 230.0f, 0.36f, 1.0f);
+        drawNextShadow({ p.x + (p.x < 0.0f ? 3.0f : -3.0f), kContactShadowY, p.z },
+            6.0f, 11.0f * scenery.scale.x, 0.050f * distanceFade, 0.0f);
     }
 
     object3dCommon_->SetBlendMode(previousBlendMode);
@@ -3363,7 +3416,8 @@ void GameRuntime::FirePlayerBullet()
     }
     playerBullets_.push_back(std::move(bullet));
     ++playerShotsFired_;
-    PlaySfx(isCharged || isFeverShot ? "charge" : "shot");
+    // フィーバー連射に長いチャージ音を重ね続けない。単発の溜め撃ちだけ重い発射音にする。
+    PlaySfx(isCharged && !isFeverShot ? "charge" : "shot");
     maxActivePlayerBullets_ =
         (std::max)(maxActivePlayerBullets_, playerBullets_.size());
     chargeTimer_ = feverTimer_ > 0 ? kChargeShotMax : 0;
@@ -5432,6 +5486,7 @@ void GameRuntime::DrawHitEffectObjects()
     object3dCommon_->CommonDrawSetting();
 }
 
+#ifdef ENABLE_DEBUG_GUI
 void GameRuntime::DrawEditorOverlayGuiRich()
 {
     if (!isEditorOverlayVisible_) {
@@ -6069,6 +6124,8 @@ void GameRuntime::DrawEditorOverlayGuiRich()
         ImGuiFileDialog::Instance()->Close();
     }
 }
+#endif
+
 void GameRuntime::DrawFeverBackdrop()
 {
     const float feverVisualRate =
@@ -7336,6 +7393,7 @@ void GameRuntime::DrawResultOverlay()
     ImGui::PopStyleVar();
 }
 
+#ifdef ENABLE_DEBUG_GUI
 void GameRuntime::DrawPerformanceOverlay()
 {
     if (!isPerformanceOverlayVisible_) {
@@ -7509,6 +7567,8 @@ void GameRuntime::DrawPerformanceOverlay()
         IM_COL32(206, 224, 238, 224),
         line);
 }
+
+#endif
 
 void GameRuntime::UpdatePlayerBullets()
 {

@@ -21,6 +21,7 @@ public:
     const Math::Matrix4x4& GetViewProjectionMatrix() const;
     const Math::Vector3& GetRotate() const;
     const Math::Vector3& GetTranslate() const;
+    float GetAspectRatio() const { return aspectRatio; }
 
 private:
     // transform

@@ -51,6 +51,7 @@ public:
     const D3D12_VIEWPORT& GetViewport() const { return viewport_; }
     const D3D12_RECT& GetScissorRect() const { return scissorRect_; }
     const D3D12_VIEWPORT& GetPresentationViewport() const { return presentationViewport_; }
+    float GetPresentationAspectRatio() const { return presentationViewport_.Width / presentationViewport_.Height; }
     void ResizePresentation(); // GPU完了後、表示先だけを実ウィンドウ寸法へ作り直す。
 
     ID3D12Fence* GetFence() const { return fence_.Get(); }          // これも const でOK

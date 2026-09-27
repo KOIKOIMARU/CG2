@@ -43,7 +43,7 @@ void SoundManager::DestroyEntry(Entry& entry)
             --voiceCount_;
         }
     }
-    entry.data.buffer.clear();
+    entry.variations.clear();
 }
 
 void SoundManager::Finalize()
@@ -64,9 +64,18 @@ void SoundManager::Finalize()
 }
 
 bool SoundManager::Load(const std::string& key, const std::string& filename,
-    uint32_t voiceCount, float volume, float minimumInterval)
+    uint32_t voiceCount, float volume, float minimumInterval,
+    float pitchVariation, float gainVariation)
 {
-    if (!xAudio2_ || !masterVoice_) {
+    return LoadVariations(key, { filename }, voiceCount, volume, minimumInterval,
+        pitchVariation, gainVariation);
+}
+
+bool SoundManager::LoadVariations(const std::string& key, const std::vector<std::string>& filenames,
+    uint32_t voiceCount, float volume, float minimumInterval,
+    float pitchVariation, float gainVariation)
+{
+    if (!xAudio2_ || !masterVoice_ || filenames.empty() || filenames.size() > 4) {
         return false;
     }
     Unload(key);
@@ -75,21 +84,30 @@ bool SoundManager::Load(const std::string& key, const std::string& filename,
         return false;
     }
     Entry entry;
-    entry.data = LoadFile(filename);
-    if (entry.data.buffer.empty()) {
-        Logger::Log("Audio load failed: " + filename + "\n");
-        return false;
+    entry.variations.reserve(filenames.size());
+    for (const auto& filename : filenames) {
+        auto data = LoadFile(filename);
+        if (data.buffer.empty()) {
+            Logger::Log("Audio load failed: " + filename + "\n");
+            return false;
+        }
+        // LoadFileは全素材を48kHz/16bit/2ch PCMへ統一するので、ボイスを共有できる。
+        entry.variations.push_back(std::move(data));
     }
     entry.minimumInterval = (std::max)(minimumInterval, 0.0f);
+    entry.volume = std::clamp(volume, 0.0f, 1.0f);
+    entry.pitchVariation = std::clamp(pitchVariation, 0.0f, 0.12f);
+    entry.gainVariation = std::clamp(gainVariation, 0.0f, 0.20f);
+    entry.lastVariation = static_cast<uint32_t>(filenames.size() - 1);
     for (uint32_t index = 0; index < voiceCount; ++index) {
         auto*& voice = entry.voices[index];
-        if (FAILED(xAudio2_->CreateSourceVoice(&voice, &entry.data.wfex))) {
+        if (FAILED(xAudio2_->CreateSourceVoice(&voice, &entry.variations.front().wfex))) {
             DestroyEntry(entry);
             Logger::Log("Audio voice allocation failed: " + key + "\n");
             return false;
         }
         ++voiceCount_;
-        voice->SetVolume(std::clamp(volume, 0.0f, 1.0f));
+        voice->SetVolume(entry.volume);
     }
     sounds_.emplace(key, std::move(entry));
     return true;
@@ -104,13 +122,14 @@ void SoundManager::Unload(const std::string& key)
     }
 }
 
-bool SoundManager::Play(const std::string& key)
+bool SoundManager::Play(const std::string& key, float gain)
 {
     const auto it = sounds_.find(key);
     if (it == sounds_.end()) {
         return false;
     }
     Entry& entry = it->second;
+    if (entry.looping) { return false; }
     const auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration<float>(now - entry.lastPlay).count() < entry.minimumInterval) {
         return false;
@@ -124,9 +143,25 @@ bool SoundManager::Play(const std::string& key)
         if (state.BuffersQueued != 0) {
             continue;
         }
+        const auto random = [&entry]() {
+            auto& state = entry.randomState;
+            state ^= state << 13; state ^= state >> 17; state ^= state << 5;
+            return state;
+        };
+        const uint32_t count = static_cast<uint32_t>(entry.variations.size());
+        const uint32_t variation = count == 1 ? 0 :
+            (entry.lastVariation + 1 + random() % (count - 1)) % count;
+        const auto signedRandom = [&random]() {
+            return static_cast<float>(random() & 0xFFFFu) / 32767.5f - 1.0f;
+        };
+        const float pitch = 1.0f + entry.pitchVariation * signedRandom();
+        const float level = entry.volume * std::clamp(gain, 0.0f, 1.0f) *
+            (1.0f + entry.gainVariation * signedRandom());
+        if (FAILED(voice->SetFrequencyRatio(pitch)) || FAILED(voice->SetVolume(level))) { return false; }
+        const auto& data = entry.variations[variation];
         XAUDIO2_BUFFER buffer{};
-        buffer.pAudioData = entry.data.buffer.data();
-        buffer.AudioBytes = static_cast<UINT32>(entry.data.buffer.size());
+        buffer.pAudioData = data.buffer.data();
+        buffer.AudioBytes = static_cast<UINT32>(data.buffer.size());
         buffer.Flags = XAUDIO2_END_OF_STREAM;
         if (FAILED(voice->SubmitSourceBuffer(&buffer)) || FAILED(voice->Start())) {
             voice->Stop();
@@ -134,6 +169,7 @@ bool SoundManager::Play(const std::string& key)
             return false;
         }
         entry.lastPlay = now;
+        entry.lastVariation = variation;
         ++playCount_;
         return true;
     }
@@ -148,9 +184,11 @@ bool SoundManager::PlayLoop(const std::string& key)
     if (entry.looping) { return true; }
     auto* voice = entry.voices[0];
     Stop(key);
+    voice->SetFrequencyRatio(1.0f); // BGMは効果音の微変化を適用しない。
+    voice->SetVolume(entry.volume);
     XAUDIO2_BUFFER buffer{};
-    buffer.pAudioData = entry.data.buffer.data();
-    buffer.AudioBytes = static_cast<UINT32>(entry.data.buffer.size());
+    buffer.pAudioData = entry.variations.front().buffer.data();
+    buffer.AudioBytes = static_cast<UINT32>(entry.variations.front().buffer.size());
     buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
     buffer.Flags = XAUDIO2_END_OF_STREAM;
     if (FAILED(voice->SubmitSourceBuffer(&buffer)) || FAILED(voice->Start())) {
@@ -175,8 +213,9 @@ void SoundManager::SetVolume(const std::string& key, float volume)
 {
     const auto it = sounds_.find(key);
     if (it == sounds_.end()) { return; }
+    it->second.volume = std::clamp(volume, 0.0f, 1.0f);
     for (auto* voice : it->second.voices) {
-        if (voice) { voice->SetVolume(std::clamp(volume, 0.0f, 1.0f)); }
+        if (voice) { voice->SetVolume(it->second.volume); }
     }
 }
 

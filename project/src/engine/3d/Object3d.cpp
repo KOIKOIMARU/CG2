@@ -80,6 +80,7 @@ void Object3d::Update() {
 
     if (camera_) {
         cameraData_->worldPosition = camera_->GetTranslate();
+        lastCameraAspectRatio_ = camera_->GetAspectRatio();
     }
 }
 
@@ -113,6 +114,11 @@ void Object3d::UpdateAnimation(float deltaTime)
 
 void Object3d::Draw(ModelDrawPass drawPass)
 {
+    // ポーズ中はゲーム側のUpdateが止まるため、比率が変わった物体だけ描画行列を更新する。
+    // Object3d::Updateは位置やアニメーション時間を進めない。
+    if (camera_ && lastCameraAspectRatio_ != camera_->GetAspectRatio()) {
+        Update();
+    }
     auto commandList = object3dCommon_->GetDxCommon()->GetCommandList();
     auto* srvManager = object3dCommon_->GetSrvManager();
 

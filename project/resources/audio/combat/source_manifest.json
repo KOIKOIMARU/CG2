@@ -1,0 +1,139 @@
+{
+  "sources_sha256": {
+    "kenney_scifi/Audio/laserSmall_000.ogg": "72b589eadd41781257ac859e4f4d030222e623390e4a1a83f6d05329a6e026f1",
+    "rubberduck_scifi/shoot_02.ogg": "8062c456a8319620918847c16703d8ddd882f688a646ff1a35db48bd172c847e",
+    "kenney_impact/Audio/impactMetal_heavy_000.ogg": "e07045693e4a2b3d165c424e3dab4c781d9ff8880a386880ac89a51315d7f831",
+    "kenney_impact/Audio/impactMetal_medium_001.ogg": "e8a9eaba7c4d27422e4eeb3e6c7100d5d7dc0f83e005efc98c960adcc5265337",
+    "kenney_impact/Audio/impactGlass_light_000.ogg": "d750cf88097d0c3e69920e6e14496e1444e1a9da01aa4cca8f5ec8cb44c57b4f",
+    "kenney_scifi/Audio/explosionCrunch_000.ogg": "4b597d658d0ae101f0a030fbeea5fc3a4292ab85f017470a8254a8e7959cbd69",
+    "kenney_scifi/Audio/lowFrequency_explosion_001.ogg": "cdda50600a4928f2f1b8371224d53c171ac799c1cf2c30b11999508985250b3b",
+    "kenney_rpg/Audio/knifeSlice.ogg": "4cd96dc630bed9840c15f1dd2306da2cc56a4da26a5d3f1a03c5a7265ac5e54f",
+    "kenney_rpg/Audio/drawKnife1.ogg": "276403e72c3b71c47bc24db3083970c23f8e5551ffa78f436f83483c56f3f0bb",
+    "kenney_impact/Audio/impactMetal_light_000.ogg": "33b5e6e37c6e9d54e07bf5a89b12c76e879f40c1ea83cdd82714df1d6f9fec6d",
+    "kenney_scifi/Audio/laserSmall_001.ogg": "ab87913aba9790a0c5fa173d086267ba521ad522fcad2252271db49988313cf5",
+    "kenney_impact/Audio/impactMetal_heavy_002.ogg": "b914c8f1eb7c0f34bb165d7c77f4be0351f6be0660c13c53e65424e262e2c093",
+    "kenney_impact/Audio/impactMetal_medium_002.ogg": "7e89ce2ca0dbda95ea2b78d4b50791cab35c10d20e9f5ccd45dd0b00e99ff548",
+    "kenney_impact/Audio/impactGlass_light_001.ogg": "05e513fbd42829060eb37855f8c3866722ec5c39a8937c9bfde518cc609effa2",
+    "kenney_scifi/Audio/explosionCrunch_002.ogg": "be2b8ddc62e4a24c91e2e77793de98549ce216faf2f323a917e7d6f34321ff97",
+    "kenney_rpg/Audio/knifeSlice2.ogg": "6c2064d0ef988d1ec3d56868e823ea8823a5cac00f2742560052633529407def",
+    "kenney_rpg/Audio/drawKnife2.ogg": "d5df6a4130cbb016f97b4883769a418917b9629cb4c21717030b186e0c73281a",
+    "kenney_impact/Audio/impactMetal_light_001.ogg": "fba69c467ddd85da7b1d82e259f936b876d9ba6a3d6f1b24bdd10468e46bfe08",
+    "kenney_scifi/Audio/laserSmall_002.ogg": "e70139466c3e801358c9041ee17db7ff82c0e9a9cdf44647ad0ea6b9f8458f63",
+    "kenney_impact/Audio/impactMetal_heavy_004.ogg": "6d65b463c0555dd5be16b8db6d2cbe23a94e07a4637779b8ad17d0db3e500a87",
+    "kenney_impact/Audio/impactMetal_medium_004.ogg": "03e10f800199c7166208e41c11cf4acfac6cc265467f02357da71972bc967295",
+    "kenney_impact/Audio/impactGlass_light_002.ogg": "710db7451bb7857b9140dfe6afe4621ea2188ad65eda3919c569d1bb285b933d",
+    "kenney_scifi/Audio/explosionCrunch_003.ogg": "8c7197bb3a1c504690319c3abe0e62a5423ee246dd70caab57963d0b7aa8144f",
+    "kenney_rpg/Audio/drawKnife3.ogg": "a11ae62fb1a628425769d11a9de394980ad8909c31f4c9a4316f226963e21caf",
+    "kenney_impact/Audio/impactMetal_light_002.ogg": "25a96f90a9a1f88a531e824e126f0519504625e5635e65a72e4f31611428db29",
+    "kenney_scifi/Audio/laserLarge_002.ogg": "e5e0b6ccc4d5720c8174a3e5b7cc6f9be3057352a89cbb2e99a00efc6fe5cc11",
+    "kenney_scifi/Audio/impactMetal_003.ogg": "ef29c3943ee701616f65e3d596c13eb3ff6b11ca5b3ac01e7bc923366a5c6f76",
+    "kenney_impact/Audio/impactPlate_heavy_001.ogg": "142fd6c77f13d25f318265901163f70f8dfe12f87829169a570025be43de7011",
+    "kenney_interface/Audio/error_006.ogg": "a97513d7fd2b12b1210c423be943b4c1ab0e899b11db95855e9b74836e646ae0",
+    "kenney_scifi/Audio/thrusterFire_002.ogg": "5f7731c30196d73777d62eec7cb36a28bf63852e70244057b7625b888e71a3a8",
+    "kenney_scifi/Audio/lowFrequency_explosion_000.ogg": "3cb48d86dab63140cfb9aaeea4d4a6846abaca5831d157d8adbec0490da26343",
+    "kenney_scifi/Audio/impactMetal_002.ogg": "0c1bb4db8a4d48b2b8c2e65a175d9056b845f1063837599995d81be1c5957d2c",
+    "kenney_scifi/Audio/forceField_004.ogg": "05609bb296cbc287ae95ac8924c89809d69c89d7bb357cc6a117ec1b1ef65e09",
+    "kenney_interface/Audio/confirmation_002.ogg": "33b17a9a9a2397c62b285c52c33a907fdffb476909c99e42dde603f6a7a8b12c",
+    "kenney_interface/Audio/confirmation_001.ogg": "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a",
+    "kenney_interface/Audio/confirmation_004.ogg": "568967a3d9f8a8f6af54ea01729c4882284308f2a27d78c07ffd7ee0d6951661",
+    "kenney_interface/Audio/glass_004.ogg": "2379b58f953e3d86982aa8cddcae763022c6258e9820171bf905ce58b4e97766",
+    "kenney_interface/Audio/error_004.ogg": "0b574cea597d96507e782ae9764f88482ce49f46e931e57054bf7150047f2d69",
+    "kenney_scifi/Audio/forceField_000.ogg": "c2916f2a062c8ddd1aca2826d134fe90847037db31342726ffb0f9097afe339c"
+  },
+  "output_sources": {
+    "shot": [
+      "kenney_scifi/Audio/laserSmall_000.ogg",
+      "rubberduck_scifi/shoot_02.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_000.ogg"
+    ],
+    "hit": [
+      "kenney_impact/Audio/impactMetal_medium_001.ogg",
+      "kenney_impact/Audio/impactGlass_light_000.ogg"
+    ],
+    "destroy": [
+      "kenney_scifi/Audio/explosionCrunch_000.ogg",
+      "kenney_scifi/Audio/lowFrequency_explosion_001.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_000.ogg"
+    ],
+    "slash": [
+      "kenney_rpg/Audio/knifeSlice.ogg",
+      "kenney_rpg/Audio/drawKnife1.ogg",
+      "kenney_impact/Audio/impactMetal_light_000.ogg"
+    ],
+    "shot_02": [
+      "kenney_scifi/Audio/laserSmall_001.ogg",
+      "rubberduck_scifi/shoot_02.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_002.ogg"
+    ],
+    "hit_02": [
+      "kenney_impact/Audio/impactMetal_medium_002.ogg",
+      "kenney_impact/Audio/impactGlass_light_001.ogg"
+    ],
+    "destroy_02": [
+      "kenney_scifi/Audio/explosionCrunch_002.ogg",
+      "kenney_scifi/Audio/lowFrequency_explosion_001.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_002.ogg"
+    ],
+    "slash_02": [
+      "kenney_rpg/Audio/knifeSlice2.ogg",
+      "kenney_rpg/Audio/drawKnife2.ogg",
+      "kenney_impact/Audio/impactMetal_light_001.ogg"
+    ],
+    "shot_03": [
+      "kenney_scifi/Audio/laserSmall_002.ogg",
+      "rubberduck_scifi/shoot_02.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_004.ogg"
+    ],
+    "hit_03": [
+      "kenney_impact/Audio/impactMetal_medium_004.ogg",
+      "kenney_impact/Audio/impactGlass_light_002.ogg"
+    ],
+    "destroy_03": [
+      "kenney_scifi/Audio/explosionCrunch_003.ogg",
+      "kenney_scifi/Audio/lowFrequency_explosion_001.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_004.ogg"
+    ],
+    "slash_03": [
+      "kenney_rpg/Audio/knifeSlice.ogg",
+      "kenney_rpg/Audio/drawKnife3.ogg",
+      "kenney_impact/Audio/impactMetal_light_002.ogg"
+    ],
+    "charge": [
+      "kenney_scifi/Audio/laserLarge_002.ogg",
+      "kenney_scifi/Audio/lowFrequency_explosion_001.ogg",
+      "kenney_impact/Audio/impactMetal_heavy_002.ogg"
+    ],
+    "damage": [
+      "kenney_scifi/Audio/impactMetal_003.ogg",
+      "kenney_impact/Audio/impactPlate_heavy_001.ogg",
+      "kenney_interface/Audio/error_006.ogg"
+    ],
+    "dodge": [
+      "kenney_rpg/Audio/knifeSlice.ogg",
+      "kenney_scifi/Audio/thrusterFire_002.ogg"
+    ],
+    "slash_finish": [
+      "kenney_rpg/Audio/knifeSlice2.ogg",
+      "kenney_scifi/Audio/lowFrequency_explosion_000.ogg",
+      "kenney_scifi/Audio/impactMetal_002.ogg"
+    ],
+    "fever": [
+      "kenney_scifi/Audio/forceField_004.ogg",
+      "kenney_scifi/Audio/lowFrequency_explosion_001.ogg",
+      "kenney_interface/Audio/confirmation_002.ogg"
+    ],
+    "skill_ready": [
+      "kenney_interface/Audio/confirmation_001.ogg",
+      "kenney_rpg/Audio/drawKnife1.ogg"
+    ],
+    "clear": [
+      "kenney_interface/Audio/confirmation_004.ogg",
+      "kenney_interface/Audio/glass_004.ogg"
+    ],
+    "fail": [
+      "kenney_interface/Audio/error_004.ogg",
+      "kenney_scifi/Audio/forceField_000.ogg"
+    ]
+  },
+  "format": "48000 Hz, stereo, PCM16"
+}

@@ -165,6 +165,7 @@ private:
     Quaternion quaternionRotate_{ 0.0f, 0.0f, 0.0f, 1.0f };
     bool useQuaternionRotate_ = false;
     Camera* camera_ = nullptr;
+    float lastCameraAspectRatio_ = -1.0f; // 転送済み行列の縦横比。停止中のリサイズ検出用。
     Matrix4x4 worldMatrix_ = MakeIdentity4x4();
 
     ComPtr<ID3D12Resource> transformationMatrixResource_;
