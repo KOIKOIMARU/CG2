@@ -29,7 +29,7 @@ param(
     [ValidateRange(0.1, 10.0)]
     [double]$CaptureIntervalSeconds = 0.35,
 
-    [ValidateSet('Opening', 'Wave2', 'Wave3', 'Boss')]
+    [ValidateSet('Opening', 'Wave2', 'Wave3', 'Boss', 'SniperWing')]
     [string]$StartPhase = 'Opening'
 )
 

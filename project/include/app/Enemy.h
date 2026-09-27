@@ -5,6 +5,7 @@
 #include "app/EnemyFireControl.h"
 
 #include <memory>
+#include <cmath>
 
 class Model;
 class Object3dCommon;
@@ -26,6 +27,7 @@ public:
     enum class EntryStyle {
         Direct,
         VFormation,
+        TightFormation, // 同時に入場し、同じ揺れで小型編隊を保つ。
         LeftSweep,
         RightSweep,
         PopShooter
@@ -54,6 +56,8 @@ public:
     bool Damage(int damage);
     bool CanShoot() const;
     Behavior GetBehavior() const { return behavior_; }
+    bool IsTightFormation() const { return behavior_ == Behavior::Formation && entryStyle_ == EntryStyle::TightFormation; }
+    float GetFormationShotDelay() const { return std::abs(baseTranslate_.x) * 9.0f; } // 編隊の外側ほど遅く撃つ。
     EnemyFireControl::Cycle& GetFireControl() { return fireControl_; }
     const EnemyFireControl::Cycle& GetFireControl() const { return fireControl_; }
     void SetAttackTelegraphRate(float rate);
@@ -103,6 +107,8 @@ private:
     float visualScaleRate_ = 1.0f;
     float attackTelegraphRate_ = 0.0f;
     EnemyFireControl::Cycle fireControl_{}; // 共通タイマーではなく、各機の構え・連射・休止を保持。
+    Math::Vector3 sniperBracePosition_{}; // 構え始めの位置。zはレールからの距離。
+    bool sniperBraced_ = false;
     Behavior behavior_ = Behavior::Formation;
     EntryStyle entryStyle_ = EntryStyle::Direct;
     LifeState lifeState_ = LifeState::Alive;

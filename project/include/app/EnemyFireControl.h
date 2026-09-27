@@ -20,10 +20,15 @@ class Cycle {
 public:
     Event Advance(float step, bool canShoot, const Pattern& pattern, float recoveryScale = 1.0f)
     {
+        const float elapsed = std::clamp(step, 0.0f, 2.0f);
+        shotFlash_ = (std::max)(0.0f, shotFlash_ - elapsed);
+        if (phase_ == Phase::Recovery) { recoveryElapsed_ += elapsed; }
         if (!canShoot) {
             phase_ = Phase::Idle;
             remaining_ = 0.0f;
             shotIndex_ = 0;
+            shotFlash_ = 0.0f;
+            recoveryElapsed_ = 0.0f;
             return Event::None; // 撃破・撤退した敵の予約弾を出さない。
         }
         if (phase_ == Phase::Idle) {
@@ -33,7 +38,7 @@ public:
             ++volleyIndex_;
             return Event::Aim;
         }
-        remaining_ -= std::clamp(step, 0.0f, 2.0f);
+        remaining_ -= elapsed;
         if (remaining_ > 0.0f) { return Event::None; }
         if (phase_ == Phase::Recovery) {
             phase_ = Phase::Idle;
@@ -42,11 +47,13 @@ public:
         if (phase_ == Phase::Burst) { ++shotIndex_; }
         if (shotIndex_ + 1 >= pattern.shots) {
             phase_ = Phase::Recovery;
+            recoveryElapsed_ = 0.0f;
             remaining_ += pattern.recovery * recoveryScale;
         } else {
             phase_ = Phase::Burst;
             remaining_ += pattern.interval;
         }
+        shotFlash_ = 8.0f;
         return Event::Fire;
     }
 
@@ -56,6 +63,9 @@ public:
             std::clamp(1.0f - remaining_ / (std::max)(windup_, 1.0f), 0.0f, 1.0f) : 0.0f;
     }
     bool IsTracking() const { return phase_ == Phase::Windup && remaining_ > 8.0f; }
+    bool IsBraced() const { return phase_ == Phase::Windup || phase_ == Phase::Burst; }
+    float ShotFlash() const { return shotFlash_ / 8.0f; }
+    float RecoveryElapsed() const { return phase_ == Phase::Recovery ? recoveryElapsed_ : -1.0f; }
     int ShotIndex() const { return shotIndex_; }
     int VolleyIndex() const { return volleyIndex_; }
     Math::Vector3 aimPoint{}; // 構え中だけ更新し、発射直前から連射終了までは固定。
@@ -65,6 +75,8 @@ private:
     Phase phase_ = Phase::Idle;
     float remaining_ = 0.0f;
     float windup_ = 1.0f;
+    float shotFlash_ = 0.0f; // 発射直後の反動と銃口光を同じ時計で動かす。
+    float recoveryElapsed_ = 0.0f; // 撃ち終わりの隙の経過時間。
     int shotIndex_ = 0;
     int volleyIndex_ = 0;
 };

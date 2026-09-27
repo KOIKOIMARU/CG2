@@ -8,8 +8,52 @@
 #include <cmath>
 #include <fstream>
 #include <stdexcept>
+#include <iterator>
 
 namespace {
+void CheckSniperPosture(Object3dCommon* common, Model* model)
+{
+    const auto require = [](bool ok, const char* message) {
+        if (!ok) { throw std::runtime_error(message); }
+    };
+    // 実際のEnemy::Updateで構えの静止とレール追従を検証。ゲームの敵HPや無敵時間は変えない。
+    Enemy sniper;
+    sniper.Initialize(common, model, { 5.3f, 2.0f, 48.0f }, Enemy::Behavior::Sniper);
+    float rail = 0.0f;
+    for (int frame = 0; frame < 112; ++frame) {
+        rail += 0.2f;
+        sniper.Update(rail);
+    }
+    require(sniper.CanShoot(), "sniper did not finish entry");
+    auto& fire = sniper.GetFireControl();
+    const EnemyFireControl::Pattern pattern{ 60.0f, 18.0f, 128.0f, 2 };
+    fire.Advance(1.0f, true, pattern);
+    sniper.Update(rail);
+    const auto anchor = sniper.GetTranslate();
+    const float ahead = anchor.z - rail;
+    for (int frame = 1; frame <= 120; ++frame) {
+        rail += 0.45f;
+        const auto event = fire.Advance(1.0f, sniper.CanShoot(), pattern);
+        sniper.Update(rail);
+        const auto position = sniper.GetTranslate();
+        require(std::abs(position.x - anchor.x) < 0.001f, "sniper drifted laterally while braced/recovering");
+        if (frame < 60) {
+            require(std::abs(position.z - rail - ahead) < 0.001f, "sniper brace lost rail tracking");
+        }
+        if (frame == 60 || frame == 78) {
+            require(event == EnemyFireControl::Event::Fire && fire.ShotFlash() == 1.0f,
+                "sniper recoil is not tied to the shot");
+        }
+        if (frame == 110) {
+            require(!fire.IsBraced() && std::abs(fire.RecoveryElapsed() - 32.0f) < 0.001f &&
+                position.z - rail < ahead - 2.5f, "sniper did not expose recovery opening");
+        }
+    }
+    sniper.Kill();
+    fire.Advance(1.0f, sniper.CanShoot(), pattern);
+    require(!fire.IsBraced() && fire.ShotFlash() == 0.0f, "destroyed sniper kept charging/firing");
+}
+
 void CheckEnemyFireControl()
 {
     const auto require = [](bool condition, const char* message) {
@@ -162,6 +206,8 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath)
     }
     if (frame == 0) {
         CheckEnemyFireControl();
+        CheckSniperPosture(object3dCommon_.get(), enemyShooterModel_);
+        log("SNIPER_POSTURE_OK brace_still=1 rail_relative=1 recoil_on_shot=1 recovery_open=1 death_cancels=1");
         log("ENEMY_FIRE_CONTROL_OK rail_intercept=1 fixed_aim=1 windup_burst_recovery=1 slow_steps=0.25,0.5,1");
         if (!sound_ || sound_->GetVoiceCount() != 25) {
             throw std::runtime_error("Combat audio bank failed to load all 25 voices");
@@ -364,10 +410,49 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
                 Enemy::Behavior::Formation, Enemy::EntryStyle::Direct, 3, 1.0f);
         }
     };
-    if (frame == 70) { spawn(3); }
-    if (frame == 150) { keys[DIK_Q] = 0x80; log("NORMAL_ACTIVATE"); }
+    if (frame == 70) {
+        // 本編「Sniper wing」と同じ位置・HP・編隊動作で、スキル対象の選択を検証する。
+        SpawnStageEnemy(-4.6f, -0.6f, 44.0f, Enemy::Behavior::Formation,
+            Enemy::EntryStyle::TightFormation, 3, 1.0f);
+        SpawnStageEnemy(-2.0f, 0.5f, 44.0f, Enemy::Behavior::Formation,
+            Enemy::EntryStyle::TightFormation, 3, 1.0f);
+        SpawnStageEnemy(0.6f, -0.6f, 44.0f, Enemy::Behavior::Formation,
+            Enemy::EntryStyle::TightFormation, 3, 1.0f);
+        SpawnStageEnemy(5.3f, 2.0f, 48.0f, Enemy::Behavior::Sniper,
+            Enemy::EntryStyle::PopShooter, 6, 1.18f);
+    }
+    if (frame == 149) {
+        // 狙撃機を指した場合も実際の選択処理を通す。時間は進めず、ダメージ前に試験状態を戻す。
+        Math::Vector2 screen{};
+        require(enemies_.size() == 4 && enemies_.back()->IsSniper() &&
+            TryProjectToScreen(enemies_.back()->GetAimPosition(), screen), "sniper selection fixture missing");
+        const auto savedReticle = reticleScreen_;
+        reticleScreen_ = screen;
+        require(TryActivatePhantomRaid() && phantomTargetCount_ == 3 &&
+            phantomTargets_[0].enemy == enemies_.back().get(), "sniper could not be prioritized by aiming");
+        ResetPhantomRaid();
+        reticleScreen_ = savedReticle;
+        log("SNIPER_CHOICE_OK aimed_sniper_selected_first=1");
+    }
+    if (frame == 150) {
+        Math::Vector2 screen{};
+        require(enemies_.size() == 4 && TryProjectToScreen((*std::next(enemies_.begin()))->GetAimPosition(), screen),
+            "formation/sniper fixture missing");
+        const ImVec2 origin = ImGui::GetMainViewport()->Pos;
+        mouse = { screen.x - origin.x, screen.y - origin.y };
+        // UpdateLockOnTargetはUpdateの末尾なので、照準を置く1フレームと発動を分ける。
+    }
     if (frame == 151) {
+        mouse = input_->GetMousePosition();
+        keys[DIK_Q] = 0x80;
+        log("NORMAL_ACTIVATE");
+    }
+    if (frame == 152) {
         require(IsPhantomRaidActive() && phantomTargetCount_ == 3, "normal target selection");
+        for (int index = 0; index < phantomTargetCount_; ++index) {
+            require(phantomTargets_[index].enemy && !phantomTargets_[index].enemy->IsSniper(),
+                "aiming at formation failed to prioritize its three targets");
+        }
         require(phantomCooldown_ == kPhantomCooldownFrames, "activation must begin 8-second cooldown");
         const float before = phantomCooldown_;
         RecoverPhantomRaidOnHit(true, true);
@@ -376,6 +461,10 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
     }
     if (frame == 220) {
         require(!IsPhantomRaidActive() && phantomDefeatCount_ == 3 && defeatedEnemyCount_ == 3, "normal triple finish");
+        require(enemies_.size() == 1 && enemies_.front()->IsSniper() && !enemies_.front()->IsDead(),
+            "formation clear should leave the independently positioned sniper alive");
+        log("FORMATION_CHOICE_OK triple_clear=1 sniper_remains=1");
+        enemies_.front()->Kill(); // 次の独立ケースへ持ち越さない。報酬には加算しない。
         require(!phantomReady_ && phantomCooldown_ > 0.0f, "normal consumption or cooldown");
         GrantPhantomRaid();
         require(!phantomReady_, "cooldown allowed immediate recharge");
@@ -467,7 +556,8 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
     }
     if (frame == 850) { keys[DIK_Q] = 0x80; log("BOSS_FINISH_ACTIVATE"); }
     if (frame > 920 && isGameClear_ && resultTransitionTimer_ <= 0 && !retry) {
-        require(bossDefeated_ && phantomDefeatCount_ == 1 && defeatedEnemyCount_ == 27, "boss clear reward path");
+        require(bossDefeated_ && phantomDefeatCount_ == 1 &&
+            defeatedEnemyCount_ == GetTotalEnemyTargetCount() + 1, "boss clear reward path");
         log("BOSS_SKILL_CLEAR_OK");
         keys[DIK_R] = 0x80;
         retry = true;

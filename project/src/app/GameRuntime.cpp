@@ -274,9 +274,11 @@ constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     {  28.0f,  0.0f,  1.4f, 50.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::Direct,     0.030f,  7,  5, 1.08f, "Crossing assault" },
     {  32.0f,  5.1f,  1.2f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.032f,  6,  5, 1.08f, "Crossing assault" },
     {  58.0f, -5.1f,  0.7f, 48.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.032f,  6,  5, 1.08f, "Cross sweep" },
-    {  68.0f, -4.0f, -0.6f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.022f,  5,  4, 1.04f, "Low gate" },
-    {  78.0f, -3.2f,  1.3f, 48.0f, Enemy::Behavior::Sniper,         Enemy::EntryStyle::PopShooter, 0.052f, 10,  6, 1.18f, "Sniper escort" },
-    {  84.0f,  3.2f,  0.9f, 46.0f, Enemy::Behavior::StrafeShooter, Enemy::EntryStyle::PopShooter, 0.042f,  8,  7, 1.16f, "Sniper escort" },
+    // 手前の三機を一掃するか、奥の狙撃機を先に処理するかを選べる組み合わせ。
+    {  78.0f, -4.6f, -0.6f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 0.022f, 5, 3, 1.00f, "Sniper wing" },
+    {  78.0f, -2.0f,  0.5f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 0.000f, 0, 3, 1.00f, "Sniper wing" },
+    {  78.0f,  0.6f, -0.6f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 0.000f, 0, 3, 1.00f, "Sniper wing" },
+    {  78.0f,  5.3f,  2.0f, 48.0f, Enemy::Behavior::Sniper,    Enemy::EntryStyle::PopShooter,    0.000f, 0, 6, 1.18f, "Sniper wing" },
     { 112.0f,  4.6f,  1.6f, 54.0f, Enemy::Behavior::DiveBomber,    Enemy::EntryStyle::RightSweep, 0.036f,  8,  5, 1.12f, "High dive" },
     { 124.0f, -2.9f, -0.4f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
     { 128.0f,  2.9f, -0.2f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.024f,  5,  5, 1.12f, "Guard pair" },
@@ -292,7 +294,11 @@ constexpr StageEnemySpawnEvent kStageEnemySpawnEvents[] = {
     { 258.0f,  0.0f,  1.9f, 48.0f, Enemy::Behavior::Support,       Enemy::EntryStyle::Direct,     0.050f, 10,  8, 1.16f, "Support gate" },
     { 258.0f, -2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Support gate" },
     { 258.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Support gate" },
-    { 274.0f,  2.9f, -0.5f, 44.0f, Enemy::Behavior::Formation,     Enemy::EntryStyle::VFormation, 0.030f,  6,  5, 1.16f, "Last gate" },
+    // 終盤は左右を入れ替えて再登場。初見と同じ構え・攻撃なので学んだ対処を使える。
+    { 274.0f,  4.6f, -0.6f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 0.030f, 6, 3, 1.00f, "Sniper wing reprise" },
+    { 274.0f,  2.0f,  0.5f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 0.000f, 0, 3, 1.00f, "Sniper wing reprise" },
+    { 274.0f, -0.6f, -0.6f, 44.0f, Enemy::Behavior::Formation, Enemy::EntryStyle::TightFormation, 0.000f, 0, 3, 1.00f, "Sniper wing reprise" },
+    { 274.0f, -5.3f,  2.0f, 48.0f, Enemy::Behavior::Sniper,    Enemy::EntryStyle::PopShooter,    0.000f, 0, 6, 1.18f, "Sniper wing reprise" },
     { 286.0f, -5.2f,  1.2f, 54.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::LeftSweep,  0.034f,  7,  5, 1.12f, "Boss screen" },
     { 296.0f,  5.2f,  1.2f, 54.0f, Enemy::Behavior::Swoop,         Enemy::EntryStyle::RightSweep, 0.034f,  7,  5, 1.12f, "Boss screen" }
 };
@@ -905,6 +911,8 @@ void GameRuntime::Initialize(PlayMode mode)
             DebugJumpToStagePhase(2);
         } else if (startPhase == "Boss") {
             DebugJumpToStagePhase(3);
+        } else if (startPhase == "SniperWing") {
+            DebugJumpToStagePhase(4);
         }
     }
     std::free(debugStartPhase);
@@ -1385,11 +1393,12 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
         return;
     }
 
-    constexpr std::array<float, 4> kDebugPhaseStartDistances{
+    constexpr std::array<float, 5> kDebugPhaseStartDistances{
         0.0f,
         104.0f,
         230.0f,
-        kBossSpawnDistance
+        kBossSpawnDistance,
+        78.0f
     };
     const int clampedPhase =
         (std::clamp)(phaseIndex, 0, static_cast<int>(kDebugPhaseStartDistances.size()) - 1);
@@ -1421,7 +1430,7 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
     stageEncounterBreatherTimer_ = 0;
-    currentWaveIndex_ = (std::min)(clampedPhase, kWaveCount - 1);
+    currentWaveIndex_ = targetProgress < 104.0f ? 0 : (targetProgress < 230.0f ? 1 : 2);
     spawnedEnemyCountInWave_ = 0;
     defeatedEnemyCountInWave_ = 0;
     spawnSequenceIndex_ = 0;
@@ -1486,7 +1495,8 @@ void GameRuntime::DebugJumpToStagePhase(int phaseIndex)
         "Wave 1",
         "Wave 2",
         "Wave 3",
-        "Boss"
+        "Boss",
+        "Sniper wing"
     };
     editorStatusMessage_ =
         std::string("デバッグ移動: ") + kDebugPhaseNames[clampedPhase];
@@ -1595,8 +1605,14 @@ void GameRuntime::UpdateEnemyAttackPatterns(bool hasSupportDrone)
         pattern.recovery = static_cast<float>(enemyShotInterval_) * 1.4f;
         float leadFrames = 12.0f;
         switch (enemy->GetBehavior()) {
+        case Enemy::Behavior::Formation:
+            if (enemy->IsTightFormation()) {
+                // 小型三機の斉射を一度に重ねない。内側から順に撃ち、狙撃機が主な脅威になる。
+                pattern = { 36.0f + enemy->GetFormationShotDelay(), 16.0f, enemyShotInterval_ * 1.65f, 2 };
+            }
+            break;
         case Enemy::Behavior::Sniper:
-            pattern = { 44.0f, 14.0f, enemyShotInterval_ * 1.8f, 2 };
+            pattern = { 60.0f, 18.0f, enemyShotInterval_ * 2.0f, 2 };
             leadFrames = 22.0f;
             break;
         case Enemy::Behavior::Shield:
@@ -5867,6 +5883,9 @@ void GameRuntime::DrawEditorOverlayGuiRich()
             if (ImGui::Button("Boss", ImVec2(halfButtonWidth, 0.0f))) {
                 DebugJumpToStagePhase(3);
             }
+            if (ImGui::Button("狙撃機＋小型編隊", ImVec2(-1.0f, 0.0f))) {
+                DebugJumpToStagePhase(4);
+            }
             ImGui::EndDisabled();
 
             Enemy* debugBoss = nullptr;
@@ -6473,7 +6492,34 @@ void GameRuntime::DrawEnemyTypeTelegraphs()
             }
         }
 
-        const float chargeRate = IsTutorial() ? tutorialChargeRate : enemy->GetFireControl().ChargeRate();
+        if (!IsTutorial() && enemy->IsSniper()) {
+            const auto& fire = enemy->GetFireControl();
+            const float charge = fire.ChargeRate();
+            const float flash = fire.ShotFlash();
+            if ((charge > 0.0f || flash > 0.0f) && enemy->CanShoot()) {
+                Math::Vector3 muzzleWorld = enemy->GetAimPosition();
+                muzzleWorld.z -= 1.0f; // FireEnemyBulletと同じ発射位置に付ける。照準上には描かない。
+                Math::Vector2 muzzleScreen{}, edgeScreen{};
+                const Math::Vector3 edgeWorld{ muzzleWorld.x + 0.32f, muzzleWorld.y, muzzleWorld.z };
+                if (TryProjectToScreen(muzzleWorld, muzzleScreen) && TryProjectToScreen(edgeWorld, edgeScreen)) {
+                    const ImVec2 muzzle(muzzleScreen.x, muzzleScreen.y);
+                    const float radius = std::clamp(std::abs(edgeScreen.x - muzzleScreen.x), 2.0f, 5.0f) *
+                        (0.65f + charge * 0.60f + flash * 0.50f);
+                    const int alpha = static_cast<int>(100.0f + charge * 100.0f + flash * 55.0f);
+                    drawList->AddCircleFilled(muzzle, radius * 2.5f, IM_COL32(255, 76, 40, alpha / 6), 20);
+                    drawList->AddCircleFilled(muzzle, radius, IM_COL32(255, 130, 70, alpha), 16);
+                    drawList->AddCircleFilled(muzzle, radius * 0.42f, IM_COL32(255, 246, 220, alpha), 12);
+                    // 照準が固定された最後の瞬間だけ、短い横の閃光で発射を知らせる。
+                    if ((!fire.IsTracking() && charge > 0.0f) || flash > 0.0f) {
+                        const float width = radius * (2.8f + flash * 1.8f);
+                        drawList->AddLine({ muzzle.x - width, muzzle.y }, { muzzle.x + width, muzzle.y },
+                            IM_COL32(255, 228, 176, alpha), 1.5f);
+                    }
+                }
+            }
+            continue;
+        }
+        const float chargeRate = tutorialChargeRate;
         if (!enemy->IsSniper() || !enemy->CanShoot() || chargeRate <= 0.0f ||
             (IsTutorial() && (sniperTelegraphDrawn || !sniperTelegraphActive))) {
             continue;

@@ -113,6 +113,8 @@ void Enemy::Initialize(
     moveTimer_ = 0.0f;
     visualScaleRate_ = 0.42f;
     fireControl_ = {};
+    sniperBracePosition_ = {};
+    sniperBraced_ = false;
     attackTelegraphRate_ = 0.0f;
 
     switch (behavior_) {
@@ -508,6 +510,29 @@ void Enemy::Update(float railDistance, float timeScale)
         objectRotate.z =
             std::sin(moveTimer_ * 0.020f + phase_) * 0.08f -
             exitSide * exitRunRate * 0.58f;
+        // 構えると横揺れを止める。二射後は前へ沈み、照準を合わせ直せる隙を残す。
+        // レール相対座標なので高速移動・スロー・停止でも背景に置き去りにならない。
+        const float recovery = fireControl_.RecoveryElapsed();
+        const bool attackPose = age_ <= 304 &&
+            (fireControl_.IsBraced() || (recovery >= 0.0f && recovery < 90.0f));
+        if (attackPose) {
+            if (!sniperBraced_) {
+                sniperBracePosition_ = { translate_.x, translate_.y, translate_.z - railDistance };
+                sniperBraced_ = true;
+            }
+            const float recoveryReturn = recovery >= 66.0f ? SmoothStep((recovery - 66.0f) / 24.0f) : 0.0f;
+            const float returnRate = (std::max)(recoveryReturn, SmoothStep(static_cast<float>(age_ - 290) / 14.0f));
+            const float settle = recovery >= 0.0f ? SmoothStep(recovery / 20.0f) : 0.0f;
+            const float recoil = fireControl_.ShotFlash();
+            translate_.x = Lerp(sniperBracePosition_.x, translate_.x, returnRate);
+            translate_.y = Lerp(sniperBracePosition_.y - settle * 0.45f, translate_.y, returnRate);
+            translate_.z = Lerp(railDistance + sniperBracePosition_.z + recoil * 1.1f - settle * 3.0f,
+                translate_.z, returnRate);
+            objectRotate.x += (-fireControl_.ChargeRate() * 0.12f + recoil * 0.22f + settle * 0.15f) * (1.0f - returnRate);
+            objectRotate.z *= returnRate;
+        } else {
+            sniperBraced_ = false;
+        }
         if (exitRunRate >= 1.0f) {
             Escape();
             return;
@@ -614,6 +639,15 @@ void Enemy::Update(float railDistance, float timeScale)
         translate_.x += exitSide * exitRunRate * 56.0f;
         translate_.y += exitRunRate * 30.0f;
         translate_.z += exitRunRate * 16.0f;
+        if (entryStyle_ == EntryStyle::TightFormation) {
+            // 各機固有の位相を使わず、ひとかたまりで入場する。照準を振って順に倒せる間隔。
+            translate_.x = baseTranslate_.x * Lerp(0.75f, 1.0f, entryRate) +
+                std::sin(moveTimer_ * 0.032f) * 0.38f +
+                exitSide * (exitRate * 11.5f + exitRunRate * 56.0f);
+            translate_.y = Lerp(baseTranslate_.y + 2.1f, baseTranslate_.y, entryRate) +
+                std::cos(moveTimer_ * 0.032f) * 0.24f + exitRate * 4.1f + exitRunRate * 30.0f;
+            translate_.z = railDistance + Lerp(70.0f, 30.0f, entryRate) - holdRate * 0.8f + exitRunRate * 16.0f;
+        }
         visualScaleTarget =
             Lerp(0.42f, 1.0f, entryRate) +
             std::sin(entryRate * kPi) * 0.055f;
@@ -650,14 +684,16 @@ void Enemy::Update(float railDistance, float timeScale)
         const float telegraphRate = Clamp01(attackTelegraphRate_);
         const float chargePulse =
             0.5f + 0.5f * std::sin(moveTimer_ * (0.42f + telegraphRate * 0.38f));
-        const float flashStrength =
+        const float flashStrength = behavior_ == Behavior::Sniper ?
+            0.08f + telegraphRate * 0.12f :
             std::clamp(0.12f + telegraphRate * 0.42f + chargePulse * 0.12f, 0.0f, 0.72f);
         color.x = Lerp(color.x, 1.86f, flashStrength);
         color.y = Lerp(color.y, 0.34f + telegraphRate * 0.36f, flashStrength);
         color.z = Lerp(color.z, 0.20f, flashStrength * 0.82f);
-        visualScaleTarget +=
-            (0.015f + chargePulse * 0.020f) * telegraphRate;
-        objectRotate.x -= telegraphRate * 0.045f;
+        if (behavior_ != Behavior::Sniper) {
+            visualScaleTarget += (0.015f + chargePulse * 0.020f) * telegraphRate;
+            objectRotate.x -= telegraphRate * 0.045f;
+        }
     }
     if (behavior_ == Behavior::Shield && shieldHp_ > 0) {
         const float shieldPulse =
