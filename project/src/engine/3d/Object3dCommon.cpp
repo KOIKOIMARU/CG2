@@ -89,7 +89,8 @@ Math::Matrix4x4 MakeLookAtMatrix(
 
 Math::Matrix4x4 MakeDirectionalLightViewProjection(
 	const Math::Vector3& focusCenter,
-	const Math::Vector3& lightDirection)
+	const Math::Vector3& lightDirection,
+	uint32_t shadowMapSize)
 {
 	const Math::Vector3 direction = Math::Normalize(lightDirection);
 	const Math::Vector3 eye =
@@ -106,7 +107,12 @@ Math::Matrix4x4 MakeDirectionalLightViewProjection(
 		-kShadowViewHalfHeight,
 		kShadowNearClip,
 		kShadowFarClip);
-	return Math::Multiply(view, projection);
+	Math::Matrix4x4 result = Math::Multiply(view, projection);
+	// レールが進んでも影の境界がちらつかないよう、光空間の移動を1 texel単位に揃える。
+	const float halfResolution = static_cast<float>(shadowMapSize) * 0.5f;
+	result.m[3][0] = std::round(result.m[3][0] * halfResolution) / halfResolution;
+	result.m[3][1] = std::round(result.m[3][1] * halfResolution) / halfResolution;
+	return result;
 }
 
 D3D12_BLEND_DESC MakeBlendDesc(BlendMode mode)
@@ -289,11 +295,11 @@ void Object3dCommon::CreateRootSignature() {
 	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;   // ありったけのMipmapを使う
 	staticSamplers[0].ShaderRegister = 0;   // レジスタ番号0を使う
 	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
-	staticSamplers[1].Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	staticSamplers[1].Filter = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
 	staticSamplers[1].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 	staticSamplers[1].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
 	staticSamplers[1].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	staticSamplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	staticSamplers[1].ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
 	staticSamplers[1].MaxLOD = D3D12_FLOAT32_MAX;
 	staticSamplers[1].ShaderRegister = 1;
 	staticSamplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
@@ -461,7 +467,7 @@ void Object3dCommon::CreateGraphicsPipelineState() {
 		D3D12_DEPTH_WRITE_MASK_ALL;
 	shadowPipelineStateDesc.DepthStencilState.DepthFunc =
 		D3D12_COMPARISON_FUNC_LESS_EQUAL;
-	shadowPipelineStateDesc.RasterizerState.DepthBias = 1600;
+	shadowPipelineStateDesc.RasterizerState.DepthBias = 900;
 	shadowPipelineStateDesc.RasterizerState.SlopeScaledDepthBias = 1.35f;
 	shadowPipelineStateDesc.RasterizerState.DepthBiasClamp = 0.0f;
 	shadowPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
@@ -589,7 +595,7 @@ bool Object3dCommon::BeginShadowPass(const Math::Vector3& focusCenter)
 
 	shadowMapReady_ = false;
 	shadowLightViewProjection_ =
-		MakeDirectionalLightViewProjection(focusCenter, shadowLightDirection_);
+		MakeDirectionalLightViewProjection(focusCenter, shadowLightDirection_, kShadowMapSize);
 
 	TransitionShadowMap(D3D12_RESOURCE_STATE_DEPTH_WRITE);
 

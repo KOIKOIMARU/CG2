@@ -257,8 +257,14 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
         if (previous.visible && current.visible && std::abs(current.position.z - previous.position.z) < 0.05f &&
             (std::abs(current.position.x - previous.position.x) > 0.01f ||
                 std::abs(current.scale.x - previous.scale.x) > 0.01f ||
-                std::abs(current.scale.y - previous.scale.y) > 0.01f)) {
+                std::abs(current.scale.y - previous.scale.y) > 0.01f ||
+                std::abs(current.scale.z - previous.scale.z) > 0.01f)) {
             throw std::runtime_error("Visible scenery moved sideways or changed scale");
+        }
+        // 6mの元モデルを18mにして進行方向へ接続する。街区の幅変更で長さを変えない。
+        if (scenery.isRoad && (std::abs(current.scale.x * 6.0f - 18.0f) > 0.01f ||
+            std::abs(scenery.object->GetRotate().y - 1.57079632679f) > 0.001f)) {
+            throw std::runtime_error("Road orientation or segment connection length changed");
         }
         if (scenery.isBuilding && std::abs(current.position.x) < 31.49f) {
             throw std::runtime_error("Building entered central combat corridor");

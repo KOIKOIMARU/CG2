@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <vector>
 #include <wrl.h>
 #include <d3d12.h>
@@ -170,6 +171,10 @@ private:
 
     ComPtr<ID3D12Resource> transformationMatrixResource_;
     TransformationMatrix* transformationMatrixData_ = nullptr;
+    // 同じUpload Buffer内の別領域。影描画後に通常行列を書いてもGPUの参照先を壊さない。
+    static constexpr size_t kTransformBufferStride =
+        (sizeof(TransformationMatrix) + 255u) & ~size_t(255u);
+    TransformationMatrix* shadowTransformationMatrixData_ = nullptr;
 
     ComPtr<ID3D12Resource> directionalLightResource_;
     DirectionalLight* directionalLightData_ = nullptr;

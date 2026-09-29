@@ -2375,10 +2375,10 @@ void GameRuntime::InitializeRailScenery()
             scenery.object->SetColor(color);
             scenery.object->SetLightingMode(lightingMode);
             scenery.object->SetEnvironmentCoefficient(environmentCoefficient);
-            scenery.object->SetShadowReceiveStrength(0.0f);
+            scenery.object->SetShadowReceiveStrength(0.9f);
             if (modelPathText.find("Street") != std::string::npos) {
                 scenery.object->SetShininess(24.0f);
-                scenery.object->SetSpecularColor({ 0.055f, 0.060f, 0.070f });
+                scenery.object->SetSpecularColor({ 0.035f, 0.038f, 0.042f });
                 scenery.object->SetRoughness(0.84f);
                 scenery.object->SetMetallic(0.02f);
             } else if (modelPathText.find("Building") != std::string::npos) {
@@ -2449,8 +2449,10 @@ void GameRuntime::InitializeRailScenery()
         addSceneryStyled(
             kCityStreet4LaneModelPath,
             { 0.0f, kRoadY, -9.0f + segmentZ },
-            { 14.00f, 1.0f, 1.0f },
-            { 0.0f, 0.0f, 0.0f },
+            // 元モデルはX方向へ続く6mの道路、Z方向18mに車道と歩道が並ぶ。
+            // 90度回して進行方向へ18mずつ連結。歩道が横断帯として反復しないようにする。
+            { 3.0f, 1.0f, 14.0f / 3.0f },
+            { 0.0f, kHalfPi, 0.0f },
             kCityLoopLength,
             0.0f,
             { 0.78f, 0.82f, 0.86f, 1.0f },
@@ -2711,7 +2713,8 @@ void GameRuntime::UpdateRailScenery()
                 // 建物ごとの元の高さの差は残す。ボス広場は低い街並みと空でシルエットを抜く。
                 scale.y *= scenery.isBackRow ? value(0.95f, 1.65f, 0.90f) : value(0.80f, 1.65f, 0.72f);
             } else if (scenery.isRoad) {
-                scale.x *= value(14.8f, 12.0f, 24.0f) / 14.0f;
+                // 回転後の道幅はローカルZ。長さXを変えると連結部に隙間ができる。
+                scale.z *= value(14.8f, 12.0f, 24.0f) / 14.0f;
             }
         }
         scenery.object->SetTranslate(position);
@@ -2785,6 +2788,15 @@ void GameRuntime::RenderShadowMap()
     for (const auto& sceneObject : sceneObjects_) {
         if (sceneObject) {
             sceneObject->DrawShadow(lightViewProjection);
+        }
+    }
+
+    // 画面外の建物も道路へ影を落とすため、色描画のisVisibleとは別に範囲を判定する。
+    // 路面・窓ガラスは投影しない。描画数は初期化済みの街モデル数で上限が決まる。
+    for (const RailSceneryObject& scenery : railSceneryObjects_) {
+        if (scenery.object && scenery.isBuilding &&
+            scenery.currentLocalZ >= -45.0f && scenery.currentLocalZ <= 240.0f) {
+            scenery.object->DrawShadow(lightViewProjection);
         }
     }
 

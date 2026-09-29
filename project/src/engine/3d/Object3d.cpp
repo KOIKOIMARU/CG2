@@ -180,7 +180,7 @@ void Object3d::Draw(ModelDrawPass drawPass)
 
 void Object3d::DrawShadow(const Matrix4x4& lightViewProjection)
 {
-    if (!object3dCommon_ || !model_ || !transformationMatrixData_) {
+    if (!object3dCommon_ || !model_ || !shadowTransformationMatrixData_) {
         return;
     }
 
@@ -191,16 +191,14 @@ void Object3d::DrawShadow(const Matrix4x4& lightViewProjection)
         object3dCommon_->CommonShadowDrawSetting();
     }
 
-    const Matrix4x4 previousWvp = transformationMatrixData_->WVP;
+    // コマンドリストはCBの内容ではなくGPUアドレスを保持する。通常描画とは領域を分ける。
     const Matrix4x4 shadowWvp = Multiply(worldMatrix_, lightViewProjection);
-    transformationMatrixData_->WVP = Transpose(shadowWvp);
-    transformationMatrixData_->World = Transpose(worldMatrix_);
-    transformationMatrixData_->WorldInverseTranspose =
-        Transpose(Inverse(worldMatrix_));
+    *shadowTransformationMatrixData_ = *transformationMatrixData_;
+    shadowTransformationMatrixData_->WVP = Transpose(shadowWvp);
 
     commandList->SetGraphicsRootConstantBufferView(
         1,
-        transformationMatrixResource_->GetGPUVirtualAddress());
+        transformationMatrixResource_->GetGPUVirtualAddress() + kTransformBufferStride);
     commandList->SetGraphicsRootConstantBufferView(
         8,
         skinningPaletteResource_->GetGPUVirtualAddress());
@@ -211,15 +209,15 @@ void Object3d::DrawShadow(const Matrix4x4& lightViewProjection)
         model_->Draw(
             &computeOutputVertexBufferView_,
             materialResource_.Get(),
-            textureOverride);
+            textureOverride,
+            ModelDrawPass::Opaque);
     } else {
         model_->Draw(
             nullptr,
             materialResource_.Get(),
-            textureOverride);
+            textureOverride,
+            ModelDrawPass::Opaque);
     }
-
-    transformationMatrixData_->WVP = previousWvp;
 }
 
 void Object3d::CreateTransformationMatrix() {
@@ -227,17 +225,20 @@ void Object3d::CreateTransformationMatrix() {
 
     // 座標変換行列用リソースを作成
     transformationMatrixResource_ =
-        dxCommon->CreateBufferResource(sizeof(TransformationMatrix));
+        dxCommon->CreateBufferResource(kTransformBufferStride * 2);
 
     // Map してポインタ取得
     transformationMatrixResource_->Map(
         0, nullptr,
         reinterpret_cast<void**>(&transformationMatrixData_));
+    shadowTransformationMatrixData_ = reinterpret_cast<TransformationMatrix*>(
+        reinterpret_cast<std::byte*>(transformationMatrixData_) + kTransformBufferStride);
 
     // 単位行列で初期化
     transformationMatrixData_->WVP = MakeIdentity4x4();
     transformationMatrixData_->World = MakeIdentity4x4();
     transformationMatrixData_->WorldInverseTranspose = MakeIdentity4x4();
+    *shadowTransformationMatrixData_ = *transformationMatrixData_;
 }
 
 void Object3d::CreateDirectionalLight() {
@@ -254,8 +255,8 @@ void Object3d::CreateDirectionalLight() {
 
     // 初期化（資料準拠）
     directionalLightData_->color = { 1.0f, 0.985f, 0.955f, 1.0f };
-    directionalLightData_->direction = Normalize({ 0.30f, -0.86f, 0.41f });
-    directionalLightData_->intensity = 0.94f;
+    directionalLightData_->direction = Normalize(Object3dCommon::kSunDirection);
+    directionalLightData_->intensity = 1.08f;
     directionalLightData_->lightViewProjection = MakeIdentity4x4();
     directionalLightData_->shadowStrength = 0.0f;
     directionalLightData_->shadowBias = 0.0018f;

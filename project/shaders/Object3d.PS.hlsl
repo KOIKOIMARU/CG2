@@ -16,7 +16,7 @@ TextureCube<float4> gEnvironmentTexture : register(t1);
 Texture2D<float> gShadowMap : register(t2);
 Texture2D<float4> gNormalTexture : register(t3);
 SamplerState gSampler : register(s0);
-SamplerState gShadowSampler : register(s1);
+SamplerComparisonState gShadowSampler : register(s1);
 
 cbuffer CameraCB : register(b2)
 {
@@ -80,23 +80,22 @@ float CalculateDirectionalShadow(float3 worldPosition, float3 normal, float3 lig
         gDirectionalLight.shadowNormalBias;
     float receiverDepth = lightNdc.z - gDirectionalLight.shadowBias - normalBias;
 
+    // 3x3 PCF。固定の小さな半影にし、街の影をぼかしすぎず輪郭のジャギーだけ落とす。
     float visibility = 0.0f;
-    float2 sampleOffset = texelSize * 0.75f;
-    float sampledDepth =
-        gShadowMap.Sample(gShadowSampler, shadowUv + float2(-sampleOffset.x, -sampleOffset.y));
-    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
-    sampledDepth =
-        gShadowMap.Sample(gShadowSampler, shadowUv + float2(sampleOffset.x, -sampleOffset.y));
-    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
-    sampledDepth =
-        gShadowMap.Sample(gShadowSampler, shadowUv + float2(-sampleOffset.x, sampleOffset.y));
-    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
-    sampledDepth =
-        gShadowMap.Sample(gShadowSampler, shadowUv + float2(sampleOffset.x, sampleOffset.y));
-    visibility += receiverDepth <= sampledDepth ? 1.0f : 0.0f;
-    visibility *= 0.25f;
-
-    return lerp(1.0f - gDirectionalLight.shadowStrength, 1.0f, visibility);
+    [unroll]
+    for (int y = -1; y <= 1; ++y) {
+        [unroll]
+        for (int x = -1; x <= 1; ++x) {
+            // 深度そのものではなく比較結果を線形補間し、移動中の境界の段差をなくす。
+            visibility += gShadowMap.SampleCmpLevelZero(gShadowSampler,
+                shadowUv + float2(x, y) * texelSize * 1.25f, receiverDepth);
+        }
+    }
+    visibility /= 9.0f;
+    // 影マップの外周を段差なく抜く。遠景で四角い影の終端を見せない。
+    float edge = max(abs(shadowUv.x - 0.5f), abs(shadowUv.y - 0.5f)) * 2.0f;
+    float coverage = 1.0f - smoothstep(0.82f, 0.98f, edge);
+    return 1.0f - (1.0f - visibility) * gDirectionalLight.shadowStrength * coverage;
 }
 
 float3 SampleEnvironment(float3 direction)

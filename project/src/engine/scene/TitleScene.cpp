@@ -118,14 +118,15 @@ void TitleScene::PrepareBackdrop()
     ship_->Initialize(objectCommon_.get());
     ship_->SetModel(model);
     ship_->SetLightingMode(1);
-    ship_->SetColor({ 0.78f, 0.88f, 1.0f, 1.0f });
-    ship_->SetDirectionalLightDirection({ 0.30f, -0.86f, 0.41f });
+    ship_->SetColor({ 0.90f, 0.94f, 1.0f, 1.0f });
+    ship_->SetDirectionalLightDirection(Object3dCommon::kSunDirection);
     ship_->SetDirectionalLightIntensity(1.1f);
-    ship_->SetEnvironmentCoefficient(0.055f);
-    ship_->SetRoughness(0.48f);
-    ship_->SetMetallic(0.18f);
-    ship_->SetSpecularColor({ 0.25f, 0.29f, 0.34f });
-    ship_->SetShadowReceiveStrength(0.0f);
+    ship_->SetEnvironmentCoefficient(0.045f);
+    ship_->SetShininess(112.0f);
+    ship_->SetRoughness(0.38f);
+    ship_->SetMetallic(0.24f);
+    ship_->SetSpecularColor({ 0.30f, 0.32f, 0.35f });
+    ship_->SetShadowReceiveStrength(0.8f);
 
     PrepareLaunchDeck();
 
@@ -171,7 +172,7 @@ void TitleScene::PrepareLaunchDeck()
         part.object->SetRotate(rotation);
         part.object->SetColor(color);
         part.object->SetLightingMode(motion == 2 ? 0 : 2);
-        part.object->SetDirectionalLightDirection({ 0.30f, -0.86f, 0.41f });
+        part.object->SetDirectionalLightDirection(Object3dCommon::kSunDirection);
         part.object->SetDirectionalLightIntensity(1.05f);
         part.object->SetRoughness(0.68f);
         part.object->SetMetallic(0.18f);

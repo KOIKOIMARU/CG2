@@ -30,6 +30,8 @@ enum class DepthDrawMode : uint32_t {
 
 class Object3dCommon {
 public:
+    // 通常のライティングと影カメラで共有する太陽の向き。
+    static constexpr Math::Vector3 kSunDirection{ 0.52f, -0.72f, 0.46f };
     void Initialize(
         DirectXCommon* dxCommon,
         SrvManager* srvManager
@@ -87,7 +89,7 @@ private:
     void RestoreMainRenderTarget();
 
 private:
-    static constexpr uint32_t kShadowMapSize = 1024;
+    static constexpr uint32_t kShadowMapSize = 2048;
 
     DirectXCommon* dxCommon_ = nullptr;
     SrvManager* srvManager_ = nullptr;
@@ -112,10 +114,10 @@ private:
     D3D12_VIEWPORT shadowViewport_{};
     D3D12_RECT shadowScissorRect_{};
     Math::Matrix4x4 shadowLightViewProjection_ = Math::MakeIdentity4x4();
-    Math::Vector3 shadowLightDirection_{ 0.30f, -0.86f, 0.41f };
+    Math::Vector3 shadowLightDirection_ = kSunDirection;
     uint32_t shadowMapSrvIndex_ = UINT32_MAX;
-    float shadowStrength_ = 0.34f;
-    float shadowBias_ = 0.0018f;
-    float shadowNormalBias_ = 0.0035f;
+    float shadowStrength_ = 0.68f;
+    float shadowBias_ = 0.00045f;
+    float shadowNormalBias_ = 0.0008f;
     bool shadowMapReady_ = false;
 };
