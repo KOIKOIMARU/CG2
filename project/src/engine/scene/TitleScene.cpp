@@ -13,7 +13,6 @@
 #include "engine/scene/GameScene.h"
 #include "engine/scene/SceneManager.h"
 #include <dinput.h>
-#include <DirectXMath.h>
 #include <imgui.h>
 #include <algorithm>
 #include <cfloat>
@@ -26,8 +25,9 @@ constexpr const char* kTitleTop = "SKY";
 constexpr const char* kTitleBottom = "BREAK";
 constexpr const char* kShip = "free_models/player_candidates/Omen.gltf";
 constexpr const char* kSky = "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
-constexpr float kShipScale = 1.96f;
-constexpr float kDepartureDuration = 1.25f;
+constexpr float kShipScale = 2.25f;
+constexpr float kDepartureDuration = 2.15f;
+constexpr const char* kDeckBox = "title_launch_deck_box";
 
 float Smooth(float value)
 {
@@ -118,14 +118,16 @@ void TitleScene::PrepareBackdrop()
     ship_->Initialize(objectCommon_.get());
     ship_->SetModel(model);
     ship_->SetLightingMode(1);
-    ship_->SetColor({ 0.96f, 0.97f, 1.0f, 1.0f });
-    ship_->SetDirectionalLightDirection({ -0.35f, -0.8f, -0.45f });
+    ship_->SetColor({ 0.78f, 0.88f, 1.0f, 1.0f });
+    ship_->SetDirectionalLightDirection({ 0.30f, -0.86f, 0.41f });
     ship_->SetDirectionalLightIntensity(1.1f);
     ship_->SetEnvironmentCoefficient(0.055f);
     ship_->SetRoughness(0.48f);
     ship_->SetMetallic(0.18f);
     ship_->SetSpecularColor({ 0.25f, 0.29f, 0.34f });
     ship_->SetShadowReceiveStrength(0.0f);
+
+    PrepareLaunchDeck();
 
     // 本編で読み込み済みのエフェクトを再利用。汎用GPUパーティクルには接続しない。
     for (size_t index = 0; index < exhaust_.size(); ++index) {
@@ -145,57 +147,161 @@ void TitleScene::PrepareBackdrop()
     }
 }
 
+void TitleScene::PrepareLaunchDeck()
+{
+    auto* models = ModelManager::GetInstance();
+    // 白い単位箱を共有し、立体の継ぎ目・材質・構造で床を作る。追加の画像読み込みは不要。
+    models->CreateBox(kDeckBox, 1.0f, 1.0f, 1.0f, "resources/human/white.png");
+    deck_.reserve(100);
+    const Math::Vector4 metal{ 0.23f, 0.25f, 0.27f, 1.0f };
+    const Math::Vector4 edge{ 0.39f, 0.41f, 0.42f, 1.0f };
+    const Math::Vector4 pale{ 0.70f, 0.69f, 0.63f, 1.0f };
+    const Math::Vector4 amber{ 1.0f, 0.55f, 0.18f, 1.0f };
+    const auto box = [&](Math::Vector3 position, Math::Vector3 size, Math::Vector4 color,
+                         int motion = 0, Math::Vector3 rotation = Math::Vector3{}) {
+        DeckPart part;
+        part.position = position;
+        part.color = color;
+        part.motion = motion;
+        part.object = std::make_unique<Object3d>();
+        part.object->Initialize(objectCommon_.get());
+        part.object->SetModel(models->FindModel(kDeckBox));
+        part.object->SetTranslate(position);
+        part.object->SetScale(size);
+        part.object->SetRotate(rotation);
+        part.object->SetColor(color);
+        part.object->SetLightingMode(motion == 2 ? 0 : 2);
+        part.object->SetDirectionalLightDirection({ 0.30f, -0.86f, 0.41f });
+        part.object->SetDirectionalLightIntensity(1.05f);
+        part.object->SetRoughness(0.68f);
+        part.object->SetMetallic(0.18f);
+        part.object->SetEnvironmentCoefficient(0.02f);
+        part.object->SetSpecularColor({ 0.14f, 0.15f, 0.16f });
+        part.object->SetShadowReceiveStrength(0.9f);
+        deck_.push_back(std::move(part));
+    };
+    // 発進デッキの厚い基礎、側面の補強、中央の発進レール。
+    box({ 2, -0.78f, 3 }, { 22, 1.4f, 26 }, metal);
+    box({ 2, -1.70f, 3 }, { 20.4f, 0.44f, 24.4f }, { 0.10f, 0.12f, 0.14f, 1 });
+    for (int row = 0; row < 5; ++row) {
+        for (int lane = 0; lane < 4; ++lane) {
+            const float tint = static_cast<float>((row + lane) % 3) * 0.012f;
+            box({ -6.25f + 5.5f * lane, -0.03f, -7.4f + 5.2f * row }, { 5.46f, 0.08f, 5.15f },
+                { 0.27f + tint, 0.29f + tint, 0.31f + tint, 1 });
+        }
+    }
+    box({ 3, 0.035f, 4 }, { 7.8f, 0.05f, 21.8f }, { 0.13f, 0.16f, 0.19f, 1 });
+    for (float side : { -1.0f, 1.0f }) {
+        box({ 3 + side * 3.95f, 0.08f, 4 }, { 0.14f, 0.1f, 21.8f }, edge);
+        box({ 3 + side * 2.0f, 0.07f, 4 }, { 0.065f, 0.03f, 20.8f }, pale);
+        box({ 2 + side * 10.7f, 0.24f, 3 }, { 0.34f, 0.65f, 26 }, edge);
+        for (int index = 0; index < 6; ++index) {
+            const float z = -7.0f + index * 4.0f;
+            box({ 3 + side * 4.35f, 0.09f, z }, { 0.52f, 0.16f, 0.9f }, metal);
+            box({ 3 + side * 4.35f, 0.18f, z }, { 0.15f, 0.06f, 0.54f }, amber, 2);
+        }
+        // 射出口を塞がない左右の支持具。出撃前に下と外側へ退避する。
+        for (float z : { -0.9f, 2.4f }) {
+            const int direction = side < 0.0f ? -1 : 1;
+            box({ 3 + side * 2.6f, 0.54f, z }, { 0.44f, 1.05f, 0.64f }, metal, direction);
+            box({ 3 + side * 2.30f, 0.98f, z }, { 1.0f, 0.19f, 0.68f }, edge, direction);
+        }
+    }
+    // 左の整備通路には低い設備だけを置き、ロゴの後ろを騒がしくしない。
+    box({ -5.9f, 0.48f, 5.7f }, { 2.0f, 0.94f, 3.1f }, metal);
+    box({ -5.9f, 1.0f, 5.7f }, { 2.12f, 0.12f, 3.22f }, edge);
+    for (int index = 0; index < 6; ++index) {
+        box({ -5.9f, 1.075f, 4.55f + 0.45f * index }, { 1.6f, 0.03f, 0.10f }, { 0.08f, 0.10f, 0.12f, 1 });
+    }
+    for (float x : { -7.8f, 11.8f }) {
+        box({ x, 1.6f, 12 }, { 0.18f, 3.2f, 0.18f }, metal);
+        box({ x, 3.2f, 12 }, { 0.60f, 0.20f, 0.40f }, edge);
+    }
+
+    contactShadow_ = std::make_unique<Object3d>();
+    contactShadow_->Initialize(objectCommon_.get());
+    contactShadow_->SetModel(models->FindModel("effect_contact_shadow"));
+    contactShadow_->SetLightingMode(0);
+    contactShadow_->SetEnvironmentCoefficient(0.0f);
+    contactShadow_->SetAlphaReference(0.001f);
+    contactShadow_->SetRotate({ std::numbers::pi_v<float> * 0.5f, 0, 0 });
+    for (auto& glow : serviceGlow_) {
+        glow = std::make_unique<Object3d>();
+        glow->Initialize(objectCommon_.get());
+        glow->SetModel(models->FindModel("effect_glow_core"));
+        glow->SetLightingMode(0);
+        glow->SetEnvironmentCoefficient(0.0f);
+    }
+}
+
 void TitleScene::UpdateBackdrop()
 {
     if (!camera_) { return; }
-    const float arrival = Smooth(elapsed_ / 2.4f);
-    const float departure = Smooth(departureTime_ / kDepartureDuration);
-    const float acceleration = std::pow(std::clamp((departureTime_ - 0.16f) / 0.94f, 0.0f, 1.0f), 2.0f);
-    const float phase = elapsed_ * 0.38f;
-    // 展示中の短い見せ場。導入から9秒後、その後は22秒周期で一回だけロールする。
-    // 一周の終端は2πと0が同じ姿勢なので、周期境界でも向きが跳ばない。
-    const float rollTime = elapsed_ < 9.0f ? 0.0f : std::fmod(elapsed_ - 9.0f, 22.0f);
-    const float rollProgress = Smooth(rollTime / 2.1f);
-    const float rollAngle = 2.0f * std::numbers::pi_v<float> * rollProgress;
-    const float rollLift = std::sin(std::numbers::pi_v<float> * rollProgress);
+    const float arrival = Smooth(elapsed_ / 3.2f);
+    const float release = Smooth(departureTime_ / 0.55f);
+    const float follow = Smooth((departureTime_ - 0.18f) / 1.45f);
+    const float acceleration = std::pow(std::clamp((departureTime_ - 0.60f) / 1.55f, 0.0f, 1.0f), 2.0f);
+    const float phase = elapsed_ * 0.20f;
+    // 入場時にゆっくり寄り、出撃時は自機の後ろへ回り込む。入力を待たせる演出にはしない。
+    const Math::Vector3 cameraPosition{
+        (-8.6f - 1.4f * (1.0f - arrival) + 0.42f * std::sin(phase)) * (1.0f - follow) + 3.0f * follow,
+        (6.7f + 0.7f * (1.0f - arrival) + 0.09f * std::sin(phase * 0.63f)) * (1.0f - follow) + 4.8f * follow + 2.5f * acceleration,
+        -15.8f - 1.4f * (1.0f - arrival) + 3.8f * follow + 13.0f * acceleration };
+    const Math::Vector3 target{ -1.7f + 4.7f * follow, 1.4f + 1.0f * follow + 5.0f * acceleration,
+        4.2f + 19.0f * follow + 30.0f * acceleration };
+    const Math::Vector3 aim{ target.x - cameraPosition.x, target.y - cameraPosition.y, target.z - cameraPosition.z };
     camera_->SetAspectRatio(dxCommon_->GetPresentationAspectRatio());
-    camera_->SetFovY(0.56f + 0.045f * (1.0f - arrival) + 0.09f * departure);
-    camera_->SetTranslate({ 0.24f * std::sin(phase * 0.61f),
-        5.0f + 0.55f * (1.0f - arrival) + 0.10f * std::sin(phase * 0.8f),
-        -12.5f - 1.8f * (1.0f - arrival) });
-    camera_->SetRotate({ 0.29f + 0.008f * std::sin(phase * 0.8f),
-        0.012f * std::sin(phase * 0.61f), -0.025f + 0.008f * std::sin(phase) });
+    camera_->SetFovY(0.59f + 0.12f * acceleration);
+    camera_->SetTranslate(cameraPosition);
+    camera_->SetRotate({ -std::atan2(aim.y, std::sqrt(aim.x * aim.x + aim.z * aim.z)),
+        std::atan2(aim.x, aim.z), -0.008f * std::sin(phase * 0.7f) * (1.0f - follow) });
     camera_->Update();
-    // 機体は上から捉え、空は雲のある方角を見せる。モデルの投影には影響させない。
     Camera skyCamera = *camera_;
-    // 雲の流れを機体より遅くして遠景の奥行きを作る。周期の端で巻き戻さない。
-    skyCamera.SetRotate({ -0.12f + 0.018f * std::sin(phase * 0.47f),
-        0.18f + elapsed_ * 0.018f + 0.12f * acceleration, camera_->GetRotate().z });
+    skyCamera.SetRotate({ camera_->GetRotate().x - 0.30f,
+        camera_->GetRotate().y + 0.18f + elapsed_ * 0.003f, camera_->GetRotate().z });
     skyCamera.Update();
     skybox_->Update(&skyCamera);
-    const Math::Vector3 rotation{ -0.035f * std::sin(phase * 0.7f) - 0.14f * departure,
-        0.84f + 0.14f * std::sin(phase * 0.7f) - 0.20f * (1.0f - arrival),
-        -0.18f + 0.11f * std::sin(phase) - 0.30f * departure };
-    // ワールドZではなく機首の軸で回す。先にローカルロール、続けて通常の飛行姿勢を合成する。
-    DirectX::XMFLOAT4 quaternion{};
-    DirectX::XMStoreFloat4(&quaternion, DirectX::XMQuaternionRotationMatrix(
-        DirectX::XMMatrixRotationZ(rollAngle) * DirectX::XMMatrixRotationX(rotation.x) *
-        DirectX::XMMatrixRotationY(rotation.y) * DirectX::XMMatrixRotationZ(rotation.z)));
-    const Math::Quaternion orientation{ quaternion.x, quaternion.y, quaternion.z, quaternion.w };
-    const auto rotationMatrix = Math::MakeRotateMatrix(orientation);
-    const auto matrix = Math::MakeAffineMatrix({ kShipScale, kShipScale, kShipScale }, orientation, {});
+    const Math::Vector3 rotation{ -0.12f * release - 0.06f * acceleration,
+        0.15f * (1.0f - follow), 0.008f * std::sin(elapsed_ * 1.7f) * release };
+    const auto rotationMatrix = Math::MakeAffineMatrix({ 1, 1, 1 }, rotation, {});
+    const auto matrix = Math::MakeAffineMatrix({ kShipScale, kShipScale, kShipScale }, rotation, {});
     const auto offset = RotateVector(modelCenter_, matrix);
-    // 機首方向(+Z)へ加速させる。縮小だけで消さず、実際に空の奥へ飛び去る。
-    const auto forward = RotateVector({ 0.0f, 0.0f, 1.0f }, rotationMatrix);
-    // ロール中だけ奥へ引き、縦になった翼も画面内に収める。
-    const Math::Vector3 center{ 3.6f + 5.5f * (1.0f - arrival) + 0.22f * std::sin(phase * 0.7f) + forward.x * acceleration * 30.0f,
-        1.66f + 0.9f * (1.0f - arrival) + 0.18f * std::sin(phase) - 0.20f * rollLift + 3.2f * acceleration,
-        6.0f * (1.0f - arrival) + 2.8f * rollLift + forward.z * acceleration * 30.0f };
+    const Math::Vector3 center{ 3.0f, 1.5f + 0.9f * release + 7.5f * acceleration, 1.5f + 57.0f * acceleration };
     ship_->SetScale({ kShipScale, kShipScale, kShipScale });
-    ship_->SetQuaternionRotate(orientation);
+    ship_->SetRotate(rotation);
     ship_->SetTranslate({ center.x - offset.x, center.y - offset.y, center.z - offset.z });
+    // 整備灯の反射がゆっくり機体を横切る。発進後は消して自然光へ戻す。
+    ship_->SetSpotLightPosition({ 4.0f + 3.0f * std::sin(phase), 5.6f, -2.0f });
+    ship_->SetSpotLightDirection({ -0.18f, -0.85f, 0.48f });
+    ship_->SetSpotLightIntensity(0.70f * (1.0f - release));
     ship_->Update();
-    UpdateFlightEffects(center, rotationMatrix, 1.0f + 0.35f * rollLift + 2.4f * departure);
+    for (auto& part : deck_) {
+        Math::Vector3 position = part.position;
+        if (part.motion == -1 || part.motion == 1) {
+            position.x += static_cast<float>(part.motion) * 0.85f * release;
+            position.y -= 0.85f * release;
+        }
+        if (part.motion == 2) {
+            const float pulse = 0.72f + 0.28f * std::pow(0.5f + 0.5f * std::sin(elapsed_ * 1.8f - position.z * 0.32f), 3.0f);
+            part.object->SetColor({ part.color.x * pulse, part.color.y * pulse, part.color.z * pulse, 1 });
+        }
+        part.object->SetTranslate(position);
+        part.object->Update();
+    }
+    contactShadow_->SetTranslate({ 3, 0.105f, 1.5f + 57.0f * acceleration });
+    contactShadow_->SetScale({ 3.3f + release, 3.0f + release, 1 });
+    contactShadow_->SetColor({ 0.02f, 0.025f, 0.035f, 0.54f * (1.0f - release) });
+    contactShadow_->Update();
+    for (size_t index = 0; index < serviceGlow_.size(); ++index) {
+        auto& glow = serviceGlow_[index];
+        glow->SetTranslate({ index == 0 ? -7.8f : 11.8f, 3.2f, 11.75f });
+        glow->SetRotate(camera_->GetRotate());
+        const float glowSize = 0.20f + 0.05f * std::sin(elapsed_ * 0.7f + static_cast<float>(index));
+        glow->SetScale({ glowSize, glowSize, 1 });
+        glow->SetColor({ 1.0f, 0.72f, 0.40f, 0.6f });
+        glow->Update();
+    }
+    UpdateFlightEffects(center, rotationMatrix, 0.10f + 0.75f * release + 2.5f * acceleration);
 }
 
 void TitleScene::UpdateFlightEffects(const Math::Vector3& center, const Math::Matrix4x4& rotationMatrix, float thrust)
@@ -256,7 +362,7 @@ void TitleScene::Update()
     if (startRequested_ && gameReady && sceneManager_) {
         if (departureTime_ == 0.0f && sound_) { sound_->Play("launch"); }
         departureTime_ = (std::min)(kDepartureDuration, departureTime_ + delta);
-        departureFade_ = Smooth((departureTime_ - 0.77f) / (kDepartureDuration - 0.77f));
+        departureFade_ = Smooth((departureTime_ - 1.68f) / (kDepartureDuration - 1.68f));
         if (departureTime_ >= kDepartureDuration) { sceneManager_->SetNextScene(requestedScene_); }
     }
     UpdateBackdrop();
@@ -279,11 +385,17 @@ void TitleScene::DrawMenu(bool gameReady)
     ImDrawList* draw = ImGui::GetWindowDrawList();
     // 背景を見せつつ、文字のある左側だけを暗くする。カードや説明欄は置かない。
     if (!skybox_) { draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36, 255)); }
-    const ImU32 shade = CombatHud::SurfaceColor(IM_COL32(13, 16, 22, 228));
+    const float menuShade = 1.0f - Smooth(departureTime_ / 0.55f);
+    const ImU32 shade = CombatHud::SurfaceColor(IM_COL32(13, 16, 22, static_cast<int>(228.0f * menuShade)));
     draw->AddRectFilledMultiColor(viewport->Pos, end, shade, IM_COL32(0, 0, 0, 0),
         IM_COL32(0, 0, 0, 0), shade);
     draw->AddRectFilledMultiColor(p(0, 490), end, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-        IM_COL32(0, 0, 0, 112), IM_COL32(0, 0, 0, 112));
+        IM_COL32(0, 0, 0, static_cast<int>(112.0f * menuShade)),
+        IM_COL32(0, 0, 0, static_cast<int>(112.0f * menuShade)));
+    if (skybox_ && elapsed_ < 0.8f) {
+        draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36,
+            static_cast<int>(255.0f * (1.0f - Smooth(elapsed_ / 0.8f)))));
+    }
     if (!showControls_) {
         const float reveal = Smooth(menuRevealTime_ / 0.85f);
         const float uiAlpha = reveal * (1.0f - Smooth(departureTime_ / 0.28f));
@@ -338,13 +450,24 @@ void TitleScene::DrawMenu(bool gameReady)
 void TitleScene::Draw()
 {
     if (!skybox_) { return; }
+    // 本編と同じ影パスを使い、出撃前の自機・固定具を床へ落とす。
+    if (objectCommon_->BeginShadowPass({ 3, 0, 3 })) {
+        const auto& light = objectCommon_->GetShadowLightViewProjection();
+        ship_->DrawShadow(light);
+        for (auto& part : deck_) { if (part.motion != 2) { part.object->DrawShadow(light); } }
+        objectCommon_->EndShadowPass();
+    }
     skybox_->Draw();
     objectCommon_->CommonDrawSetting();
+    for (auto& part : deck_) { part.object->Draw(); }
     ship_->Draw();
-    objectCommon_->SetBlendMode(BlendMode::Add);
     objectCommon_->SetDepthDrawMode(DepthDrawMode::ReadOnly);
     objectCommon_->CommonDrawSetting();
+    contactShadow_->Draw();
+    objectCommon_->SetBlendMode(BlendMode::Add);
+    objectCommon_->CommonDrawSetting();
     for (auto& effect : exhaust_) { effect->Draw(); }
+    for (auto& glow : serviceGlow_) { glow->Draw(); }
     objectCommon_->SetBlendMode(BlendMode::Normal);
     objectCommon_->SetDepthDrawMode(DepthDrawMode::Normal);
 }
@@ -353,6 +476,9 @@ void TitleScene::Finalize()
 {
     // フレーム終端のGPU完了待ち後にシーンが切り替わる。共有モデル・空は解放しない。
     ship_.reset();
+    deck_.clear();
+    contactShadow_.reset();
+    for (auto& glow : serviceGlow_) { glow.reset(); }
     for (auto& effect : exhaust_) { effect.reset(); }
     sound_.reset();
     skybox_.reset();

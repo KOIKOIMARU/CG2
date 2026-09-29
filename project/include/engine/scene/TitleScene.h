@@ -3,6 +3,7 @@
 #include "engine/scene/SceneType.h"
 #include <memory>
 #include <array>
+#include <vector>
 #include "engine/base/Math.h"
 
 class Camera;
@@ -24,6 +25,7 @@ public:
 
 private:
     void PrepareBackdrop();
+    void PrepareLaunchDeck();
     void UpdateBackdrop();
     void UpdateFlightEffects(const Math::Vector3& center, const Math::Matrix4x4& rotation, float thrust);
     void DrawMenu(bool gameReady);
@@ -32,6 +34,15 @@ private:
     std::unique_ptr<Object3dCommon> objectCommon_;
     std::unique_ptr<Skybox> skybox_;
     std::unique_ptr<Object3d> ship_; // 本編の自機と同じモデルを使う、タイトル専用の1機。
+    struct DeckPart {
+        std::unique_ptr<Object3d> object;
+        Math::Vector3 position{}; // 待機中の基準位置。固定具の退避もここから計算する。
+        Math::Vector4 color{};
+        int motion = 0; // 0:固定、-1/+1:左右の固定具、2:誘導灯。
+    };
+    std::vector<DeckPart> deck_; // 発進床・外周フレーム・固定具。初期化時のみ生成する。
+    std::array<std::unique_ptr<Object3d>, 2> serviceGlow_; // 整備灯の小さな発光。
+    std::unique_ptr<Object3d> contactShadow_; // 自機の床への接地感を補う柔らかな影。
     std::array<std::unique_ptr<Object3d>, 6> exhaust_; // 左右ノズルの外炎・内炎・発光。初期化時だけ確保する。
     std::unique_ptr<SoundManager> sound_; // 出撃の決定音・加速音。本編の再生状態とは分離する。
     Math::Vector3 modelCenter_{};
