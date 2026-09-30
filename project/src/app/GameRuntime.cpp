@@ -81,6 +81,7 @@ constexpr const char* kCityBuildingLargeModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Building_Large_2.gltf";
 constexpr const char* kTransitLandmarkModelPath = "free_models/transit_landmark/TransitLandmark.gltf";
+constexpr const char* kTracksideModelPath = "scenery/FlightTrackside.gltf";
 constexpr float kTransitLandmarkWorldZ = 240.0f; // 市街地の途中に固定。撃破速度では位置を変えない。
 constexpr int kTargetPlayerBulletPoolCount = 24;
 constexpr int kTargetEnemyBulletPoolCount = 64; // 連射・扇状弾も起動時の固定プールだけで賄う。
@@ -103,6 +104,9 @@ constexpr float kTwoPi = 6.28318530718f;
 constexpr float kRailCameraCurveFrequency = 0.050f;
 constexpr float kRailCameraDriftFrequency = 0.027f;
 constexpr float kGameplayCameraBaseFovY = 0.590f;
+constexpr float kRushCameraBaseFovY = 0.710f; // 通常飛行は広角化し、手前の路面を大きく流す。
+constexpr float kRushCameraDistance = 14.6f; // 広角化しても自機が小さくなりすぎない距離。
+constexpr float kMainFlightSpeedMultiplier = 1.65f;
 constexpr float kGameplayCameraInitialDistance = 15.8f;
 constexpr float kGameplayCameraBaseDistance = 16.10f;
 constexpr float kGameplayCameraEdgeRollStart = 5.25f;
@@ -126,7 +130,7 @@ constexpr float kJustDodgeCameraLowAngle = 0.18f;
 constexpr float kJustDodgeCameraFovTighten = 0.140f;
 constexpr int kPlayerDodgeAfterimageIntervalFrames = 2;
 constexpr float kPlayerDodgeAfterimageDuration = 34.0f;
-constexpr int kSharedResourcePreloadStepCount = 16;
+constexpr int kSharedResourcePreloadStepCount = 17;
 constexpr float kSceneryNearLocalZ = -24.0f;
 constexpr float kSceneryFarLocalZ = 300.0f;
 constexpr float kStageClearDistance = 365.0f;
@@ -152,11 +156,11 @@ constexpr int kBossMaxHp = 52;
 constexpr int kMaxActiveStageEnemiesBeforeBoss = 7;
 constexpr int kMaxStageEnemyEventsPerFrame = 2;
 constexpr float kJustDodgeGrazePadding = 1.25f;
-constexpr float kJustDodgeRailSlowScale = 0.08f;
+constexpr float kJustDodgeRailSlowScale = 0.28f;
 constexpr int kJustDodgeChargeBonus = 24;
 constexpr int kJustDodgeScoreBonus = 50;
 constexpr int kJustDodgeFlashDuration = 46;
-constexpr int kJustDodgeSlowDuration = 46;
+constexpr int kJustDodgeSlowDuration = 14; // 成功を見せる瞬間だけ減速し、飛行の勢いを切らない。
 constexpr int kPlayerImpactFlashDuration = 10;
 constexpr int kPlayerImpactSlowDuration = 8;
 constexpr float kPlayerImpactRailSlowScale = 0.42f;
@@ -649,6 +653,10 @@ bool GameRuntime::PreloadSharedResourceStep(
         gSharedResourcePreloadLabel = "Transit facility model";
         modelManager->LoadModel(kTransitLandmarkModelPath);
         break;
+    case 16:
+        gSharedResourcePreloadLabel = "Trackside model";
+        modelManager->LoadModel(kTracksideModelPath);
+        break;
     default:
         gSharedResourcesPreloaded = true;
         gSharedResourcePreloadLabel = "Ready";
@@ -758,8 +766,10 @@ void GameRuntime::Initialize(PlayMode mode)
     resultTransitionTimer_ = -1;
     railDistance_ = 0.0f;
     sceneryCanyonStartZ_ = sceneryPlazaStartZ_ = -1.0f;
-    railSpeed_ = 0.145f;
-    targetRailSpeed_ = 0.145f;
+    railSpeed_ = IsTutorial() ? 0.145f : 0.235f;
+    targetRailSpeed_ = railSpeed_;
+    previousFlightTimeScale_ = 1.0f;
+    flightReleaseKick_ = 0.0f;
     stageProgress_ = 0.0f;
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
@@ -880,15 +890,15 @@ void GameRuntime::Initialize(PlayMode mode)
     const Math::Vector3 initialPlayerTranslate = player_->GetTranslate();
     cameraTranslate_ = {
         initialPlayerTranslate.x * 0.10f,
-        2.70f + initialPlayerTranslate.y * 0.05f,
-        railDistance_ - kGameplayCameraInitialDistance,
+        (IsTutorial() ? 2.70f : 2.10f) + initialPlayerTranslate.y * 0.05f,
+        railDistance_ - (IsTutorial() ? kGameplayCameraInitialDistance : kRushCameraDistance),
     };
     cameraRotate_ = {
         0.065f + initialPlayerTranslate.y * 0.003f,
         -initialPlayerTranslate.x * 0.004f,
         0.0f,
     };
-    cameraFovY_ = kGameplayCameraBaseFovY;
+    cameraFovY_ = IsTutorial() ? kGameplayCameraBaseFovY : kRushCameraBaseFovY;
     camera_->SetTranslate(cameraTranslate_);
     camera_->SetRotate(cameraRotate_);
     camera_->SetFovY(cameraFovY_);
@@ -1169,7 +1179,7 @@ void GameRuntime::UpdateStageDirector()
         stageProgress_ < 104.0f ? 0 :
         stageProgress_ < 230.0f ? 1 :
         2;
-    targetRailSpeed_ = activeSegment->targetSpeed *
+    targetRailSpeed_ = activeSegment->targetSpeed * kMainFlightSpeedMultiplier *
         (feverTimer_ > 0 ? kFeverRailSpeedMultiplier : 1.0f);
     stageCameraYawBias_ =
         Lerp(stageCameraYawBias_, activeSegment->yawBias, 0.035f);
@@ -1219,6 +1229,11 @@ void GameRuntime::UpdateRailProgress()
             targetRailSpeed_,
             feverTimer_ > 0 ? kFeverRailAccelerationResponse : 0.070f);
         const float worldTimeScale = GetCinematicWorldTimeScale();
+        flightReleaseKick_ = (std::max)(0.0f, flightReleaseKick_ - 1.0f / 28.0f);
+        if (!IsTutorial() && worldTimeScale > previousFlightTimeScale_ + 0.25f) {
+            flightReleaseKick_ = 1.0f;
+        }
+        previousFlightTimeScale_ = worldTimeScale;
         railDistance_ += railSpeed_ * worldTimeScale;
         // 背景は流し続けるが、練習の進行は距離ではなく操作の達成で決める。
         if (IsTutorial()) { return; }
@@ -2258,7 +2273,7 @@ void GameRuntime::UpdateDepthCueEffects()
     const Math::Vector3 cameraRotate = camera_ ? camera_->GetRotate() : Math::Vector3{};
     const float frameStep =
         dxCommon_ ? std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.5f, 4.0f) : 1.0f;
-    const float speedRate = std::clamp((railSpeed_ - 0.13f) / 0.10f, 0.0f, 1.0f);
+    const float speedRate = GetFlightSpeedRate();
     const float feverSpeedRate = feverSpeedEffectRate_;
     for (DepthCueEffect& cue : depthCueEffects_) {
         if (!cue.object) {
@@ -2413,7 +2428,8 @@ void GameRuntime::InitializeRailScenery()
             scenery.isRoad = modelPathText.find("Street") != std::string::npos;
             scenery.isBackRow = scenery.isBuilding && std::abs(anchor.x) > 40.0f;
             scenery.isLandmark = modelPathText == kTransitLandmarkModelPath;
-            scenery.halfDepth = scenery.isLandmark ? 54.0f : 0.0f;
+            scenery.isTrackside = modelPathText == kTracksideModelPath;
+            scenery.halfDepth = scenery.isLandmark ? 54.0f : scenery.isTrackside ? 18.0f : 0.0f;
             scenery.drawFarLocalZ = kSceneryFarLocalZ;
             if (modelPathText.find("Building") != std::string::npos) {
                 const bool isBackRow = std::abs(anchor.x) > 40.0f;
@@ -2634,6 +2650,14 @@ void GameRuntime::InitializeRailScenery()
             0.0f);
     }
     if (!IsTutorial()) {
+        // 路面と同じ324m周期。9ブロックを初期化時に確保し、実行中に増やさない。
+        // 自機の可動域(±8.9m)の外へ配置し、戦闘の中央には障害物を足さない。
+        for (int index = 0; index < 9; ++index) {
+            addSceneryStyled(kTracksideModelPath,
+                { 0.0f, kRoadY, 18.0f + 36.0f * static_cast<float>(index) },
+                { 1.0f, 1.0f, 1.0f }, {}, kCityLoopLength, 0.0f,
+                { 0.94f, 0.96f, 0.97f, 1.0f }, 2, 0.015f);
+        }
         // 地上から約15mより上に橋桁、支柱は左右22mより外。敵と自機の飛行域は塞がない。
         // 部品はオフラインで8材質へ結合済み。プレイ中にモデルやGPU資源を追加しない。
         addSceneryStyled(kTransitLandmarkModelPath,
@@ -2674,8 +2698,8 @@ void GameRuntime::UpdateRailScenery()
         const float localZ = scenery.isLandmark ? scenery.anchor.z - railDistance_ : WrapSceneryLocalZ(
             scenery.anchor.z -
                 railDistance_ * scenery.speedMultiplier +
-                scenery.phase,
-            scenery.loopLength);
+                scenery.phase + scenery.halfDepth,
+            scenery.loopLength) - scenery.halfDepth;
         scenery.currentLocalZ = localZ;
         scenery.isVisible =
             localZ + scenery.halfDepth >= kSceneryNearLocalZ &&
@@ -2814,7 +2838,7 @@ void GameRuntime::RenderShadowMap()
     // 画面外の建物も道路へ影を落とすため、色描画のisVisibleとは別に範囲を判定する。
     // 路面・窓ガラスは投影しない。描画数は初期化済みの街モデル数で上限が決まる。
     for (const RailSceneryObject& scenery : railSceneryObjects_) {
-        if (scenery.object && (scenery.isBuilding || scenery.isLandmark) &&
+        if (scenery.object && (scenery.isBuilding || scenery.isLandmark || scenery.isTrackside) &&
             scenery.currentLocalZ + scenery.halfDepth >= -45.0f &&
             scenery.currentLocalZ - scenery.halfDepth <= 240.0f) {
             scenery.object->DrawShadow(lightViewProjection);
@@ -3090,7 +3114,7 @@ bool GameRuntime::LoadSceneObjects(const char* path)
     if (settings.hasCamera && camera_) {
         cameraTranslate_ = settings.cameraTranslate;
         cameraRotate_ = settings.cameraRotate;
-        cameraFovY_ = kGameplayCameraBaseFovY;
+        cameraFovY_ = IsTutorial() ? kGameplayCameraBaseFovY : kRushCameraBaseFovY;
         camera_->SetTranslate(settings.cameraTranslate);
         camera_->SetRotate(settings.cameraRotate);
         camera_->SetFovY(cameraFovY_);
@@ -3383,6 +3407,9 @@ void GameRuntime::FirePlayerBullet()
         lifeTimer = 280;
         hitLimit = 3;
     }
+
+    // 前進だけを速めて自弾が置き去りになるのを防ぐ。敵の攻撃周期は変えない。
+    if (!IsTutorial()) { velocity = velocity * 1.20f; }
 
     auto bullet = AcquireBullet(playerBulletPool_);
     if (!bullet) {
@@ -5220,7 +5247,7 @@ void GameRuntime::DrawPlayerFlightAura()
     const Math::Vector3 playerPosition = player_->GetTranslate();
     const Math::Vector3 playerRotate = player_->GetVisualRotate();
     const Math::Vector3 cameraRotate = camera_->GetRotate();
-    const float speedRate = std::clamp((railSpeed_ - 0.13f) / 0.10f, 0.0f, 1.0f);
+    const float speedRate = GetFlightSpeedRate();
     const float accelerationRate = std::clamp(
         (targetRailSpeed_ - railSpeed_) / 0.045f,
         0.0f,
@@ -5238,6 +5265,7 @@ void GameRuntime::DrawPlayerFlightAura()
             accelerationRate * 0.20f +
             dodgeBoost * 0.82f +
             justDodgeBoost * 0.34f +
+            flightReleaseKick_ * 0.35f +
             feverThrustBoost * 0.95f,
         0.0f,
         1.75f);
@@ -5884,7 +5912,7 @@ void GameRuntime::DrawEditorOverlayGuiRich()
                 { 8, 38, 34.0f },
                 { 10, 34, 38.0f }
             } };
-            railSpeed_ = 0.145f;
+            railSpeed_ = IsTutorial() ? 0.145f : 0.235f;
             targetRailSpeed_ = 0.145f;
             playerBulletSpeed_ = 1.36f;
             lockBulletSpeed_ = 1.62f;
@@ -6026,7 +6054,7 @@ void GameRuntime::DrawEditorOverlayGuiRich()
 #endif
 
         if (ImGui::CollapsingHeader(ICON_FA_WAND_MAGIC_SPARKLES " 操作感", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.240f, "%.3f");
+            ImGui::SliderFloat("レール速度", &railSpeed_, 0.010f, 0.900f, "%.3f");
             ImGui::SliderFloat("自弾速度", &playerBulletSpeed_, 0.30f, 1.80f, "%.2f");
             ImGui::SliderFloat("チャージ弾速度", &lockBulletSpeed_, 0.70f, 2.20f, "%.2f");
             ImGui::SliderFloat("チャージ弾速度倍率", &chargedBulletSpeedMultiplier_, 1.00f, 2.00f, "%.2f");
@@ -6158,6 +6186,36 @@ void GameRuntime::DrawEditorOverlayGuiRich()
     }
 }
 #endif
+
+void GameRuntime::DrawFlightSpeedOverlay()
+{
+    if (IsTutorial() || isGameOver_ || isGameClear_ || feverSpeedEffectRate_ > 0.15f) { return; }
+    Math::Vector2 viewportMin{}, viewportSize{};
+    GetEffectiveHudViewportRect(viewportMin, viewportSize);
+    if (viewportSize.x <= 1.0f || viewportSize.y <= 1.0f) { return; }
+    // 速度線は周辺のみ。中央60%は照準と敵弾のために空ける。
+    const float intensity = (0.24f + GetFlightSpeedRate() * 0.30f + flightReleaseKick_ * 0.65f) *
+        GetCinematicWorldTimeScale();
+    Math::Vector2 vanishing{ viewportMin.x + viewportSize.x * 0.5f, viewportMin.y + viewportSize.y * 0.45f };
+    TryProjectToScreen({ 0.0f, 1.0f, railDistance_ + 260.0f }, vanishing);
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    drawList->PushClipRect({ viewportMin.x, viewportMin.y },
+        { viewportMin.x + viewportSize.x, viewportMin.y + viewportSize.y }, true);
+    for (int index = 0; index < 24; ++index) {
+        const float seed = PseudoRandom01(index, 8.71f);
+        const float angle = (static_cast<float>(index) + seed * 0.7f) * kTwoPi / 24.0f;
+        const float phase = std::fmod(railDistance_ * (0.12f + seed * 0.03f) + seed, 1.0f);
+        const float front = 0.76f + phase * 0.64f;
+        const float back = (std::max)(0.70f, front - (0.06f + phase * 0.13f));
+        const float dx = std::cos(angle) * viewportSize.x * 0.70f;
+        const float dy = std::sin(angle) * viewportSize.y * 0.70f;
+        const int alpha = static_cast<int>(66.0f * intensity * std::sin(phase * std::numbers::pi_v<float>));
+        drawList->AddLine({ vanishing.x + dx * back, vanishing.y + dy * back },
+            { vanishing.x + dx * front, vanishing.y + dy * front },
+            IM_COL32(235, 240, 242, alpha), 1.0f + phase * 0.7f);
+    }
+    drawList->PopClipRect();
+}
 
 void GameRuntime::DrawFeverBackdrop()
 {
@@ -6654,6 +6712,7 @@ void GameRuntime::DrawHud()
     // スキル表示も同じHUD入口から描く。通常・ポーズ・プレビューで表示が欠けないようにする。
     DrawPhantomRaidOverlay();
     ImGui::PushFont(CombatHud::BattleFont(), 16.0f);
+    DrawFlightSpeedOverlay();
     DrawFeverBackdrop();
     DrawEnemyTypeTelegraphs();
 
@@ -7031,6 +7090,22 @@ void GameRuntime::DrawFeverHud()
             static_cast<int>(blue * 255.0f),
             (std::clamp)(alpha, 0, 255));
     };
+    const auto rainbowReadout = [&](ImVec2 position, float size, int alpha, const char* text) {
+        position.x = std::round(position.x);
+        position.y = std::round(position.y);
+        alpha = std::clamp(alpha, 0, 255);
+        const float width = (std::max)(CombatHud::ReadoutWidth(text, size), 1.0f);
+        // 影は暗色のまま残し、文字の頂点だけをゲージと同じ流れる虹色にする。
+        drawList->AddText(CombatHud::BattleFont(), size, { position.x, position.y + 1.0f },
+            IM_COL32(0, 0, 0, alpha * 4 / 5), text);
+        const int firstVertex = drawList->VtxBuffer.Size;
+        drawList->AddText(CombatHud::BattleFont(), size, position, IM_COL32(255, 255, 255, alpha), text);
+        for (int index = firstVertex; index < drawList->VtxBuffer.Size; ++index) {
+            ImDrawVert& vertex = drawList->VtxBuffer[index];
+            const float offset = std::clamp((vertex.pos.x - position.x) / width, 0.0f, 1.0f);
+            vertex.col = CombatHud::SurfaceColor(rainbowColor(offset, alpha));
+        }
+    };
 
     const float hudScale = GetCombatHudScale(hudSize);
     const ImVec2 anchor(origin.x + 32.0f * hudScale, origin.y + drawSize.y - 80.0f * hudScale);
@@ -7038,8 +7113,11 @@ void GameRuntime::DrawFeverHud()
         return ImVec2(anchor.x + x * hudScale, anchor.y + y * hudScale);
     };
     CombatHud::Shade(drawList, p(-32, -16), p(280, 80));
-    CombatHud::Readout(drawList, p(0, 0), 20.0f * hudScale,
-        isActive ? CombatHud::GaugeGold : CombatHud::White, "フィーバー");
+    if (isActive || isReady) {
+        rainbowReadout(p(0, 0), 20.0f * hudScale, 255, "フィーバー");
+    } else {
+        CombatHud::Readout(drawList, p(0, 0), 20.0f * hudScale, CombatHud::White, "フィーバー");
+    }
     CombatHud::Meter(drawList, p(0, 32), p(232, 47), rate, CombatHud::FeverCharge, hudScale);
     // 発動中だけ計器の中が虹に変わる。通常の画面へ色を散らさない。
     if (isActive || isReady) {
@@ -7124,9 +7202,9 @@ void GameRuntime::DrawFeverHud()
         const float titleWidth = CombatHud::ReadoutWidth(title, fontSize);
         const ImVec2 center(origin.x + drawSize.x * 0.5f,
             origin.y + drawSize.y * 0.23f - elapsed * 8.0f * hudScale);
-        CombatHud::Readout(drawList,
+        rainbowReadout(
             { center.x - titleWidth * 0.5f, center.y },
-            fontSize, IM_COL32(255, 224, 131, static_cast<int>(255.0f * visibility)), title);
+            fontSize, static_cast<int>(255.0f * visibility), title);
     }
 }
 
@@ -7718,9 +7796,10 @@ float GameRuntime::GetCinematicWorldTimeScale() const
 {
     float timeScale = 1.0f;
     if (IsPhantomRaidActive()) {
-        timeScale = phantomClock_ < 12.0f ? 0.20f :
-            (phantomClock_ < PhantomFinisherTime() ? 0.35f :
-                (phantomClock_ < PhantomFinisherTime() + 5.0f ? 0.05f : 0.65f));
+        // 構えと連撃中も前進を残す。最後の一撃だけ約5フレーム強く止める。
+        timeScale = phantomClock_ < 12.0f ? 0.55f :
+            (phantomClock_ < PhantomFinisherTime() ? 0.75f :
+                (phantomClock_ < PhantomFinisherTime() + 5.0f ? 0.08f : 1.0f));
     }
     if (justDodgeSlowTimer_ > 0) {
         timeScale = (std::min)(timeScale, kJustDodgeRailSlowScale);
@@ -7729,6 +7808,13 @@ float GameRuntime::GetCinematicWorldTimeScale() const
         timeScale *= playerImpactSlowScale_;
     }
     return std::clamp(timeScale, 0.05f, 1.0f);
+}
+
+float GameRuntime::GetFlightSpeedRate() const
+{
+    const float base = IsTutorial() ? 0.13f : 0.24f;
+    const float range = IsTutorial() ? 0.10f : 0.18f;
+    return std::clamp((railSpeed_ - base) / range, 0.0f, 1.0f);
 }
 
 Math::Vector3 GameRuntime::CalculateAimDirection(const Math::Vector3& origin) const
@@ -8048,6 +8134,10 @@ void GameRuntime::UpdateGameCamera()
     cameraTimer_ += frameStep;
 
     const Math::Vector3 playerTranslate = player_->GetTranslate();
+    if (!IsTutorial()) {
+        // 前進分を先に追従し、距離だけ補間する。高速時の遅れで自機が縮むのを防ぐ。
+        cameraTranslate_.z += playerTranslate.z - previousPlayerTranslate_.z;
+    }
     const Math::Vector3 playerVelocity = {
         playerTranslate.x - previousPlayerTranslate_.x,
         playerTranslate.y - previousPlayerTranslate_.y,
@@ -8079,7 +8169,7 @@ void GameRuntime::UpdateGameCamera()
     const float turnRate = std::clamp(railWideCurve, -0.65f, 0.65f);
     const float speedPulse =
         0.5f + 0.5f * std::sin(railDistance_ * 0.021f + 0.80f);
-    const float railSpeedRate = std::clamp((railSpeed_ - 0.13f) / 0.10f, 0.0f, 1.0f);
+    const float railSpeedRate = GetFlightSpeedRate();
     const float feverSpeedRate = feverSpeedEffectRate_;
     const float feverActivationElapsedFrames =
         static_cast<float>(kFeverActivationFlashFrames - feverActivationFlashTimer_);
@@ -8157,7 +8247,7 @@ void GameRuntime::UpdateGameCamera()
             railDrift * 0.04f +
             feverWindBuffetX +
             shakeX,
-        2.65f +
+        (IsTutorial() ? 2.65f : 2.10f) +
             playerTranslate.y * (0.04f + justDodgeWhip * kJustDodgeCameraPlayerFollowY) +
             playerVelocity.y * 0.38f +
             railLift +
@@ -8170,7 +8260,7 @@ void GameRuntime::UpdateGameCamera()
             feverWindBuffetY +
             shakeY,
             railDistance_ -
-            (kGameplayCameraBaseDistance +
+            ((IsTutorial() ? kGameplayCameraBaseDistance : kRushCameraDistance) +
                 speedPulse * 0.55f +
                 railSpeedRate * 0.46f +
                 feverSpeedRate * (1.15f + speedPulse * 0.25f) +
@@ -8206,6 +8296,7 @@ void GameRuntime::UpdateGameCamera()
             playerVelocity.x * 0.006f,
         stageCameraRollBias_ * 0.55f -
             turnRate * 0.024f +
+            (IsTutorial() ? 0.0f : -std::clamp(playerVelocity.x * 0.045f, -0.045f, 0.045f)) +
             playerEdgeRoll +
             playerImpactCameraRate * 0.010f +
             feverWindBuffetX * 0.020f +
@@ -8213,18 +8304,19 @@ void GameRuntime::UpdateGameCamera()
     };
 
     const float targetFov =
-        kGameplayCameraBaseFovY +
+        (IsTutorial() ? kGameplayCameraBaseFovY : kRushCameraBaseFovY) +
         speedPulse * 0.040f +
         railSpeedRate * 0.035f +
         std::abs(turnRate) * 0.020f +
         inputSpeed * 0.025f +
         (isPlayerDodging ? 0.024f : 0.0f) +
         playerImpactCameraRate * 0.030f -
-        justDodgeWhip * kJustDodgeCameraFovTighten -
+        justDodgeWhip * (IsTutorial() ? kJustDodgeCameraFovTighten : 0.055f) -
         justDodgeImpulse * 0.026f +
         feverSpeedRate *
             (0.115f + std::sin(cameraTimer_ * 0.11f) * 0.012f) +
         feverAccelerationKick * 0.060f +
+        flightReleaseKick_ * 0.065f +
         stageCameraFovBoost_ +
         (isGameClear_ ? -0.035f : 0.0f) +
         (isGameOver_ ? 0.025f : 0.0f) +

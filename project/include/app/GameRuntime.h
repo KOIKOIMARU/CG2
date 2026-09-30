@@ -252,6 +252,7 @@ private:
         bool isRoad = false;
         bool isBackRow = false; // 奥の建物は道路沿いより外側へ置き、空の輪郭を作る。
         bool isLandmark = false; // 一度だけ通過する施設。道路のようにループ再配置しない。
+        bool isTrackside = false; // 飛行域の外側に置く低い設備。近景の流れで速度を伝える。
         float halfDepth = 0.0f; // 大きな施設の前後端まで含めた可視・影の判定範囲。
     };
 
@@ -414,6 +415,7 @@ private:
     void UpdateAndDrawPlayerExhaustParticles();
     void DrawPlayerFlightAura();
     void DrawFeverBackdrop();
+    void DrawFlightSpeedOverlay(); // 中央の照準を避け、周辺だけに薄い風の線を出す。
     void DrawEnemyTypeTelegraphs();
     void DrawHud();
     void DrawBossHud();
@@ -439,6 +441,7 @@ private:
     void UpdateEnemyBullets();
     void UpdateEnemies();
     float GetCinematicWorldTimeScale() const;
+    float GetFlightSpeedRate() const; // 通常飛行の速度域を0～1へ正規化。フィーバーは別で加算。
     Math::Vector3 CalculateAimDirection(const Math::Vector3& origin) const;
     const Enemy* FindHomingTargetForBullet(const Bullet& bullet) const;
     int GetTotalEnemyTargetCount() const;
@@ -605,6 +608,8 @@ private:
     float railDistance_ = 0.0f;
     float railSpeed_ = 0.115f;
     float targetRailSpeed_ = 0.115f;
+    float previousFlightTimeScale_ = 1.0f; // スロー解除の瞬間を検出する前フレーム値。
+    float flightReleaseKick_ = 0.0f; // スローから復帰した後の短い視界・噴射の加速感。
     float stageProgress_ = 0.0f;
     float stageTimelineSpeed_ = 0.0f;
     float stageCameraYawBias_ = 0.0f;

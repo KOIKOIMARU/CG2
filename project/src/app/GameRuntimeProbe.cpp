@@ -192,6 +192,8 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     static int delayedEscapeEvents = 0;
     static unsigned int sceneryCoverage = 0;
     static unsigned int sceneryPreviewSeen = 0;
+    static bool flightReleaseSeen = false;
+    static float maximumFlightSpeed = 0.0f;
     static const int sceneryPreviewMode = [] {
         char* value = nullptr;
         size_t length = 0;
@@ -221,6 +223,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             feverTimer_ != 0 || feverActivationCount_ != 0 ||
             playerShotsFired_ != 0 || !enemies_.empty() ||
             sceneryCanyonStartZ_ != -1.0f || sceneryPlazaStartZ_ != -1.0f ||
+            flightReleaseKick_ != 0.0f || previousFlightTimeScale_ != 1.0f ||
             std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return v; })) {
             throw std::runtime_error("Retry did not reset gameplay state");
         }
@@ -250,8 +253,21 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     if (previousScenery.size() != railSceneryObjects_.size()) {
         throw std::runtime_error("Scenery object count changed during play");
     }
+    if (std::count_if(railSceneryObjects_.begin(), railSceneryObjects_.end(),
+        [](const auto& object) { return object.isTrackside; }) != 9) {
+        throw std::runtime_error("Flight trackside pool must contain exactly nine shared modules");
+    }
+    maximumFlightSpeed = (std::max)(maximumFlightSpeed, railSpeed_);
+    flightReleaseSeen |= flightReleaseKick_ > 0.5f;
+    if (frame > 120 && (!std::isfinite(cameraFovY_) || cameraFovY_ < 0.65f || cameraFovY_ > 1.15f ||
+        railDistance_ - cameraTranslate_.z < 8.0f || railDistance_ - cameraTranslate_.z > 20.5f)) {
+        throw std::runtime_error("Flight camera left its readable FOV/distance envelope");
+    }
     for (size_t i = 0; i < railSceneryObjects_.size(); ++i) {
         const auto& scenery = railSceneryObjects_[i];
+        if (scenery.isTrackside && (scenery.halfDepth != 18.0f || scenery.loopLength != 324.0f)) {
+            throw std::runtime_error("Trackside wrap does not include full module depth");
+        }
         if (scenery.isLandmark && scenery.object) {
             const auto position = scenery.object->GetTranslate();
             if (std::abs(position.z - scenery.anchor.z) > 0.001f ||
@@ -318,6 +334,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     // 実際のESC経路で停止し、各フレームの進行値と全アクター位置が不変であることを検証する。
     const auto snapshot = [&]() {
         std::vector<float> values{ gameplayElapsedSeconds_, stageProgress_, railDistance_, cameraTimer_,
+            flightReleaseKick_, previousFlightTimeScale_, cameraFovY_,
             static_cast<float>(chargeTimer_), static_cast<float>(feverTimer_), static_cast<float>(feverGauge_), phantomCooldown_,
             static_cast<float>(score_), static_cast<float>(player_->GetHp()),
             static_cast<float>(enemies_.size()), static_cast<float>(playerBullets_.size()),
@@ -421,6 +438,11 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             log("FEVER_AUTO_OK no_activation_key=1");
             if (sceneryCoverage != 7u) { throw std::runtime_error("Playthrough did not reach all three scenery districts"); }
             log("SCENERY_OK avenue_canyon_plaza=1 visible_transforms_stable=1 bounded_objects=1 landmark_world_fixed=1");
+            if (!flightReleaseSeen || maximumFlightSpeed < 0.5f) {
+                throw std::runtime_error("Flight test did not exercise fever acceleration and slow release");
+            }
+            log("FLIGHT_RUSH_OK trackside_pool=9 camera_readable=1 slow_release=1 max_speed=" +
+                std::to_string(maximumFlightSpeed));
             log("PACING_OK encounter_gaps=" + std::to_string(encounterGapCount) +
                 " longest_empty_frames=" + std::to_string(longestEmptyGap));
             log("CLEAR hp=" + std::to_string(player_->GetHp()) +
