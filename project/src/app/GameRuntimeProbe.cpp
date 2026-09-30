@@ -192,14 +192,15 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     static int delayedEscapeEvents = 0;
     static unsigned int sceneryCoverage = 0;
     static unsigned int sceneryPreviewSeen = 0;
-    static const bool sceneryPreview = [] {
+    static const int sceneryPreviewMode = [] {
         char* value = nullptr;
         size_t length = 0;
-        const bool enabled = _dupenv_s(&value, &length, "CG2_SCENERY_PREVIEW") == 0 &&
-            value && value[0] == '1';
+        const int mode = _dupenv_s(&value, &length, "CG2_SCENERY_PREVIEW") == 0 && value ?
+            std::atoi(value) : 0;
         std::free(value);
-        return enabled;
+        return mode;
     }();
+    const bool sceneryPreview = sceneryPreviewMode > 0;
     struct ScenerySnapshot {
         Math::Vector3 position{};
         Math::Vector3 scale{};
@@ -251,6 +252,14 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     }
     for (size_t i = 0; i < railSceneryObjects_.size(); ++i) {
         const auto& scenery = railSceneryObjects_[i];
+        if (scenery.isLandmark && scenery.object) {
+            const auto position = scenery.object->GetTranslate();
+            if (std::abs(position.z - scenery.anchor.z) > 0.001f ||
+                std::abs(scenery.currentLocalZ + railDistance_ - scenery.anchor.z) > 0.001f ||
+                scenery.loopLength != 0.0f || scenery.halfDepth < 53.7f) {
+                throw std::runtime_error("Landmark recycled or culled without its full bounds");
+            }
+        }
         if (!scenery.object || (!scenery.isBuilding && !scenery.isRoad)) { continue; }
         const ScenerySnapshot current{ scenery.object->GetTranslate(), scenery.object->GetScale(), scenery.isVisible };
         const auto& previous = previousScenery[i];
@@ -272,8 +281,13 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
         previousScenery[i] = current;
     }
     // 明示指定されたDebug試験だけ、各街区で画面確認用に停止する。通常起動/Releaseには入らない。
-    if (sceneryPreview && frame > 30 && districtBit != 0 && (sceneryPreviewSeen & districtBit) == 0) {
-        sceneryPreviewSeen |= districtBit;
+    // モード2は新施設の接近・通過・退出を同じ通常プレイ経路で確認する。
+    const unsigned int previewBit = sceneryPreviewMode == 2 ?
+        (railDistance_ >= 325.0f ? 8u : railDistance_ >= 245.0f ? 4u :
+            railDistance_ >= 185.0f ? 2u : railDistance_ >= 100.0f ? 1u : 0u) : districtBit;
+    if (sceneryPreview && frame > 30 && previewBit != 0 && (sceneryPreviewSeen & previewBit) == 0) {
+        sceneryPreviewSeen |= previewBit;
+        log("SCENERY_PREVIEW rail=" + std::to_string(railDistance_));
         phantomPreviewPaused_ = true;
     }
     if (sceneryPreview && phantomPreviewPaused_) {
@@ -349,7 +363,13 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     const bool empty = !bossSpawned_ && enemies_.empty() && defeatedEnemyCount_ > 0;
     if (empty && std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return !v; })) {
         longestEmptyGap = (std::max)(longestEmptyGap, stageEmptyFrames_);
-        if (stageEmptyFrames_ > 62.0f) { throw std::runtime_error("Empty encounter gap exceeded one second"); }
+        if (stageEmptyFrames_ > 62.0f) {
+            throw std::runtime_error("Empty encounter gap exceeded one second: frames=" +
+                std::to_string(stageEmptyFrames_) + " stage=" + std::to_string(stageProgress_) +
+                " speed=" + std::to_string(stageTimelineSpeed_) + " slow=" +
+                std::to_string(GetCinematicWorldTimeScale()) + " breather=" +
+                std::to_string(stageEncounterBreatherTimer_));
+        }
     }
     if (wasEmpty && !empty) { ++encounterGapCount; }
     wasEmpty = empty;
@@ -400,7 +420,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             }
             log("FEVER_AUTO_OK no_activation_key=1");
             if (sceneryCoverage != 7u) { throw std::runtime_error("Playthrough did not reach all three scenery districts"); }
-            log("SCENERY_OK avenue_canyon_plaza=1 visible_transforms_stable=1 bounded_objects=1");
+            log("SCENERY_OK avenue_canyon_plaza=1 visible_transforms_stable=1 bounded_objects=1 landmark_world_fixed=1");
             log("PACING_OK encounter_gaps=" + std::to_string(encounterGapCount) +
                 " longest_empty_frames=" + std::to_string(longestEmptyGap));
             log("CLEAR hp=" + std::to_string(player_->GetHp()) +

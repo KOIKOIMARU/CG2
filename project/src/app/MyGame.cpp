@@ -103,13 +103,19 @@ void MyGame::Update() {
 #ifdef _DEBUG
     if (smokeTestOptions_.enabled && (smokeTestOptions_.playthrough || smokeTestOptions_.phantom || smokeTestOptions_.chargeShot || smokeTestOptions_.boss)) {
         if (auto* game = dynamic_cast<GameScene*>(SceneManager::GetInstance()->GetCurrentScene())) {
-            playthroughComplete_ = smokeTestOptions_.boss ?
-                game->RunBossProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.bossPreview) :
-                smokeTestOptions_.chargeShot ?
-                game->RunChargeShotProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.chargePreview) :
-                smokeTestOptions_.phantom ?
-                game->RunPhantomProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.phantomPreview) :
-                game->RunPlaythroughProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.tutorialPreview);
+            try {
+                playthroughComplete_ = smokeTestOptions_.boss ?
+                    game->RunBossProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.bossPreview) :
+                    smokeTestOptions_.chargeShot ?
+                    game->RunChargeShotProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.chargePreview) :
+                    smokeTestOptions_.phantom ?
+                    game->RunPhantomProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.phantomPreview) :
+                    game->RunPlaythroughProbe(smokeTestOptions_.logPath.string(), smokeTestOptions_.tutorialPreview);
+            } catch (const std::exception& error) {
+                // 通し試験の失敗理由を保存する。デバッガ未接続でも終了理由を追えるようにする。
+                WriteSmokeLog(std::string("PROBE_EXCEPTION ") + error.what());
+                throw;
+            }
         }
     }
 #endif

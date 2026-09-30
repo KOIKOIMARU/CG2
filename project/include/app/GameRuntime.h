@@ -251,6 +251,8 @@ private:
         bool isBuilding = false; // 街区ごとに幅と高さを変える対象。元のanchor/scaleは保持する。
         bool isRoad = false;
         bool isBackRow = false; // 奥の建物は道路沿いより外側へ置き、空の輪郭を作る。
+        bool isLandmark = false; // 一度だけ通過する施設。道路のようにループ再配置しない。
+        float halfDepth = 0.0f; // 大きな施設の前後端まで含めた可視・影の判定範囲。
     };
 
     struct DepthCueEffect {

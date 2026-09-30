@@ -80,6 +80,8 @@ constexpr const char* kCityBuildingMediumModelPath =
 constexpr const char* kCityBuildingLargeModelPath =
     "free_models/Downtown City MegaKit[Standard]/"
     "Exports/glTF (Godot)/Building_Large_2.gltf";
+constexpr const char* kTransitLandmarkModelPath = "free_models/transit_landmark/TransitLandmark.gltf";
+constexpr float kTransitLandmarkWorldZ = 240.0f; // 市街地の途中に固定。撃破速度では位置を変えない。
 constexpr int kTargetPlayerBulletPoolCount = 24;
 constexpr int kTargetEnemyBulletPoolCount = 64; // 連射・扇状弾も起動時の固定プールだけで賄う。
 // TitleSceneのPrepareScene中に通常の予備数まで作る。開始直後の大量GPU確保を避ける。
@@ -124,7 +126,7 @@ constexpr float kJustDodgeCameraLowAngle = 0.18f;
 constexpr float kJustDodgeCameraFovTighten = 0.140f;
 constexpr int kPlayerDodgeAfterimageIntervalFrames = 2;
 constexpr float kPlayerDodgeAfterimageDuration = 34.0f;
-constexpr int kSharedResourcePreloadStepCount = 15;
+constexpr int kSharedResourcePreloadStepCount = 16;
 constexpr float kSceneryNearLocalZ = -24.0f;
 constexpr float kSceneryFarLocalZ = 300.0f;
 constexpr float kStageClearDistance = 365.0f;
@@ -642,6 +644,10 @@ bool GameRuntime::PreloadSharedResourceStep(
     case 14:
         gSharedResourcePreloadLabel = "Boss spaceship model";
         modelManager->LoadModel(kBossModelPath);
+        break;
+    case 15:
+        gSharedResourcePreloadLabel = "Transit facility model";
+        modelManager->LoadModel(kTransitLandmarkModelPath);
         break;
     default:
         gSharedResourcesPreloaded = true;
@@ -2406,6 +2412,8 @@ void GameRuntime::InitializeRailScenery()
             scenery.isBuilding = modelPathText.find("Building") != std::string::npos;
             scenery.isRoad = modelPathText.find("Street") != std::string::npos;
             scenery.isBackRow = scenery.isBuilding && std::abs(anchor.x) > 40.0f;
+            scenery.isLandmark = modelPathText == kTransitLandmarkModelPath;
+            scenery.halfDepth = scenery.isLandmark ? 54.0f : 0.0f;
             scenery.drawFarLocalZ = kSceneryFarLocalZ;
             if (modelPathText.find("Building") != std::string::npos) {
                 const bool isBackRow = std::abs(anchor.x) > 40.0f;
@@ -2625,6 +2633,13 @@ void GameRuntime::InitializeRailScenery()
             kCityLoopLength,
             0.0f);
     }
+    if (!IsTutorial()) {
+        // 地上から約15mより上に橋桁、支柱は左右22mより外。敵と自機の飛行域は塞がない。
+        // 部品はオフラインで8材質へ結合済み。プレイ中にモデルやGPU資源を追加しない。
+        addSceneryStyled(kTransitLandmarkModelPath,
+            { 0.0f, kBuildingY, kTransitLandmarkWorldZ }, { 1.0f, 1.0f, 1.0f }, {},
+            0.0f, 0.0f, { 0.98f, 0.98f, 0.96f, 1.0f }, 2, 0.035f);
+    }
     transparentSceneryDrawOrder_.reserve(railSceneryObjects_.size());
 }
 
@@ -2656,15 +2671,15 @@ void GameRuntime::UpdateRailScenery()
             continue;
         }
 
-        const float localZ = WrapSceneryLocalZ(
+        const float localZ = scenery.isLandmark ? scenery.anchor.z - railDistance_ : WrapSceneryLocalZ(
             scenery.anchor.z -
                 railDistance_ * scenery.speedMultiplier +
                 scenery.phase,
             scenery.loopLength);
         scenery.currentLocalZ = localZ;
         scenery.isVisible =
-            localZ >= kSceneryNearLocalZ &&
-            localZ <= scenery.drawFarLocalZ;
+            localZ + scenery.halfDepth >= kSceneryNearLocalZ &&
+            localZ - scenery.halfDepth <= scenery.drawFarLocalZ;
         if (scenery.isVisible) {
             ++visibleSceneryCount_;
         }
@@ -2710,6 +2725,11 @@ void GameRuntime::UpdateRailScenery()
                 const float facadeX = scenery.isBackRow ? value(54.0f, 46.0f, 89.0f) :
                     value(38.0f, 31.5f, 64.0f);
                 position.x = side * facadeX;
+                // 施設の接続部に建物がめり込まないよう、左右の敷地を空ける。
+                // ワールド座標から決めるため、近づいた途端に建物が動くことはない。
+                const float facilityDistance = std::abs(position.z - kTransitLandmarkWorldZ);
+                const float setback = std::clamp((78.0f - facilityDistance) / 30.0f, 0.0f, 1.0f);
+                position.x += side * setback * (scenery.isBackRow ? 8.0f : 13.0f);
                 // 建物ごとの元の高さの差は残す。ボス広場は低い街並みと空でシルエットを抜く。
                 scale.y *= scenery.isBackRow ? value(0.95f, 1.65f, 0.90f) : value(0.80f, 1.65f, 0.72f);
             } else if (scenery.isRoad) {
@@ -2794,8 +2814,9 @@ void GameRuntime::RenderShadowMap()
     // 画面外の建物も道路へ影を落とすため、色描画のisVisibleとは別に範囲を判定する。
     // 路面・窓ガラスは投影しない。描画数は初期化済みの街モデル数で上限が決まる。
     for (const RailSceneryObject& scenery : railSceneryObjects_) {
-        if (scenery.object && scenery.isBuilding &&
-            scenery.currentLocalZ >= -45.0f && scenery.currentLocalZ <= 240.0f) {
+        if (scenery.object && (scenery.isBuilding || scenery.isLandmark) &&
+            scenery.currentLocalZ + scenery.halfDepth >= -45.0f &&
+            scenery.currentLocalZ - scenery.halfDepth <= 240.0f) {
             scenery.object->DrawShadow(lightViewProjection);
         }
     }
