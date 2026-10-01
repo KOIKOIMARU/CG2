@@ -484,12 +484,28 @@ void DrawCombatHudShade(ImDrawList* drawList, const ImVec2& min, const ImVec2& m
 GameRuntime::GameRuntime() = default;
 GameRuntime::~GameRuntime() = default;
 
-void GameRuntime::PlaySfx(const char* key)
+void GameRuntime::PlaySfx(const char* key, float pitch)
 {
     if (sound_) {
-        // 一斉撃破の爆発で連撃の締めを隠さない。通常の撃破音量はそのまま。
-        const float gain = IsPhantomRaidActive() && std::string_view(key) == "destroy" ? 0.45f : 1.0f;
-        sound_->Play(key, gain);
+        const std::string_view cue(key);
+        const bool skill = IsPhantomRaidActive();
+        const bool accent = gameplayElapsedSeconds_ < sfxAccentUntil_;
+        float gain = 1.0f;
+        // 主役となる一音に場所を空ける。被弾通知と技本体は抑えない。
+        if (cue == "shot") { gain = skill ? 0.38f : accent ? 0.58f : 1.0f; }
+        else if (cue == "hit") { gain = skill ? 0.45f : accent ? 0.68f : 1.0f; }
+        else if (cue == "destroy") { gain = skill ? 0.24f : accent ? 0.56f : 1.0f; }
+        if (sound_->Play(key, gain, pitch)) {
+#ifdef _DEBUG
+            if (cue == "slash") { ++phantomAudioPlays_[0]; }
+            else if (cue == "slash_finish") { ++phantomAudioPlays_[1]; }
+#endif
+            const float hold = cue == "slash_finish" ? 0.55f : cue == "fever" ? 0.48f :
+                cue == "skill_start" ? 0.25f : cue == "damage" ? 0.22f : cue == "charge" ? 0.18f : 0.0f;
+            if (hold > 0.0f) {
+                sfxAccentUntil_ = (std::max)(sfxAccentUntil_, gameplayElapsedSeconds_ + hold);
+            }
+        }
     }
 }
 
@@ -770,6 +786,8 @@ void GameRuntime::Initialize(PlayMode mode)
     targetRailSpeed_ = railSpeed_;
     previousFlightTimeScale_ = 1.0f;
     flightReleaseKick_ = 0.0f;
+    flightCameraMotion_ = {};
+    flightCameraMotion_.previousSpeed = railSpeed_;
     stageProgress_ = 0.0f;
     stageTimelineSpeed_ = 0.0f;
     stageTimelineWasBlocked_ = false;
@@ -922,26 +940,27 @@ void GameRuntime::Initialize(PlayMode mode)
 
     musicLevels_.fill(0.0f);
     musicTrack_ = -1;
+    sfxAccentUntil_ = 0.0f;
     sound_ = std::make_unique<SoundManager>();
     if (sound_->Initialize()) {
-        // 発音枠は従来と同じ25。連発する4種は3テイクを共有し、毎回の音色を少し変える。
+        // 効果音25枠を事前確保。チャージ2枠＋技の発動1枠へ分離し、合計数は増やさない。
         const auto varied = [this](const char* key, uint32_t voices, float volume, float interval, float pitch) {
             const std::string base = std::string("resources/audio/combat/") + key;
             sound_->LoadVariations(key, { base + ".wav", base + "_02.wav", base + "_03.wav" },
                 voices, volume, interval, pitch, 0.05f);
         };
-        varied("shot", 4, 0.34f, 0.065f, 0.035f);
-        sound_->Load("charge", "resources/audio/combat/charge.wav", 3, 0.47f, 0.16f, 0.02f, 0.03f);
-        varied("hit", 3, 0.39f, 0.06f, 0.05f);
-        varied("destroy", 3, 0.53f, 0.11f, 0.055f);
-        sound_->Load("damage", "resources/audio/combat/damage.wav", 2, 0.63f, 0.15f, 0.015f);
-        sound_->Load("dodge", "resources/audio/combat/dodge.wav", 2, 0.44f, 0.12f, 0.03f);
-        sound_->Load("fever", "resources/audio/combat/fever.wav", 1, 0.56f, 0.5f);
+        varied("shot", 4, 0.38f, 0.065f, 0.012f);
+        sound_->Load("charge", "resources/audio/combat/charge.wav", 2, 0.51f, 0.16f, 0.012f, 0.025f);
+        sound_->Load("skill_start", "resources/audio/combat/skill_start.wav", 1, 0.52f, 0.4f);
+        varied("hit", 3, 0.35f, 0.075f, 0.025f);
+        varied("destroy", 3, 0.49f, 0.12f, 0.025f);
+        sound_->Load("damage", "resources/audio/combat/damage.wav", 2, 0.60f, 0.15f, 0.012f);
+        sound_->Load("dodge", "resources/audio/combat/dodge.wav", 2, 0.40f, 0.12f, 0.02f);
+        sound_->Load("fever", "resources/audio/combat/fever.wav", 1, 0.59f, 0.5f);
         sound_->Load("clear", "resources/audio/combat/clear.wav", 1, 0.54f, 1.0f);
         sound_->Load("fail", "resources/audio/combat/fail.wav", 1, 0.48f, 1.0f);
-        sound_->Load("skill_ready", "resources/audio/combat/skill_ready.wav", 1, 0.37f, 0.5f);
-        varied("slash", 3, 0.55f, 0.045f, 0.045f);
-        sound_->Load("slash_finish", "resources/audio/combat/slash_finish.wav", 1, 0.67f, 0.4f);
+        sound_->Load("skill_ready", "resources/audio/combat/skill_ready.wav", 1, 0.29f, 0.5f);
+        InitializePhantomAudio();
         // BGM専用3枠を入場時に確保。状態切替では再ロード・ボイス生成を行わない。
         sound_->Load("music_stage", "resources/audio/music/stage.wav", 1, 0.0f, 0.0f);
         sound_->Load("music_boss", "resources/audio/music/boss.wav", 1, 0.0f, 0.0f);
@@ -3153,6 +3172,21 @@ bool GameRuntime::LoadSceneObjects(const char* path)
 
 void GameRuntime::Draw()
 {
+    if (dxCommon_ && camera_ && player_ && !IsTutorial()) {
+        Math::Vector2 viewportMin{}, viewportSize{};
+        GetEffectiveHudViewportRect(viewportMin, viewportSize);
+        const auto screenUv = [&](const Math::Vector2& screen) {
+            return Math::Vector2{
+                (screen.x - viewportMin.x) / (std::max)(viewportSize.x, 1.0f),
+                (screen.y - viewportMin.y) / (std::max)(viewportSize.y, 1.0f) };
+        };
+        Math::Vector2 vanishing{ viewportMin.x + viewportSize.x * 0.5f, viewportMin.y + viewportSize.y * 0.45f };
+        Math::Vector2 playerScreen{ viewportMin.x + viewportSize.x * 0.5f, viewportMin.y + viewportSize.y * 0.7f };
+        TryProjectToScreen({ 0.0f, 1.0f, railDistance_ + 260.0f }, vanishing);
+        TryProjectToScreen(player_->GetTranslate(), playerScreen);
+        dxCommon_->SetFlightBlur(isGameOver_ || isGameClear_ ? 0.0f : flightCameraMotion_.blurStrength,
+            screenUv(vanishing), screenUv(playerScreen), screenUv(reticleScreen_), camera_->GetAspectRatio());
+    }
     RenderShadowMap();
 
     if (showSkybox_ && skybox_) {
@@ -8123,9 +8157,103 @@ void GameRuntime::CheckEnemyBulletPlayerCollisions()
     }
 }
 
+void GameRuntime::UpdateFlightCamera()
+{
+    const float frameStep = dxCommon_ ?
+        std::clamp(dxCommon_->GetDeltaTime() * 60.0f, 0.1f, 3.0f) : 1.0f;
+    cameraTimer_ += frameStep;
+    const auto position = player_->GetTranslate();
+    const float moveX = std::clamp(
+        (position.x - previousPlayerTranslate_.x) / (0.205f * frameStep), -1.0f, 1.0f);
+    const float moveY = std::clamp(
+        (position.y - previousPlayerTranslate_.y) / (0.205f * frameStep), -1.0f, 1.0f);
+    // レール移動と慣性を分離。高速時でもカメラが際限なく取り残されない。
+    cameraTranslate_.z += position.z - previousPlayerTranslate_.z;
+    previousPlayerTranslate_ = position;
+    auto& motion = flightCameraMotion_;
+    const float worldScale = GetCinematicWorldTimeScale();
+    const float effectiveSpeed = railSpeed_ * worldScale;
+    const float force = std::clamp(
+        (effectiveSpeed - motion.previousSpeed) * 18.0f / frameStep, -1.0f, 1.0f);
+    motion.previousSpeed = effectiveSpeed;
+    motion.acceleration = Lerp(motion.acceleration, force, 1.0f - std::pow(0.82f, frameStep));
+    const bool isFlying = !isGameOver_ && !isGameClear_;
+    const float speed = GetFlightSpeedRate();
+    const float fever = feverSpeedEffectRate_;
+    const float dodge = player_->IsDodging() && isFlying ?
+        static_cast<float>(player_->GetDodgeDirection()) : 0.0f;
+    const float justDodge = static_cast<float>(justDodgeFlashTimer_) / kJustDodgeFlashDuration;
+    const float justDodgePush = justDodge * justDodge;
+    const float burst = isFlying ? std::clamp(
+        flightReleaseKick_ * 0.75f + (std::max)(motion.acceleration, 0.0f) * 2.5f, 0.0f, 1.0f) : 0.0f;
+    const float controlX = isFlying ? moveX : 0.0f;
+    const float controlY = isFlying ? moveY : 0.0f;
+
+    // ばね＋減衰で追従。一定周期の揺れではなく、操作の開始・反転・停止で余韻が生まれる。
+    // 小分けに積分して低fps時も安定させる（固定回数、確保なし）。
+    const auto spring = [frameStep](float& value, float& velocity, float target, float frequency, float damping) {
+        const int steps = (std::max)(1, static_cast<int>(std::ceil(frameStep / 0.5f)));
+        const float step = frameStep / static_cast<float>(steps);
+        for (int index = 0; index < steps; ++index) {
+            velocity += ((target - value) * frequency * frequency -
+                velocity * (2.0f * damping * frequency)) * step;
+            value += velocity * step;
+        }
+    };
+    const Math::Vector3 targetPosition{
+        position.x * 0.28f - controlX * 0.30f,
+        2.10f + position.y * 0.32f - controlY * 0.18f - motion.acceleration * 0.20f,
+        railDistance_ - (kRushCameraDistance + speed * 0.65f + fever * 1.05f +
+            motion.acceleration * 1.40f + burst * 0.60f) + justDodgePush * 1.25f,
+    };
+    spring(cameraTranslate_.x, motion.translationVelocity.x, targetPosition.x, 0.16f, 0.86f);
+    spring(cameraTranslate_.y, motion.translationVelocity.y, targetPosition.y, 0.15f, 0.84f);
+    spring(cameraTranslate_.z, motion.translationVelocity.z, targetPosition.z, 0.18f, 0.82f);
+    const Math::Vector3 targetRotation{
+        0.060f - position.y * 0.025f - controlY * 0.048f + motion.acceleration * 0.030f,
+        -position.x * 0.006f + controlX * 0.012f + stageCameraYawBias_ * 0.35f,
+        std::clamp(-controlX * 0.075f - dodge * 0.045f - position.x * 0.0025f +
+            stageCameraRollBias_ * 0.55f, -0.15f, 0.15f),
+    };
+    spring(cameraRotate_.x, motion.rotationVelocity.x, targetRotation.x, 0.13f, 0.82f);
+    spring(cameraRotate_.y, motion.rotationVelocity.y, targetRotation.y, 0.14f, 0.88f);
+    spring(cameraRotate_.z, motion.rotationVelocity.z, targetRotation.z, 0.13f, 0.76f);
+    const float targetFov = kRushCameraBaseFovY + speed * 0.035f + fever * 0.110f +
+        burst * 0.065f + std::abs(dodge) * 0.020f - justDodgePush * 0.025f + stageCameraFovBoost_;
+    spring(cameraFovY_, motion.fovVelocity, targetFov, 0.16f, 0.88f);
+
+    const float targetBlur = isFlying ? std::clamp(
+        (speed * 0.14f + fever * 0.35f + burst * 0.48f + std::abs(dodge) * 0.20f) * worldScale,
+        0.0f, 0.85f) : 0.0f;
+    motion.blurStrength = Lerp(motion.blurStrength, targetBlur,
+        1.0f - std::pow(targetBlur > motion.blurStrength ? 0.70f : 0.88f, frameStep));
+
+    float impact = 0.0f;
+    if (cameraShakeTimer_ > 0) {
+        impact = cameraShakePower_ * static_cast<float>(cameraShakeTimer_) /
+            static_cast<float>((std::max)(cameraShakeDuration_, 1));
+        --cameraShakeTimer_;
+    } else { cameraShakePower_ = 0.0f; }
+    // 微振動は最終表示だけへ加える。ばね状態に蓄積させず、通常飛行は1px前後に抑える。
+    const float wind = isFlying ? (speed * 0.35f + fever * 0.45f + burst * 0.30f) * worldScale : 0.0f;
+    Math::Vector3 displayPosition = cameraTranslate_;
+    Math::Vector3 displayRotation = cameraRotate_;
+    displayPosition.x += std::sin(cameraTimer_ * 1.9f) * (impact + wind * 0.012f);
+    displayPosition.y += std::cos(cameraTimer_ * 2.3f) * (impact + wind * 0.008f);
+    displayRotation.z += std::sin(cameraTimer_ * 1.37f) * wind * 0.0009f;
+    camera_->SetTranslate(displayPosition);
+    camera_->SetRotate(displayRotation);
+    camera_->SetFovY(cameraFovY_);
+    camera_->Update();
+}
+
 void GameRuntime::UpdateGameCamera()
 {
     if (!camera_ || !player_) {
+        return;
+    }
+    if (!IsTutorial()) {
+        UpdateFlightCamera();
         return;
     }
 

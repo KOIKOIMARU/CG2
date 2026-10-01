@@ -194,6 +194,9 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     static unsigned int sceneryPreviewSeen = 0;
     static bool flightReleaseSeen = false;
     static float maximumFlightSpeed = 0.0f;
+    static float minimumCameraBank = 0.0f;
+    static float maximumCameraBank = 0.0f;
+    static float maximumFlightBlur = 0.0f;
     static const int sceneryPreviewMode = [] {
         char* value = nullptr;
         size_t length = 0;
@@ -223,7 +226,9 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             feverTimer_ != 0 || feverActivationCount_ != 0 ||
             playerShotsFired_ != 0 || !enemies_.empty() ||
             sceneryCanyonStartZ_ != -1.0f || sceneryPlazaStartZ_ != -1.0f ||
-            flightReleaseKick_ != 0.0f || previousFlightTimeScale_ != 1.0f ||
+            flightReleaseKick_ != 0.0f || previousFlightTimeScale_ != 1.0f || sfxAccentUntil_ != 0.0f ||
+            // 再入場後の最初の通常Updateは実行済み。初速への小さな反応だけを許容する。
+            flightCameraMotion_.blurStrength > 0.02f || std::abs(flightCameraMotion_.acceleration) > 0.03f ||
             std::any_of(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), [](bool v) { return v; })) {
             throw std::runtime_error("Retry did not reset gameplay state");
         }
@@ -232,7 +237,7 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             sound_->GetLoopCount() != 1 || musicTrack_ != 0) {
             throw std::runtime_error("Retry did not recreate the bounded audio bank");
         }
-        log("RETRY_RESET_OK hp=100 score=0 fever=0 voices=28 music_loops=1 track=stage scenery=avenue");
+        log("RETRY_RESET_OK hp=100 score=0 fever=0 voices=28 music_loops=1 track=stage scenery=avenue camera_inertia_reset=1 sfx_priority_reset=1");
         phase = 2;
         input_->SetTestFrame(keys, mouse);
         return true;
@@ -258,6 +263,15 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
         throw std::runtime_error("Flight trackside pool must contain exactly nine shared modules");
     }
     maximumFlightSpeed = (std::max)(maximumFlightSpeed, railSpeed_);
+    minimumCameraBank = (std::min)(minimumCameraBank, cameraRotate_.z);
+    maximumCameraBank = (std::max)(maximumCameraBank, cameraRotate_.z);
+    maximumFlightBlur = (std::max)(maximumFlightBlur, flightCameraMotion_.blurStrength);
+    if (!std::isfinite(cameraRotate_.x) || !std::isfinite(cameraRotate_.y) || !std::isfinite(cameraRotate_.z) ||
+        std::abs(cameraRotate_.z) > 0.18f || std::abs(cameraRotate_.x) > 0.25f ||
+        !std::isfinite(flightCameraMotion_.blurStrength) || flightCameraMotion_.blurStrength < 0.0f ||
+        flightCameraMotion_.blurStrength > 0.851f) {
+        throw std::runtime_error("Flight inertia/blur left its readable envelope");
+    }
     flightReleaseSeen |= flightReleaseKick_ > 0.5f;
     if (frame > 120 && (!std::isfinite(cameraFovY_) || cameraFovY_ < 0.65f || cameraFovY_ > 1.15f ||
         railDistance_ - cameraTranslate_.z < 8.0f || railDistance_ - cameraTranslate_.z > 20.5f)) {
@@ -298,7 +312,10 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     }
     // 明示指定されたDebug試験だけ、各街区で画面確認用に停止する。通常起動/Releaseには入らない。
     // モード2は新施設の接近・通過・退出を同じ通常プレイ経路で確認する。
-    const unsigned int previewBit = sceneryPreviewMode == 2 ?
+    // モード3は左右・下降・フィーバーのカメラを通常入力で確認する専用プレビュー。
+    const unsigned int previewBit = sceneryPreviewMode == 3 ?
+        (frame == 351 ? 1u : frame == 401 ? 2u : frame == 451 ? 4u :
+            feverTimer_ > 0 && flightCameraMotion_.blurStrength > 0.32f ? 8u : 0u) : sceneryPreviewMode == 2 ?
         (railDistance_ >= 325.0f ? 8u : railDistance_ >= 245.0f ? 4u :
             railDistance_ >= 185.0f ? 2u : railDistance_ >= 100.0f ? 1u : 0u) : districtBit;
     if (sceneryPreview && frame > 30 && previewBit != 0 && (sceneryPreviewSeen & previewBit) == 0) {
@@ -334,13 +351,19 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     // 実際のESC経路で停止し、各フレームの進行値と全アクター位置が不変であることを検証する。
     const auto snapshot = [&]() {
         std::vector<float> values{ gameplayElapsedSeconds_, stageProgress_, railDistance_, cameraTimer_,
-            flightReleaseKick_, previousFlightTimeScale_, cameraFovY_,
+            flightReleaseKick_, previousFlightTimeScale_, cameraFovY_, sfxAccentUntil_,
+            flightCameraMotion_.fovVelocity, flightCameraMotion_.acceleration,
+            flightCameraMotion_.previousSpeed, flightCameraMotion_.blurStrength,
             static_cast<float>(chargeTimer_), static_cast<float>(feverTimer_), static_cast<float>(feverGauge_), phantomCooldown_,
             static_cast<float>(score_), static_cast<float>(player_->GetHp()),
             static_cast<float>(enemies_.size()), static_cast<float>(playerBullets_.size()),
             static_cast<float>(enemyBullets_.size()), static_cast<float>(playerShotsFired_) };
         const auto position = [&](const Math::Vector3& p) { values.insert(values.end(), { p.x, p.y, p.z }); };
         position(player_->GetTranslate());
+        position(cameraTranslate_);
+        position(cameraRotate_);
+        position(flightCameraMotion_.translationVelocity);
+        position(flightCameraMotion_.rotationVelocity);
         for (const auto& enemy : enemies_) { position(enemy->GetTranslate()); }
         for (const auto& bullet : playerBullets_) { position(bullet->GetTranslate()); }
         for (const auto& bullet : enemyBullets_) { position(bullet->GetTranslate()); }
@@ -443,6 +466,12 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
             }
             log("FLIGHT_RUSH_OK trackside_pool=9 camera_readable=1 slow_release=1 max_speed=" +
                 std::to_string(maximumFlightSpeed));
+            if (minimumCameraBank > -0.015f || maximumCameraBank < 0.015f || maximumFlightBlur < 0.25f) {
+                throw std::runtime_error("Flight test did not exercise both banks and acceleration blur");
+            }
+            log("FLIGHT_CAMERA_OK bank_min=" + std::to_string(minimumCameraBank) +
+                " bank_max=" + std::to_string(maximumCameraBank) + " blur_max=" + std::to_string(maximumFlightBlur) +
+                " pause_freezes_springs=1");
             log("PACING_OK encounter_gaps=" + std::to_string(encounterGapCount) +
                 " longest_empty_frames=" + std::to_string(longestEmptyGap));
             log("CLEAR hp=" + std::to_string(player_->GetHp()) +
@@ -514,6 +543,12 @@ bool GameRuntime::RunPlaythroughProbe(const std::string& logPath, bool tutorialP
     if (phantomReady_ && target && frame % 2 == 0) {
         keys[DIK_Q] = 0x80;
     }
+    if (sceneryPreviewMode == 3 && frame >= 320 && frame <= 451) {
+        keys[DIK_W] = keys[DIK_A] = keys[DIK_S] = keys[DIK_D] = keys[DIK_LSHIFT] = 0;
+        if (frame <= 350) { keys[DIK_D] = keys[DIK_W] = 0x80; }
+        else if (frame <= 400) { keys[DIK_A] = 0x80; }
+        else if (frame <= 450) { keys[DIK_S] = 0x80; }
+    }
     input_->SetTestFrame(keys, mouse);
     return false;
 }
@@ -522,6 +557,8 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
 {
     static int frame = 0;
     static bool retry = false;
+    static std::array<uint32_t, 2> audioBefore{};
+    static Math::Vector2 activationMouse{};
     static float dodgeStartX = 0.0f;
     static int feverCountBeforeAutoTest = 0;
     const auto log = [&](const std::string& message) {
@@ -573,6 +610,18 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
         require(phantomReady_ && !IsPhantomRaidActive() && phantomCooldown_ == 0.0f,
             "startup must be ready without dodge, but must not auto activate");
         require(sound_ && sound_->GetVoiceCount() == 28, "all sounds loaded");
+        if (!SoundManager::kSoundEffectsEnabled) {
+            for (const char* key : { "shot", "charge", "skill_start", "hit", "destroy", "damage",
+                "dodge", "fever", "clear", "fail", "skill_ready", "slash", "slash_finish" }) {
+                require(!sound_->Play(key), "disabled sound effect was submitted");
+            }
+            require(sound_->GetPlayCount() == 0, "disabled sound effects changed playback count");
+            require(sound_->PlayLoop("music_stage") && sound_->GetLoopCount() == 1,
+                "sound effect disable also stopped BGM");
+            log("SFX_DISABLED_OK all_one_shots_blocked=1 bgm_loop=1");
+        }
+        log(std::string("AUDIO_BANK mode=") + (phantomLocalAudio_ ? "local_cinematic" : "original_cc0") +
+            " voices=28");
         std::fill(stageEnemyEventTriggered_.begin(), stageEnemyEventTriggered_.end(), true);
         log("BEGIN controlled_enemy_fixture=1 normal_damage_code=1");
         keys[DIK_Q] = 0x80;
@@ -652,9 +701,12 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
         const ImVec2 origin = ImGui::GetMainViewport()->Pos;
         mouse = { screen.x - origin.x, screen.y - origin.y };
         // UpdateLockOnTargetはUpdateの末尾なので、照準を置く1フレームと発動を分ける。
+        activationMouse = mouse;
     }
     if (frame == 151) {
-        mouse = input_->GetMousePosition();
+        audioBefore = phantomAudioPlays_;
+        // Input::Updateが毎フレームOSカーソルを取得するため、試験の照準を明示的に維持する。
+        mouse = activationMouse;
         keys[DIK_Q] = 0x80;
         log("NORMAL_ACTIVATE");
     }
@@ -671,6 +723,11 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
         log("COOLDOWN_8_SECONDS_OK no_self_recharge=1");
     }
     if (frame == 220) {
+        require(phantomAudioPlays_[0] - audioBefore[0] == (SoundManager::kSoundEffectsEnabled ? 3u : 0u) &&
+            phantomAudioPlays_[1] - audioBefore[1] == (SoundManager::kSoundEffectsEnabled ? 1u : 0u),
+            "normal skill audio does not match sound effect enable state");
+        log(SoundManager::kSoundEffectsEnabled ? "AUDIO_NORMAL_OK slashes=3 finish=1" :
+            "AUDIO_NORMAL_OK muted=1 slashes=0 finish=0");
         require(!IsPhantomRaidActive() && phantomDefeatCount_ == 3 && defeatedEnemyCount_ == 3, "normal triple finish");
         require(enemies_.size() == 1 && enemies_.front()->IsSniper() && !enemies_.front()->IsDead(),
             "formation clear should leave the independently positioned sniper alive");
@@ -727,9 +784,18 @@ bool GameRuntime::RunPhantomProbe(const std::string& logPath, bool preview)
         GrantPhantomRaid();
         spawn(5);
     }
-    if (frame == 330) { keys[DIK_Q] = 0x80; log("OVERDRIVE_ACTIVATE"); }
+    if (frame == 330) {
+        audioBefore = phantomAudioPlays_;
+        keys[DIK_Q] = 0x80;
+        log("OVERDRIVE_ACTIVATE");
+    }
     if (frame == 331) { require(phantomEmpowered_ && phantomTargetCount_ == 5, "fever target selection"); }
     if (frame == 410) {
+        require(phantomAudioPlays_[0] - audioBefore[0] == (SoundManager::kSoundEffectsEnabled ? 5u : 0u) &&
+            phantomAudioPlays_[1] - audioBefore[1] == (SoundManager::kSoundEffectsEnabled ? 1u : 0u),
+            "fever skill audio does not match sound effect enable state");
+        log(SoundManager::kSoundEffectsEnabled ? "AUDIO_FEVER_OK slashes=5 finish=1" :
+            "AUDIO_FEVER_OK muted=1 slashes=0 finish=0");
         require(!IsPhantomRaidActive() && phantomDefeatCount_ == 8 && defeatedEnemyCount_ == 8, "fever five finish");
         log("OVERDRIVE_5_KILLS_OK");
     }

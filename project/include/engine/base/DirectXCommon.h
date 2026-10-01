@@ -96,6 +96,9 @@ public:
 	void PreDraw();
     void DrawRenderTextureToSwapChain(int postEffectMode);
     void SetPostEffectProjectionMatrix(const Math::Matrix4x4& projectionMatrix);
+    // UV座標で消失点と保護領域を指定。HUDはこの処理より後に描画される。
+    void SetFlightBlur(float strength = 0.0f, Math::Vector2 center = { 0.5f, 0.45f },
+        Math::Vector2 player = { 0.5f, 0.7f }, Math::Vector2 reticle = { 0.5f, 0.5f }, float aspect = 1.777778f);
 	// 描画後処理
 	void PostDraw();
 
@@ -170,6 +173,11 @@ private:
         float blackPoint;
         float highlightCompression;
         float colorTemperature;
+        Math::Vector2 flightBlurCenter; // 前進方向の消失点（UV）。
+        float flightBlurStrength; // 0で追加サンプリングを省略。
+        float flightBlurAspect; // 保護領域を画面比率に合わせる。
+        Math::Vector2 flightBlurPlayer; // 自機と噴射を保護する楕円の中心。
+        Math::Vector2 flightBlurReticle; // 照準付近の敵・弾を保護する中心。
     };
 
     struct DepthOutlineParameter {

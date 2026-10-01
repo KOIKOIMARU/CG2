@@ -141,6 +141,8 @@ void MyGame::Draw() {
         ToMilliseconds(sectionBegin, std::chrono::steady_clock::now());
 
     sectionBegin = std::chrono::steady_clock::now();
+    // タイトル・編集画面・再入場へ飛行中のブラー設定を持ち越さない。
+    dxCommon_->SetFlightBlur();
     SceneManager::GetInstance()->Draw();
     timing.sceneDrawMs =
         ToMilliseconds(sectionBegin, std::chrono::steady_clock::now());

@@ -613,6 +613,17 @@ void DirectXCommon::SetPostEffectProjectionMatrix(
 }
 
 
+void DirectXCommon::SetFlightBlur(float strength, Math::Vector2 center,
+    Math::Vector2 player, Math::Vector2 reticle, float aspect)
+{
+    if (!gameToneParameterData_) { return; }
+    gameToneParameterData_->flightBlurStrength = std::clamp(strength, 0.0f, 0.85f);
+    gameToneParameterData_->flightBlurCenter = center;
+    gameToneParameterData_->flightBlurPlayer = player;
+    gameToneParameterData_->flightBlurReticle = reticle;
+    gameToneParameterData_->flightBlurAspect = std::clamp(aspect, 0.5f, 4.0f);
+}
+
 void DirectXCommon::PostDraw()
 {
     const auto postDrawBegin = std::chrono::steady_clock::now();
@@ -2047,6 +2058,7 @@ void DirectXCommon::InitializeRenderTexture(SrvManager* srvManager)
     gameToneParameterData_->blackPoint = 0.010f;
     gameToneParameterData_->highlightCompression = 0.46f;
     gameToneParameterData_->colorTemperature = 0.035f;
+    SetFlightBlur();
 
     depthOutlineParameterResource_ =
         CreateBufferResource(sizeof(DepthOutlineParameter));

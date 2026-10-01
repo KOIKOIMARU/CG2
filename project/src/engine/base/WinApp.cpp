@@ -71,7 +71,7 @@ void WinApp::Initialize()
 	// ウィンドウの作成
 	hwnd = CreateWindow(
 		wc.lpszClassName, // ウィンドウクラス名
-		L"SKYBREAK", // 仮のゲーム名
+		L"アズレイド / AZRAID", // 正式なゲーム名
 		windowStyle, // ウィンドウスタイル
 		CW_USEDEFAULT, // 表示X座標(Windowsに任せる
 		CW_USEDEFAULT, // 表示Y座標

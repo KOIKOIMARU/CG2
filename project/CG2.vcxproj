@@ -527,6 +527,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="resources\sphere.mtl" />
     <None Include="resources\sphere.obj" />
     <None Include="resources\skybox\rostock_laage_airport_4k.dds" />
+    <None Include="shaders\TitleSky.PS.hlsl" />
+    <None Include="shaders\TitleSkyComposite.PS.hlsl" />
     <None Include="shaders\EmitParticle.CS.hlsl" />
     <None Include="shaders\InitializeParticle.CS.hlsl" />
     <None Include="shaders\Fullscreen.hlsli" />

@@ -83,6 +83,7 @@ private:
         float age = -1.0f; // 60fps換算の経過時間。負値は非表示。
     };
     void InitializePhantomRaid();
+    void InitializePhantomAudio();
     void ResetPhantomRaid();
     void GrantPhantomRaid();
     void RecoverPhantomRaidOnHit(bool charged, bool destroyed);
@@ -111,9 +112,14 @@ private:
     int phantomDefeatCount_ = 0;
     Math::Vector3 phantomFinishPosition_{};
     Math::Vector3 phantomModelCenter_{};
-    void PlaySfx(const char* key);
+    void PlaySfx(const char* key, float pitch = 1.0f);
     void UpdateMusic();
     std::unique_ptr<SoundManager> sound_;
+    bool phantomLocalAudio_ = false; // Git管理外の試聴用バンクが全部読めた場合だけ有効。
+#ifdef _DEBUG
+    std::array<uint32_t, 2> phantomAudioPlays_{}; // 実際に再生できた斬撃・決め技。連撃試験用。
+#endif
+    float sfxAccentUntil_ = 0.0f; // 決め技・被弾・フィーバーの直後に通常SEを抑える終了時刻（秒）。
     std::array<float, 3> musicLevels_{}; // 通常・ボス・フィーバーのクロスフェード音量。
     int musicTrack_ = -1; // -1は結果画面などの無音状態。
     bool resultSoundPlayed_ = false;
@@ -454,6 +460,7 @@ private:
     void OnEnemyDestroyed(Enemy& enemy, bool charged, bool fever);
     void CheckEnemyBulletPlayerCollisions();
     void UpdateGameCamera();
+    void UpdateFlightCamera(); // 操作・加減速に追従する本編用カメラ。チュートリアルとは分離。
     void AddCameraShake(float power, int duration);
     void PrewarmBulletPools();
     std::unique_ptr<Bullet> CreatePooledPlayerBullet();
@@ -635,6 +642,14 @@ private:
     Math::Vector3 cameraTranslate_{ 0.0f, 2.65f, -15.8f };
     Math::Vector3 cameraRotate_{ 0.18f, 0.0f, 0.0f };
     Math::Vector3 previousPlayerTranslate_{ 0.0f, 0.0f, 0.0f };
+    struct FlightCameraMotion {
+        Math::Vector3 translationVelocity{}; // ばね追従の移動速度。前進そのものは含めない。
+        Math::Vector3 rotationVelocity{}; // バンクと上下の傾きが収まるまでの角速度。
+        float fovVelocity = 0.0f; // 画角の復元速度。
+        float acceleration = 0.0f; // 平滑化した加減速の力（-1～1）。
+        float previousSpeed = 0.235f; // スローを含む直前の実効レール速度。
+        float blurStrength = 0.0f; // 周辺ブラーの強さ（0～1）。
+    } flightCameraMotion_;
     const Enemy* lockedEnemy_ = nullptr;
     const char* stageSectionName_ = "Opening";
     const char* stageCombatBeatName_ = "Intro";

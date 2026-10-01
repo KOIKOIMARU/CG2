@@ -20,6 +20,11 @@ cbuffer GameToneParameter : register(b0)
     float32_t blackPoint;
     float32_t highlightCompression;
     float32_t colorTemperature;
+    float32_t2 flightBlurCenter;
+    float32_t flightBlurStrength;
+    float32_t flightBlurAspect;
+    float32_t2 flightBlurPlayer;
+    float32_t2 flightBlurReticle;
 };
 
 struct PixelShaderOutput {
@@ -187,6 +192,35 @@ float32_t FetchViewDepth(float32_t2 texcoord) {
     return abs(FetchViewPosition(texcoord).z);
 }
 
+float32_t3 ApplyFlightBlur(float32_t2 uv, float32_t3 sourceColor, float32_t viewDepth)
+{
+    if (flightBlurStrength <= 0.002f) { return sourceColor; }
+    float32_t2 ray = uv - flightBlurCenter;
+    float32_t2 screenMetric = float32_t2(flightBlurAspect, 1.0f);
+    // 中央の戦闘領域・自機・照準の周囲は鮮明なまま残す。
+    float32_t edge = smoothstep(0.30f, 0.72f, length(ray * screenMetric));
+    float32_t playerMask = smoothstep(1.0f, 1.45f,
+        length((uv - flightBlurPlayer) * screenMetric / float32_t2(0.23f, 0.17f)));
+    float32_t aimMask = smoothstep(0.13f, 0.24f, length((uv - flightBlurReticle) * screenMetric));
+    float32_t amount = flightBlurStrength * edge * playerMask * aimMask * smoothstep(2.0f, 8.0f, viewDepth);
+    if (amount <= 0.002f) { return sourceColor; }
+    float32_t3 accumulated = sourceColor;
+    float32_t totalWeight = 1.0f;
+    [unroll]
+    for (int32_t index = 1; index <= 6; ++index) {
+        float32_t t = float32_t(index) / 6.0f;
+        float32_t2 sampleUv = saturate(uv - ray * (amount * 0.090f * t));
+        // 建物と敵など深度が離れた面同士を混ぜず、輪郭のにじみを抑える。
+        float32_t depthDelta = abs(FetchViewDepth(sampleUv) - viewDepth);
+        float32_t weight = (1.0f - t * 0.45f) *
+            (1.0f - smoothstep(max(2.0f, viewDepth * 0.06f), max(4.0f, viewDepth * 0.14f), depthDelta));
+        accumulated += gTexture.SampleLevel(gSamplerLinear, sampleUv, 0).rgb * weight;
+        totalWeight += weight;
+    }
+    // 元の輪郭を最低45%残し、周辺にいる敵弾も消さない。
+    return lerp(sourceColor, accumulated / totalWeight, min(amount * 1.2f, 0.55f));
+}
+
 float32_t CalculateScreenSpaceAO(
     float32_t2 texcoord,
     float32_t2 texelSize,
@@ -262,6 +296,7 @@ PixelShaderOutput main(VertexShaderOutput input) {
         baseColor,
         viewDepth,
         skyMask);
+    baseColor = ApplyFlightBlur(input.texcoord, baseColor, viewDepth);
     float32_t3 color = lerp(baseColor, softColor, 0.050f);
     color += (baseColor - softColor) * 0.12f;
 

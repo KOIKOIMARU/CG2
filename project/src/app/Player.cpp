@@ -18,9 +18,9 @@ constexpr float kPlayerSlowMinScale = 0.75f;
 constexpr float kPlayerHorizontalLimit = 8.9f;
 constexpr float kPlayerLowerLimitY = -0.80f;
 constexpr float kPlayerUpperLimitY = 5.55f;
-constexpr float kPlayerMoveBankAngle = 0.34f;
+constexpr float kPlayerMoveBankAngle = 0.42f;
 constexpr float kPlayerMoveYawAngle = 0.055f;
-constexpr float kPlayerMovePitchAngle = 0.075f;
+constexpr float kPlayerMovePitchAngle = 0.14f;
 constexpr float kPlayerPoseResponse = 0.17f;
 // 塗装色を残すため、通常時は薄い青みだけを掛ける。発光はエンジン側で表現する。
 constexpr Math::Vector4 kPlayerHullColor{ 0.90f, 0.94f, 1.0f, 1.0f };

@@ -122,8 +122,9 @@ void SoundManager::Unload(const std::string& key)
     }
 }
 
-bool SoundManager::Play(const std::string& key, float gain)
+bool SoundManager::Play(const std::string& key, float gain, float pitchScale)
 {
+    if (!kSoundEffectsEnabled) { return false; }
     const auto it = sounds_.find(key);
     if (it == sounds_.end()) {
         return false;
@@ -154,7 +155,8 @@ bool SoundManager::Play(const std::string& key, float gain)
         const auto signedRandom = [&random]() {
             return static_cast<float>(random() & 0xFFFFu) / 32767.5f - 1.0f;
         };
-        const float pitch = 1.0f + entry.pitchVariation * signedRandom();
+        const float pitch = std::clamp(pitchScale, 0.75f, 1.35f) *
+            (1.0f + entry.pitchVariation * signedRandom());
         const float level = entry.volume * std::clamp(gain, 0.0f, 1.0f) *
             (1.0f + entry.gainVariation * signedRandom());
         if (FAILED(voice->SetFrequencyRatio(pitch)) || FAILED(voice->SetVolume(level))) { return false; }

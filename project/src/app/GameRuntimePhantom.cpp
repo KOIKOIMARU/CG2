@@ -2,12 +2,60 @@
 #include "app/CombatHud.h"
 #include "engine/3d/Model.h"
 #include "engine/base/DirectXCommon.h"
+#include "engine/base/Logger.h"
+#include "engine/audio/SoundManager.h"
 #include "engine/io/Input.h"
 #include <imgui.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <string_view>
+
+void GameRuntime::InitializePhantomAudio()
+{
+    phantomLocalAudio_ = false;
+#ifdef _DEBUG
+    phantomAudioPlays_.fill(0);
+#endif
+    if (!sound_) { return; }
+    // Sonniss素材の加工WAVは公開リポジトリへ入れない。通常配布は既存CC0バンクを使う。
+    // 入場時だけ探索・デコードし、プレイ中のファイルアクセスやボイス追加はしない。
+    const std::string local = "../generated/audio-phantom-runtime/";
+    char* setting = nullptr;
+    size_t settingLength = 0;
+    const bool originalOnly = _dupenv_s(&setting, &settingLength, "AZRAID_PHANTOM_AUDIO") == 0 &&
+        setting && std::string_view(setting) == "original";
+    std::free(setting);
+    bool complete = !originalOnly;
+    for (const char* name : { "slash.wav", "slash_02.wav", "slash_03.wav", "slash_finish.wav" }) {
+        std::error_code error;
+        complete = complete && std::filesystem::is_regular_file(local + name, error);
+    }
+    if (complete) {
+        const bool slashLoaded = sound_->LoadVariations("slash",
+            { local + "slash.wav", local + "slash_02.wav", local + "slash_03.wav" },
+            3, 0.66f, 0.060f, 0.006f, 0.025f);
+        const bool finishLoaded = sound_->Load("slash_finish", local + "slash_finish.wav",
+            1, 0.78f, 0.4f);
+        phantomLocalAudio_ = slashLoaded && finishLoaded;
+        if (!phantomLocalAudio_) {
+            // 一部だけ成功した場合も両方を戻す。欠落や破損で連撃が無音にならない。
+            sound_->Unload("slash");
+            sound_->Unload("slash_finish");
+        }
+    }
+    if (!phantomLocalAudio_) {
+        sound_->LoadVariations("slash", { "resources/audio/combat/slash.wav",
+            "resources/audio/combat/slash_02.wav", "resources/audio/combat/slash_03.wav" },
+            3, 0.57f, 0.060f, 0.012f, 0.05f);
+        sound_->Load("slash_finish", "resources/audio/combat/slash_finish.wav", 1, 0.68f, 0.4f);
+    }
+    Logger::Log(phantomLocalAudio_ ? "Phantom audio: local cinematic bank loaded.\n" :
+        "Phantom audio: original CC0 bank loaded.\n");
+}
 
 void GameRuntime::ResetPhantomRaid()
 {
@@ -164,7 +212,7 @@ bool GameRuntime::TryActivatePhantomRaid()
     for (auto& slash : phantomSlashes_) {
         slash.age = -1.0f;
     }
-    PlaySfx("charge");
+    PlaySfx("skill_start");
     return true;
 }
 
@@ -230,7 +278,8 @@ void GameRuntime::UpdatePhantomRaid()
             slash.position = target.position;
             slash.angle = phantomNextStrike_ % 2 == 0 ? 0.55f : -0.65f;
             slash.age = 0.0f;
-            PlaySfx("slash");
+            // 連撃の段階が耳でも分かるよう、2打目以降だけ少しずつ上げる。
+            PlaySfx("slash", 0.98f + 0.035f * static_cast<float>(phantomNextStrike_));
             AddCameraShake(0.045f, 5);
             if (enemy->IsBoss()) {
                 DealPhantomDamage(*enemy, 1);

@@ -5,7 +5,7 @@
 #include "engine/3d/ModelManager.h"
 #include "engine/3d/Object3d.h"
 #include "engine/3d/Object3dCommon.h"
-#include "engine/3d/Skybox.h"
+#include "engine/3d/ModelCommon.h"
 #include "engine/audio/SoundManager.h"
 #include "engine/base/DirectXCommon.h"
 #include "engine/base/SrvManager.h"
@@ -17,17 +17,17 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
-#include <numbers>
+#include <initializer_list>
+#include <stdexcept>
 
 namespace {
-// 仮題。正式名称が決まったら、この文字列だけ差し替える。
-constexpr const char* kTitleTop = "SKY";
-constexpr const char* kTitleBottom = "BREAK";
+constexpr const char* kTitle = "AZRAID";
+constexpr const char* kTitleJapanese = "アズレイド";
 constexpr const char* kShip = "free_models/player_candidates/Omen.gltf";
 constexpr const char* kSky = "resources/skybox/kloofendal_48d_partly_cloudy_puresky_4k_cube.dds";
 constexpr float kShipScale = 2.25f;
 constexpr float kDepartureDuration = 2.15f;
-constexpr const char* kDeckBox = "title_launch_deck_box";
+
 
 float Smooth(float value)
 {
@@ -43,39 +43,238 @@ Math::Vector3 RotateVector(const Math::Vector3& value, const Math::Matrix4x4& ma
         value.x * matrix.m[0][2] + value.y * matrix.m[1][2] + value.z * matrix.m[2][2] };
 }
 
-void DrawWordmark(ImDrawList* draw, ImVec2 position, float scale)
+ModelData CreateWordmarkMesh(char glyph)
 {
-    // 二段の角形ロゴ。文字の傾き・字間・縦の濃淡を組版側で揃える。
-    // 既存のフォント頂点だけを変形し、追加テクスチャや描画経路は使わない。
-    const float size = 152.0f * scale;
-    ImFont* font = CombatHud::Font(true);
-    for (int row = 0; row < 2; ++row) {
-        ImVec2 pen{ position.x, position.y + static_cast<float>(row) * 104.0f * scale };
-        const char* word = row == 0 ? kTitleTop : kTitleBottom;
-        const int firstVertex = draw->VtxBuffer.Size;
-        for (const char* letter = word; *letter; ++letter) {
-            draw->AddText(font, size, pen, MenuUi::Paper, letter, letter + 1);
-            pen.x += font->CalcTextSizeA(size, FLT_MAX, 0.0f, letter, letter + 1).x - 1.5f * scale;
+    // 文字を画像にせず、輪郭から厚みのあるメッシュを組み立てる。
+    ModelData mesh;
+    mesh.material.textureFilePath = "resources/human/white.png";
+    mesh.vertices.reserve(1200);
+    const auto triangle = [&](Math::Vector3 a, Math::Vector3 b, Math::Vector3 c, Math::Vector3 normal) {
+        for (const auto p : { a, b, c }) {
+            mesh.vertices.push_back({ {p.x, p.y, p.z, 1}, {0.5f, 0.5f}, normal, {}, {} });
         }
-        for (int index = firstVertex; index < draw->VtxBuffer.Size; ++index) {
-            auto& vertex = draw->VtxBuffer[index];
-            const float y = vertex.pos.y - (position.y + static_cast<float>(row) * 104.0f * scale);
-            vertex.pos.x += (size * 0.75f - y) * 0.18f;
-            const float gradient = std::clamp(y / size, 0.0f, 1.0f);
-            const ImU32 top = IM_COL32(248, 247, 244, 255);
-            const ImU32 bottom = IM_COL32(188, 192, 198, 255);
-            vertex.col = CombatHud::SurfaceColor(CombatHud::Mix(top, bottom, gradient * 0.52f));
+    };
+    float pen = 0.0f;
+    const auto polygon = [&](std::initializer_list<ImVec2> shape) {
+        std::array<Math::Vector3, 8> points{};
+        size_t count = 0;
+        for (const ImVec2 point : shape) {
+            points[count++] = { (pen + point.x + (90.0f - point.y) * 0.17f) * 0.028f,
+                (90.0f - point.y) * 0.028f, 0.0f };
+        }
+        for (size_t index = 1; index + 1 < count; ++index) {
+            triangle(points[0], points[index], points[index + 1], {0,0,-1});
+            auto backA = points[0], backB = points[index], backC = points[index + 1];
+            backA.z = backB.z = backC.z = 0.18f;
+            triangle(backA, backC, backB, {0,0,1});
+        }
+        for (size_t index = 0; index < count; ++index) {
+            const auto frontA = points[index], frontB = points[(index + 1) % count];
+            auto backA = frontA, backB = frontB;
+            backA.z = backB.z = 0.18f;
+            const Math::Vector3 normal = Math::Normalize({ frontA.y - frontB.y, frontB.x - frontA.x, 0 });
+            triangle(frontA, backA, backB, normal);
+            triangle(frontA, backB, frontB, normal);
+        }
+    };
+    const char text[] = { glyph, '\0' };
+    for (const char* letter = text; *letter; ++letter) {
+        switch (*letter) {
+        case 'A':
+            polygon({ {0,90}, {29,0}, {44,0}, {17,90} });
+            polygon({ {31,0}, {46,0}, {70,90}, {53,90} });
+            polygon({ {19,55}, {51,55}, {55,69}, {15,69} });
+            pen += 76.0f;
+            break;
+        case 'Z':
+            polygon({ {0,0}, {67,0}, {67,15}, {0,15} });
+            polygon({ {47,14}, {67,14}, {20,76}, {0,76} });
+            polygon({ {0,75}, {67,75}, {67,90}, {0,90} });
+            pen += 75.0f;
+            break;
+        case 'R':
+            polygon({ {0,0}, {15,0}, {15,90}, {0,90} });
+            polygon({ {14,0}, {54,0}, {68,15}, {14,15} });
+            polygon({ {54,14}, {68,14}, {68,40}, {54,40} });
+            polygon({ {14,39}, {68,39}, {54,54}, {14,54} });
+            polygon({ {30,52}, {48,52}, {72,90}, {53,90} });
+            pen += 79.0f;
+            break;
+        case 'I':
+            polygon({ {0,0}, {16,0}, {16,90}, {0,90} });
+            pen += 26.0f;
+            break;
+        case 'D':
+            polygon({ {0,0}, {15,0}, {15,90}, {0,90} });
+            polygon({ {14,0}, {52,0}, {70,17}, {54,18}, {14,15} });
+            polygon({ {54,16}, {70,17}, {70,73}, {54,75} });
+            polygon({ {14,75}, {70,73}, {52,90}, {14,90} });
+            pen += 76.0f;
+            break;
         }
     }
+    return mesh;
 }
+
+
 }
+
+// 雲は低解像度で描いて線形拡大。自機とロゴは通常解像度で描く。
+class TitleAtmosphere {
+public:
+    ~TitleAtmosphere()
+    {
+        if (srvManager_ && textureSrv_ != UINT32_MAX) { srvManager_->Free(textureSrv_); }
+    }
+
+    void Initialize(DirectXCommon* dxCommon, SrvManager* srvManager)
+    {
+        dxCommon_ = dxCommon;
+        srvManager_ = srvManager;
+        D3D12_ROOT_PARAMETER parameter{};
+        parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+        parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        parameter.Constants.Num32BitValues = 16;
+        D3D12_ROOT_SIGNATURE_DESC rootDesc{};
+        rootDesc.NumParameters = 1;
+        rootDesc.pParameters = &parameter;
+        Microsoft::WRL::ComPtr<ID3DBlob> signature, error;
+        if (FAILED(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+            &signature, &error))) { throw std::runtime_error("Title atmosphere root signature"); }
+        auto* device = dxCommon_->GetDevice();
+        if (FAILED(device->CreateRootSignature(0, signature->GetBufferPointer(),
+            signature->GetBufferSize(), IID_PPV_ARGS(&root_)))) {
+            throw std::runtime_error("Title atmosphere root creation");
+        }
+        const auto vs = dxCommon_->CompileShader(L"shaders/Fullscreen.VS.hlsl", L"vs_6_0");
+        const auto ps = dxCommon_->CompileShader(L"shaders/TitleSky.PS.hlsl", L"ps_6_0");
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
+        desc.pRootSignature = root_.Get();
+        desc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+        desc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+        desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+        desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        desc.RasterizerState.DepthClipEnable = TRUE;
+        desc.DepthStencilState.DepthEnable = FALSE;
+        desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+        desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+        desc.NumRenderTargets = 1;
+        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+        desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        desc.SampleDesc.Count = 1;
+        desc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+        if (FAILED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipeline_)))) {
+            throw std::runtime_error("Title atmosphere pipeline");
+        }
+
+        texture_ = dxCommon_->CreateRenderTextureResource(device, kWidth, kHeight,
+            DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, {0,0,0,1});
+        rtv_ = dxCommon_->CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 1, false);
+        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
+        rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+        device->CreateRenderTargetView(texture_.Get(), &rtvDesc, rtv_->GetCPUDescriptorHandleForHeapStart());
+        textureSrv_ = srvManager_->Allocate();
+        srvManager_->CreateSRVforTexture2D(textureSrv_, texture_.Get(), rtvDesc.Format, 1);
+
+        D3D12_DESCRIPTOR_RANGE range{};
+        range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+        range.NumDescriptors = 1;
+        range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+        parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        parameter.DescriptorTable.NumDescriptorRanges = 1;
+        parameter.DescriptorTable.pDescriptorRanges = &range;
+        D3D12_STATIC_SAMPLER_DESC sampler{};
+        sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+        sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+        sampler.MaxLOD = D3D12_FLOAT32_MAX;
+        sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+        rootDesc.NumStaticSamplers = 1;
+        rootDesc.pStaticSamplers = &sampler;
+        signature.Reset(); error.Reset();
+        if (FAILED(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error)) ||
+            FAILED(device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(),
+                IID_PPV_ARGS(&compositeRoot_)))) { throw std::runtime_error("Title atmosphere composite root"); }
+        const auto compositePs = dxCommon_->CompileShader(L"shaders/TitleSkyComposite.PS.hlsl", L"ps_6_0");
+        desc.pRootSignature = compositeRoot_.Get();
+        desc.PS = { compositePs->GetBufferPointer(), compositePs->GetBufferSize() };
+        desc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        if (FAILED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&compositePipeline_)))) {
+            throw std::runtime_error("Title atmosphere composite pipeline");
+        }
+    }
+
+    void Draw(const Camera& camera, float elapsed, float departure)
+    {
+        const auto& world = camera.GetWorldMatrix();
+        const float tangent = std::tan((0.62f + 0.065f * departure) * 0.5f);
+        const float travel = elapsed * 22.0f + departure * 460.0f;
+        const std::array<float, 16> parameters{
+            world.m[0][0], world.m[0][1], world.m[0][2], tangent * camera.GetAspectRatio(),
+            world.m[1][0], world.m[1][1], world.m[1][2], tangent,
+            world.m[2][0], world.m[2][1], world.m[2][2], 0,
+            -80.0f * std::sin(travel * 0.0013f), 340.0f, travel, 0 };
+        auto* command = dxCommon_->GetCommandList();
+        Transition(D3D12_RESOURCE_STATE_RENDER_TARGET);
+        const auto cloudRtv = rtv_->GetCPUDescriptorHandleForHeapStart();
+        command->OMSetRenderTargets(1, &cloudRtv, FALSE, nullptr);
+        const D3D12_VIEWPORT cloudViewport{0,0,static_cast<float>(kWidth),static_cast<float>(kHeight),0,1};
+        const D3D12_RECT cloudScissor{0,0,kWidth,kHeight};
+        command->RSSetViewports(1, &cloudViewport);
+        command->RSSetScissorRects(1, &cloudScissor);
+        command->SetGraphicsRootSignature(root_.Get());
+        command->SetPipelineState(pipeline_.Get());
+        command->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        command->SetGraphicsRoot32BitConstants(0, static_cast<UINT>(parameters.size()), parameters.data(), 0);
+        command->DrawInstanced(3, 1, 0, 0);
+        Transition(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+
+        auto mainRtv = dxCommon_->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart();
+        mainRtv.ptr += static_cast<SIZE_T>(DirectXCommon::kRenderTextureRTVIndex) * dxCommon_->GetRTVDescriptorSize();
+        const auto dsv = dxCommon_->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
+        command->OMSetRenderTargets(1, &mainRtv, FALSE, &dsv);
+        command->RSSetViewports(1, &dxCommon_->GetViewport());
+        command->RSSetScissorRects(1, &dxCommon_->GetScissorRect());
+        command->SetGraphicsRootSignature(compositeRoot_.Get());
+        command->SetPipelineState(compositePipeline_.Get());
+        srvManager_->SetGraphicsRootDescriptorTable(0, textureSrv_);
+        command->DrawInstanced(3, 1, 0, 0);
+    }
+private:
+    void Transition(D3D12_RESOURCE_STATES next)
+    {
+        if (state_ == next) { return; }
+        D3D12_RESOURCE_BARRIER barrier{};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = texture_.Get();
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = state_;
+        barrier.Transition.StateAfter = next;
+        dxCommon_->GetCommandList()->ResourceBarrier(1, &barrier);
+        state_ = next;
+    }
+    static constexpr LONG kWidth = 640, kHeight = 360;
+    DirectXCommon* dxCommon_ = nullptr;
+    SrvManager* srvManager_ = nullptr;
+    uint32_t textureSrv_ = UINT32_MAX;
+    D3D12_RESOURCE_STATES state_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    Microsoft::WRL::ComPtr<ID3D12Resource> texture_;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> root_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline_;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> compositeRoot_;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> compositePipeline_;
+};
 
 TitleScene::TitleScene() = default;
 TitleScene::~TitleScene() = default;
 
 void TitleScene::Initialize()
 {
-    elapsed_ = menuRevealTime_ = departureTime_ = departureFade_ = 0.0f;
+    elapsed_ = menuRevealTime_ = departureTime_ = departureFade_ = departureAcceleration_ = 0.0f;
     selectedItem_ = 0;
     menuEmphasis_ = { 1.0f, 0.0f, 0.0f };
     showControls_ = startRequested_ = false;
@@ -96,7 +295,7 @@ void TitleScene::PrepareBackdrop()
     if (objectCommon_ || GameScene::GetResourcePreloadStep() < 8) { return; }
     Model* model = ModelManager::GetInstance()->FindModel(kShip);
     if (!model || model->GetVertices().empty()) { return; }
-    // すでに本編用に読んだモデルと空を借りる。タイトル用に再読み込みしない。
+    // 自機と環境光は本編と共有し、タイトルのカメラ・姿勢は独立させる。
     camera_ = std::make_unique<Camera>();
     camera_->SetFovY(0.56f);
     camera_->SetFarClip(200.0f);
@@ -104,8 +303,6 @@ void TitleScene::PrepareBackdrop()
     objectCommon_->Initialize(dxCommon_, srvManager_);
     objectCommon_->SetDefaultCamera(camera_.get());
     objectCommon_->SetEnvironmentTexturePath(kSky);
-    skybox_ = std::make_unique<Skybox>();
-    skybox_->Initialize(dxCommon_, srvManager_, kSky);
 
     Math::Vector3 min{ FLT_MAX, FLT_MAX, FLT_MAX }, max{ -FLT_MAX, -FLT_MAX, -FLT_MAX };
     for (const auto& vertex : model->GetVertices()) {
@@ -117,18 +314,18 @@ void TitleScene::PrepareBackdrop()
     ship_ = std::make_unique<Object3d>();
     ship_->Initialize(objectCommon_.get());
     ship_->SetModel(model);
-    ship_->SetLightingMode(1);
-    ship_->SetColor({ 0.90f, 0.94f, 1.0f, 1.0f });
-    ship_->SetDirectionalLightDirection(Object3dCommon::kSunDirection);
-    ship_->SetDirectionalLightIntensity(1.1f);
-    ship_->SetEnvironmentCoefficient(0.045f);
+    ship_->SetLightingMode(2);
+    ship_->SetColor({ 1.0f, 0.985f, 0.98f, 1.0f });
+    ship_->SetDirectionalLightDirection({ -0.45f, -0.72f, 0.36f });
+    ship_->SetDirectionalLightIntensity(1.5f);
+    ship_->SetEnvironmentCoefficient(0.08f);
     ship_->SetShininess(112.0f);
     ship_->SetRoughness(0.38f);
     ship_->SetMetallic(0.24f);
     ship_->SetSpecularColor({ 0.30f, 0.32f, 0.35f });
-    ship_->SetShadowReceiveStrength(0.8f);
+    ship_->SetShadowReceiveStrength(0.0f);
 
-    PrepareLaunchDeck();
+    PrepareTitleComposition();
 
     // 本編で読み込み済みのエフェクトを再利用。汎用GPUパーティクルには接続しない。
     for (size_t index = 0; index < exhaust_.size(); ++index) {
@@ -148,161 +345,85 @@ void TitleScene::PrepareBackdrop()
     }
 }
 
-void TitleScene::PrepareLaunchDeck()
+void TitleScene::PrepareTitleComposition()
 {
-    auto* models = ModelManager::GetInstance();
-    // 白い単位箱を共有し、立体の継ぎ目・材質・構造で床を作る。追加の画像読み込みは不要。
-    models->CreateBox(kDeckBox, 1.0f, 1.0f, 1.0f, "resources/human/white.png");
-    deck_.reserve(100);
-    const Math::Vector4 metal{ 0.23f, 0.25f, 0.27f, 1.0f };
-    const Math::Vector4 edge{ 0.39f, 0.41f, 0.42f, 1.0f };
-    const Math::Vector4 pale{ 0.70f, 0.69f, 0.63f, 1.0f };
-    const Math::Vector4 amber{ 1.0f, 0.55f, 0.18f, 1.0f };
-    const auto box = [&](Math::Vector3 position, Math::Vector3 size, Math::Vector4 color,
-                         int motion = 0, Math::Vector3 rotation = Math::Vector3{}) {
-        DeckPart part;
-        part.position = position;
-        part.color = color;
-        part.motion = motion;
-        part.object = std::make_unique<Object3d>();
-        part.object->Initialize(objectCommon_.get());
-        part.object->SetModel(models->FindModel(kDeckBox));
-        part.object->SetTranslate(position);
-        part.object->SetScale(size);
-        part.object->SetRotate(rotation);
-        part.object->SetColor(color);
-        part.object->SetLightingMode(motion == 2 ? 0 : 2);
-        part.object->SetDirectionalLightDirection(Object3dCommon::kSunDirection);
-        part.object->SetDirectionalLightIntensity(1.05f);
-        part.object->SetRoughness(0.68f);
-        part.object->SetMetallic(0.18f);
-        part.object->SetEnvironmentCoefficient(0.02f);
-        part.object->SetSpecularColor({ 0.14f, 0.15f, 0.16f });
-        part.object->SetShadowReceiveStrength(0.9f);
-        deck_.push_back(std::move(part));
-    };
-    // 発進デッキの厚い基礎、側面の補強、中央の発進レール。
-    box({ 2, -0.78f, 3 }, { 22, 1.4f, 26 }, metal);
-    box({ 2, -1.70f, 3 }, { 20.4f, 0.44f, 24.4f }, { 0.10f, 0.12f, 0.14f, 1 });
-    for (int row = 0; row < 5; ++row) {
-        for (int lane = 0; lane < 4; ++lane) {
-            const float tint = static_cast<float>((row + lane) % 3) * 0.012f;
-            box({ -6.25f + 5.5f * lane, -0.03f, -7.4f + 5.2f * row }, { 5.46f, 0.08f, 5.15f },
-                { 0.27f + tint, 0.29f + tint, 0.31f + tint, 1 });
-        }
-    }
-    box({ 3, 0.035f, 4 }, { 7.8f, 0.05f, 21.8f }, { 0.13f, 0.16f, 0.19f, 1 });
-    for (float side : { -1.0f, 1.0f }) {
-        box({ 3 + side * 3.95f, 0.08f, 4 }, { 0.14f, 0.1f, 21.8f }, edge);
-        box({ 3 + side * 2.0f, 0.07f, 4 }, { 0.065f, 0.03f, 20.8f }, pale);
-        box({ 2 + side * 10.7f, 0.24f, 3 }, { 0.34f, 0.65f, 26 }, edge);
-        for (int index = 0; index < 6; ++index) {
-            const float z = -7.0f + index * 4.0f;
-            box({ 3 + side * 4.35f, 0.09f, z }, { 0.52f, 0.16f, 0.9f }, metal);
-            box({ 3 + side * 4.35f, 0.18f, z }, { 0.15f, 0.06f, 0.54f }, amber, 2);
-        }
-        // 射出口を塞がない左右の支持具。出撃前に下と外側へ退避する。
-        for (float z : { -0.9f, 2.4f }) {
-            const int direction = side < 0.0f ? -1 : 1;
-            box({ 3 + side * 2.6f, 0.54f, z }, { 0.44f, 1.05f, 0.64f }, metal, direction);
-            box({ 3 + side * 2.30f, 0.98f, z }, { 1.0f, 0.19f, 0.68f }, edge, direction);
-        }
-    }
-    // 左の整備通路には低い設備だけを置き、ロゴの後ろを騒がしくしない。
-    box({ -5.9f, 0.48f, 5.7f }, { 2.0f, 0.94f, 3.1f }, metal);
-    box({ -5.9f, 1.0f, 5.7f }, { 2.12f, 0.12f, 3.22f }, edge);
-    for (int index = 0; index < 6; ++index) {
-        box({ -5.9f, 1.075f, 4.55f + 0.45f * index }, { 1.6f, 0.03f, 0.10f }, { 0.08f, 0.10f, 0.12f, 1 });
-    }
-    for (float x : { -7.8f, 11.8f }) {
-        box({ x, 1.6f, 12 }, { 0.18f, 3.2f, 0.18f }, metal);
-        box({ x, 3.2f, 12 }, { 0.60f, 0.20f, 0.40f }, edge);
-    }
-
-    contactShadow_ = std::make_unique<Object3d>();
-    contactShadow_->Initialize(objectCommon_.get());
-    contactShadow_->SetModel(models->FindModel("effect_contact_shadow"));
-    contactShadow_->SetLightingMode(0);
-    contactShadow_->SetEnvironmentCoefficient(0.0f);
-    contactShadow_->SetAlphaReference(0.001f);
-    contactShadow_->SetRotate({ std::numbers::pi_v<float> * 0.5f, 0, 0 });
-    for (auto& glow : serviceGlow_) {
-        glow = std::make_unique<Object3d>();
-        glow->Initialize(objectCommon_.get());
-        glow->SetModel(models->FindModel("effect_glow_core"));
-        glow->SetLightingMode(0);
-        glow->SetEnvironmentCoefficient(0.0f);
+    atmosphere_ = std::make_unique<TitleAtmosphere>();
+    atmosphere_->Initialize(dxCommon_, srvManager_);
+    wordmarkCommon_ = std::make_unique<ModelCommon>();
+    wordmarkCommon_->Initialize(dxCommon_, srvManager_);
+    wordmarkCommon_->SetEnvironmentTexturePath(kSky);
+    for (size_t index = 0; index < wordmark_.size(); ++index) {
+        wordmarkModels_[index] = std::make_unique<Model>();
+        wordmarkModels_[index]->Initialize(wordmarkCommon_.get(), CreateWordmarkMesh(kTitle[index]));
+        auto& letter = wordmark_[index];
+        letter = std::make_unique<Object3d>();
+        letter->Initialize(objectCommon_.get());
+        letter->SetModel(wordmarkModels_[index].get());
+        letter->SetLightingMode(2);
+        letter->SetDirectionalLightDirection({ -0.18f, -0.36f, 0.92f });
+        letter->SetDirectionalLightIntensity(1.12f);
+        letter->SetRoughness(0.34f);
+        letter->SetMetallic(0.30f);
+        letter->SetShininess(128.0f);
+        letter->SetSpecularColor({ 0.60f, 0.63f, 0.69f });
+        letter->SetEnvironmentCoefficient(0.035f);
+        letter->SetShadowReceiveStrength(0.0f);
     }
 }
 
 void TitleScene::UpdateBackdrop()
 {
     if (!camera_) { return; }
-    const float arrival = Smooth(elapsed_ / 3.2f);
-    const float release = Smooth(departureTime_ / 0.55f);
-    const float follow = Smooth((departureTime_ - 0.18f) / 1.45f);
-    const float acceleration = std::pow(std::clamp((departureTime_ - 0.60f) / 1.55f, 0.0f, 1.0f), 2.0f);
-    const float phase = elapsed_ * 0.20f;
-    // 入場時にゆっくり寄り、出撃時は自機の後ろへ回り込む。入力を待たせる演出にはしない。
-    const Math::Vector3 cameraPosition{
-        (-8.6f - 1.4f * (1.0f - arrival) + 0.42f * std::sin(phase)) * (1.0f - follow) + 3.0f * follow,
-        (6.7f + 0.7f * (1.0f - arrival) + 0.09f * std::sin(phase * 0.63f)) * (1.0f - follow) + 4.8f * follow + 2.5f * acceleration,
-        -15.8f - 1.4f * (1.0f - arrival) + 3.8f * follow + 13.0f * acceleration };
-    const Math::Vector3 target{ -1.7f + 4.7f * follow, 1.4f + 1.0f * follow + 5.0f * acceleration,
-        4.2f + 19.0f * follow + 30.0f * acceleration };
-    const Math::Vector3 aim{ target.x - cameraPosition.x, target.y - cameraPosition.y, target.z - cameraPosition.z };
+    const float arrival = Smooth(elapsed_ / 1.5f);
+    departureAcceleration_ = std::pow(Smooth((departureTime_ - 0.12f) / 1.9f), 2.0f);
+    const float phase = elapsed_ * 0.24f;
     camera_->SetAspectRatio(dxCommon_->GetPresentationAspectRatio());
-    camera_->SetFovY(0.59f + 0.12f * acceleration);
-    camera_->SetTranslate(cameraPosition);
-    camera_->SetRotate({ -std::atan2(aim.y, std::sqrt(aim.x * aim.x + aim.z * aim.z)),
-        std::atan2(aim.x, aim.z), -0.008f * std::sin(phase * 0.7f) * (1.0f - follow) });
+    camera_->SetFovY(0.62f + 0.065f * departureAcceleration_);
+    camera_->SetTranslate({ 0, 0, -18 });
+    camera_->SetRotate({ 0.04f + 0.006f * std::sin(phase * 0.61f),
+        0.016f * std::sin(phase * 0.48f), -0.075f + 0.008f * std::sin(phase * 0.7f) });
     camera_->Update();
-    Camera skyCamera = *camera_;
-    skyCamera.SetRotate({ camera_->GetRotate().x - 0.30f,
-        camera_->GetRotate().y + 0.18f + elapsed_ * 0.003f, camera_->GetRotate().z });
-    skyCamera.Update();
-    skybox_->Update(&skyCamera);
-    const Math::Vector3 rotation{ -0.12f * release - 0.06f * acceleration,
-        0.15f * (1.0f - follow), 0.008f * std::sin(elapsed_ * 1.7f) * release };
+    const auto inView = [&](Math::Vector3 local) {
+        const auto offset = RotateVector(local, camera_->GetWorldMatrix());
+        const auto& position = camera_->GetTranslate();
+        return Math::Vector3{ position.x + offset.x, position.y + offset.y, position.z + offset.z };
+    };
+
+    // ロゴも3D。機体が手前を通り、文字の厚みには照明が当たる。
+    const auto cameraRotation = camera_->GetRotate();
+    constexpr std::array<float, 6> advances{ 0, 76, 151, 230, 306, 332 };
+    for (size_t index = 0; index < wordmark_.size(); ++index) {
+        const float reveal = Smooth((elapsed_ - 0.25f - static_cast<float>(index) * 0.115f) / 0.62f);
+        const float alpha = reveal * (1.0f - Smooth(departureTime_ / 0.28f));
+        auto& letter = wordmark_[index];
+        letter->SetTranslate(inView({ -10.6f + advances[index] * 0.028f * 1.35f,
+            0.65f - 0.65f * (1.0f - reveal), 22.0f + 1.3f * (1.0f - reveal) }));
+        letter->SetScale({ 1.35f, 1.35f, 1.35f });
+        letter->SetRotate({ cameraRotation.x, cameraRotation.y - 0.035f - 0.48f * (1.0f - reveal),
+            cameraRotation.z + 0.015f });
+        letter->SetColor({ 1.0f, 0.985f, 0.95f, alpha });
+        letter->SetSpotLightPosition(inView({ -8.5f + 18.0f * Smooth(elapsed_ / 2.1f), 4.0f, 18.0f }));
+        letter->SetSpotLightDirection(RotateVector({ 0, -0.3f, 1.0f }, camera_->GetWorldMatrix()));
+        letter->SetSpotLightIntensity(0.85f * (1.0f - Smooth((elapsed_ - 1.7f) / 0.6f)));
+        letter->Update();
+    }
+
+    const float travel = 54.0f * departureAcceleration_;
+    const Math::Vector3 center = inView({
+        4.8f - 15.8f * (1.0f - arrival) + 0.20f * std::sin(phase) + travel * 0.15f,
+        -1.0f + 3.4f * (1.0f - arrival) + 0.12f * std::sin(phase * 1.3f) + travel * 0.26f,
+        17.8f - 8.0f * (1.0f - arrival) + travel });
+    const Math::Vector3 rotation{ cameraRotation.x - 0.27f - 0.035f * std::sin(phase * 0.8f) - 0.10f * departureAcceleration_,
+        cameraRotation.y - 0.60f + 1.6f * (1.0f - arrival) + 0.035f * std::sin(phase * 0.6f) + 0.48f * departureAcceleration_,
+        cameraRotation.z - 0.10f + 0.10f * std::sin(phase) - 0.30f * (1.0f - arrival) - 0.17f * departureAcceleration_ };
     const auto rotationMatrix = Math::MakeAffineMatrix({ 1, 1, 1 }, rotation, {});
     const auto matrix = Math::MakeAffineMatrix({ kShipScale, kShipScale, kShipScale }, rotation, {});
     const auto offset = RotateVector(modelCenter_, matrix);
-    const Math::Vector3 center{ 3.0f, 1.5f + 0.9f * release + 7.5f * acceleration, 1.5f + 57.0f * acceleration };
     ship_->SetScale({ kShipScale, kShipScale, kShipScale });
     ship_->SetRotate(rotation);
     ship_->SetTranslate({ center.x - offset.x, center.y - offset.y, center.z - offset.z });
-    // 整備灯の反射がゆっくり機体を横切る。発進後は消して自然光へ戻す。
-    ship_->SetSpotLightPosition({ 4.0f + 3.0f * std::sin(phase), 5.6f, -2.0f });
-    ship_->SetSpotLightDirection({ -0.18f, -0.85f, 0.48f });
-    ship_->SetSpotLightIntensity(0.70f * (1.0f - release));
     ship_->Update();
-    for (auto& part : deck_) {
-        Math::Vector3 position = part.position;
-        if (part.motion == -1 || part.motion == 1) {
-            position.x += static_cast<float>(part.motion) * 0.85f * release;
-            position.y -= 0.85f * release;
-        }
-        if (part.motion == 2) {
-            const float pulse = 0.72f + 0.28f * std::pow(0.5f + 0.5f * std::sin(elapsed_ * 1.8f - position.z * 0.32f), 3.0f);
-            part.object->SetColor({ part.color.x * pulse, part.color.y * pulse, part.color.z * pulse, 1 });
-        }
-        part.object->SetTranslate(position);
-        part.object->Update();
-    }
-    contactShadow_->SetTranslate({ 3, 0.105f, 1.5f + 57.0f * acceleration });
-    contactShadow_->SetScale({ 3.3f + release, 3.0f + release, 1 });
-    contactShadow_->SetColor({ 0.02f, 0.025f, 0.035f, 0.54f * (1.0f - release) });
-    contactShadow_->Update();
-    for (size_t index = 0; index < serviceGlow_.size(); ++index) {
-        auto& glow = serviceGlow_[index];
-        glow->SetTranslate({ index == 0 ? -7.8f : 11.8f, 3.2f, 11.75f });
-        glow->SetRotate(camera_->GetRotate());
-        const float glowSize = 0.20f + 0.05f * std::sin(elapsed_ * 0.7f + static_cast<float>(index));
-        glow->SetScale({ glowSize, glowSize, 1 });
-        glow->SetColor({ 1.0f, 0.72f, 0.40f, 0.6f });
-        glow->Update();
-    }
-    UpdateFlightEffects(center, rotationMatrix, 0.10f + 0.75f * release + 2.5f * acceleration);
+    UpdateFlightEffects(center, rotationMatrix, 2.6f + 4.5f * (1.0f - arrival) + 3.0f * departureAcceleration_);
 }
 
 void TitleScene::UpdateFlightEffects(const Math::Vector3& center, const Math::Matrix4x4& rotationMatrix, float thrust)
@@ -345,8 +466,8 @@ void TitleScene::Update()
             if (MenuUi::Pressed(input_, DIK_ESCAPE) || MenuUi::Pressed(input_, DIK_H) ||
                 MenuUi::Pressed(input_, DIK_RETURN)) { showControls_ = false; }
         } else {
-            if (MenuUi::Pressed(input_, DIK_UP) || MenuUi::Pressed(input_, DIK_W)) { selectedItem_ = (selectedItem_ + 2) % 3; }
-            if (MenuUi::Pressed(input_, DIK_DOWN) || MenuUi::Pressed(input_, DIK_S)) { selectedItem_ = (selectedItem_ + 1) % 3; }
+            if (MenuUi::Pressed(input_, DIK_UP) || MenuUi::Pressed(input_, DIK_W) || MenuUi::Pressed(input_, DIK_LEFT) || MenuUi::Pressed(input_, DIK_A)) { selectedItem_ = (selectedItem_ + 2) % 3; }
+            if (MenuUi::Pressed(input_, DIK_DOWN) || MenuUi::Pressed(input_, DIK_S) || MenuUi::Pressed(input_, DIK_RIGHT) || MenuUi::Pressed(input_, DIK_D)) { selectedItem_ = (selectedItem_ + 1) % 3; }
             if (MenuUi::Pressed(input_, DIK_RETURN)) {
                 if (selectedItem_ == 2) { showControls_ = true; }
                 else { RequestStart(selectedItem_ == 1); }
@@ -384,32 +505,29 @@ void TitleScene::DrawMenu(bool gameReady)
     ImGui::Begin("##Title", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav);
     ImDrawList* draw = ImGui::GetWindowDrawList();
-    // 背景を見せつつ、文字のある左側だけを暗くする。カードや説明欄は置かない。
-    if (!skybox_) { draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36, 255)); }
+    if (!atmosphere_) { draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36, 255)); }
     const float menuShade = 1.0f - Smooth(departureTime_ / 0.55f);
-    const ImU32 shade = CombatHud::SurfaceColor(IM_COL32(13, 16, 22, static_cast<int>(228.0f * menuShade)));
-    draw->AddRectFilledMultiColor(viewport->Pos, end, shade, IM_COL32(0, 0, 0, 0),
-        IM_COL32(0, 0, 0, 0), shade);
-    draw->AddRectFilledMultiColor(p(0, 490), end, IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-        IM_COL32(0, 0, 0, static_cast<int>(112.0f * menuShade)),
-        IM_COL32(0, 0, 0, static_cast<int>(112.0f * menuShade)));
-    if (skybox_ && elapsed_ < 0.8f) {
+    draw->AddRectFilledMultiColor(p(0, 485), end, IM_COL32(0,0,0,0), IM_COL32(0,0,0,0),
+        IM_COL32(4,9,22, static_cast<int>(155.0f * menuShade)),
+        IM_COL32(4,9,22, static_cast<int>(155.0f * menuShade)));
+    if (atmosphere_ && elapsed_ < 0.8f) {
         draw->AddRectFilled(viewport->Pos, end, IM_COL32(8, 20, 36,
             static_cast<int>(255.0f * (1.0f - Smooth(elapsed_ / 0.8f)))));
     }
     if (!showControls_) {
         const float reveal = Smooth(menuRevealTime_ / 0.85f);
-        const float uiAlpha = reveal * (1.0f - Smooth(departureTime_ / 0.28f));
+        const float uiAlpha = reveal * Smooth((elapsed_ - 0.4f) / 0.65f) * (1.0f - Smooth(departureTime_ / 0.28f));
         const int firstMenuVertex = draw->VtxBuffer.Size;
-        DrawWordmark(draw, p(90 + 14.0f * (1.0f - reveal), 106), scale);
+        MenuUi::Text(draw, p(101, 363), 25.0f * scale, MenuUi::Paper, kTitleJapanese);
 
         const char* labels[] = { "出撃", "チュートリアル", "操作方法" };
         const float blend = 1.0f - std::exp(-12.0f * std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 0.05f));
         for (int index = 0; index < 3; ++index) {
-            const float y = 450.0f + static_cast<float>(index) * 54.0f;
-            ImGui::SetCursorScreenPos(p(88, y - 6.0f));
+            const float x = 92.0f + static_cast<float>(index) * 256.0f;
+            const float y = 587.0f;
+            ImGui::SetCursorScreenPos(p(x, y));
             ImGui::BeginDisabled(startRequested_);
-            const bool clicked = ImGui::InvisibleButton(labels[index], { 250.0f * scale, 44.0f * scale });
+            const bool clicked = ImGui::InvisibleButton(labels[index], { 228.0f * scale, 54.0f * scale });
             if (ImGui::IsItemHovered() && ImGui::IsMousePosValid() &&
                 (ImGui::GetIO().MouseDelta.x != 0.0f || ImGui::GetIO().MouseDelta.y != 0.0f)) { selectedItem_ = index; }
             ImGui::EndDisabled();
@@ -422,13 +540,13 @@ void TitleScene::DrawMenu(bool gameReady)
             menuEmphasis_[index] += (target - menuEmphasis_[index]) * blend;
             const float emphasis = menuEmphasis_[index];
             const int alpha = static_cast<int>(245.0f * emphasis);
-            draw->AddRectFilledMultiColor(p(88, y - 6), p(338, y + 38),
-                CombatHud::SurfaceColor(IM_COL32(239, 241, 244, alpha)),
-                CombatHud::SurfaceColor(IM_COL32(214, 215, 219, alpha)),
-                CombatHud::SurfaceColor(IM_COL32(194, 197, 202, alpha)),
-                CombatHud::SurfaceColor(IM_COL32(229, 231, 234, alpha)));
-            MenuUi::Text(draw, p(110, y + 2), 23.0f * scale,
-                CombatHud::Mix(MenuUi::Quiet, MenuUi::Ink, emphasis), labels[index]);
+            const std::array<ImVec2, 4> button{ p(x, y), p(x + 228, y), p(x + 210, y + 54), p(x, y + 54) };
+            draw->AddConvexPolyFilled(button.data(), static_cast<int>(button.size()),
+                CombatHud::SurfaceColor(IM_COL32(243, 245, 248, alpha)));
+            MenuUi::Text(draw, p(x + 26, y + 12), 25.0f * scale,
+                CombatHud::Mix(IM_COL32(226, 234, 247, 255), MenuUi::Ink, emphasis), labels[index]);
+
+
         }
         if (!gameReady) {
             MenuUi::Text(draw, p(1184, 660), 16.0f * scale, MenuUi::Quiet, "読み込み中", true);
@@ -450,25 +568,20 @@ void TitleScene::DrawMenu(bool gameReady)
 
 void TitleScene::Draw()
 {
-    if (!skybox_) { return; }
-    // 本編と同じ影パスを使い、出撃前の自機・固定具を床へ落とす。
-    if (objectCommon_->BeginShadowPass({ 3, 0, 3 })) {
-        const auto& light = objectCommon_->GetShadowLightViewProjection();
-        ship_->DrawShadow(light);
-        for (auto& part : deck_) { if (part.motion != 2) { part.object->DrawShadow(light); } }
-        objectCommon_->EndShadowPass();
-    }
-    skybox_->Draw();
+    if (!atmosphere_) { return; }
+    atmosphere_->Draw(*camera_, elapsed_, departureAcceleration_);
+    objectCommon_->SetDepthDrawMode(DepthDrawMode::Normal);
     objectCommon_->CommonDrawSetting();
-    for (auto& part : deck_) { part.object->Draw(); }
+    // ロゴの裏面と側面にも自己遮蔽を適用し、手前の自機との前後関係を保つ。
     ship_->Draw();
+    if (departureTime_ < 0.28f) {
+        for (auto& letter : wordmark_) { if (letter->GetColor().w > 0.01f) { letter->Draw(); } }
+    }
     objectCommon_->SetDepthDrawMode(DepthDrawMode::ReadOnly);
     objectCommon_->CommonDrawSetting();
-    contactShadow_->Draw();
     objectCommon_->SetBlendMode(BlendMode::Add);
     objectCommon_->CommonDrawSetting();
     for (auto& effect : exhaust_) { effect->Draw(); }
-    for (auto& glow : serviceGlow_) { glow->Draw(); }
     objectCommon_->SetBlendMode(BlendMode::Normal);
     objectCommon_->SetDepthDrawMode(DepthDrawMode::Normal);
 }
@@ -477,12 +590,12 @@ void TitleScene::Finalize()
 {
     // フレーム終端のGPU完了待ち後にシーンが切り替わる。共有モデル・空は解放しない。
     ship_.reset();
-    deck_.clear();
-    contactShadow_.reset();
-    for (auto& glow : serviceGlow_) { glow.reset(); }
+    atmosphere_.reset();
+    for (auto& letter : wordmark_) { letter.reset(); }
+    for (auto& model : wordmarkModels_) { model.reset(); }
+    wordmarkCommon_.reset();
     for (auto& effect : exhaust_) { effect.reset(); }
     sound_.reset();
-    skybox_.reset();
     if (objectCommon_ && srvManager_) { srvManager_->Free(objectCommon_->GetShadowMapSrvIndex()); }
     objectCommon_.reset();
     camera_.reset();
